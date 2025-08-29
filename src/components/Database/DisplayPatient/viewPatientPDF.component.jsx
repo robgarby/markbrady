@@ -1,0 +1,160 @@
+import React, { useEffect, useState } from 'react';
+import { useGlobalContext } from '../../../Context/global.context';
+import PdfViewer from './pdfViewerBox.component';
+
+const ViewPatientPDF = () => {
+     const { activePatient } = useGlobalContext();
+     const [labReports, setLabReports] = useState([]);
+     const [patientReports, setPatientReports] = useState([]);
+     const [pdfToShow, setPdfToShow] = useState(null);
+
+     useEffect(() => {
+          const fetchLabReports = async () => {
+               try {
+                    const response = await fetch("https://optimizingdyslipidemia.com/PHP/database.php", {
+                         method: "POST",
+                         headers: { "Content-Type": "application/json" },
+                         body: JSON.stringify({
+                              healthNumber: activePatient.healthNumber,
+                              script: "getLabData"
+                         }),
+                    });
+                    const data = await response.json();
+                    if (data.success) {
+                         setLabReports(data.labReports || []);
+                    }
+               } catch (error) {
+                    console.error("Error fetching lab reports:", error);
+               }
+          };
+
+          const fetchPatientReports = async () => {
+               try {
+                    const response = await fetch("https://optimizingdyslipidemia.com/PHP/database.php", {
+                         method: "POST",
+                         headers: { "Content-Type": "application/json" },
+                         body: JSON.stringify({
+                              healthNumber: activePatient.healthNumber,
+                              script: "getPatientUploads"
+                         }),
+                    });
+                    const data = await response.json();
+
+                    if (data.success) {
+                         setPatientReports(data.patientUploads || []);
+                    }
+               } catch (error) {
+                    console.error("Error fetching patient uploads:", error);
+               }
+          };
+
+          if (activePatient?.healthNumber) {
+               fetchLabReports();
+               fetchPatientReports();
+          }
+     }, [activePatient]);
+
+     const handleViewPDF = (url) => {
+          setPdfToShow(url);
+     };
+
+     if (!activePatient) {
+          return <div className="text-muted">No patient selected.</div>;
+     }
+
+     return (
+          <div className="container-fluid mt-4">
+               {/* Header: Patient info */}
+               <div className="p-3 mb-4 border rounded bg-light">
+                    <h4 className="text-primary mb-2">Patient Information</h4>
+                    <div className="d-flex justify-content-between">
+                         <strong>Client Name:</strong> <span>{activePatient.clientName}</span>
+                    </div>
+                    <div className="d-flex justify-content-between">
+                         <strong>Health Number:</strong> <span>{activePatient.healthNumber}</span>
+                    </div>
+               </div>
+
+               {/* Lab Uploads */}
+               <h4 className="mb-3">Lab Uploads</h4>
+               {labReports.length > 0 ? (
+                    labReports.map((report, idx) => (
+                         <div key={idx} className="d-flex align-items-center justify-content-between border-bottom py-2">
+                              <div style={{ minWidth: 250 }}>Lab Date: {report.labDate || 'N/A'}</div>
+                              <div style={{ minWidth: 300 }}>Uploaded: {report.PDFtimeStamp || 'N/A'}</div>
+                              <div style={{ flex: 1 }}>Client: {activePatient.clientName}</div>
+                              <button
+                                   className="btn btn-outline-danger btn-sm d-flex align-items-center"
+                                   title="View PDF"
+                                   onClick={() => handleViewPDF(report.PDFfileName)}
+                              >
+                                   View PDF
+                              </button>
+                         </div>
+                    ))
+               ) : (
+                    <p className="text-muted">No lab uploads available.</p>
+               )}
+
+               {/* Patient Uploads */}
+               <h4 className="mt-5 mb-3">Patient Uploads</h4>
+               {patientReports.length > 0 ? (
+                    patientReports.map((report, idx) => (
+                         <div key={idx} className="d-flex align-items-center justify-content-between border-bottom py-2">
+                              <div style={{ minWidth: 250 }}>Upload Date: {report.labDate || 'N/A'}</div>
+                              <div style={{ minWidth: 300 }}>{report.shortName || 'Patient Document'}</div>
+                              <div style={{ flex: 1 }}></div>
+                              <button
+                                   className="btn btn-outline-primary btn-sm d-flex align-items-center"
+                                   title="View PDF"
+                                   onClick={() => handleViewPDF(report.PDFfileName)}
+                              >
+                                   View PDF
+                              </button>
+                         </div>
+                    ))
+               ) : (
+                    <p className="text-muted">No patient uploads available.</p>
+               )}
+               {/* Modal for PDF viewing */}
+               {pdfToShow && (
+                    <div
+                         className="modal fade show"
+                         style={{
+                              display: 'block',
+                              backgroundColor: 'rgba(0,0,0,0.6)',
+                              zIndex: 1050
+                         }}
+                         tabIndex="-1"
+                         role="dialog"
+                    >
+                         <div className="modal-dialog modal-xl modal-dialog-centered" role="document">
+                              <div className="modal-content">
+                                   <div className="modal-header">
+                                        <h5 className="modal-title">Viewing PDF</h5>
+                                        <button
+                                             type="button"
+                                             className="btn-close"
+                                             onClick={() => setPdfToShow(null)}
+                                        ></button>
+                                   </div>
+                                   <div className="modal-body">
+                                        <PdfViewer fileUrl={pdfToShow} />
+                                   </div>
+                                   <div className="modal-footer">
+                                        <button
+                                             className="btn btn-secondary"
+                                             onClick={() => setPdfToShow(null)}
+                                        >
+                                             Close
+                                        </button>
+                                   </div>
+                              </div>
+                         </div>
+                    </div>
+               )}
+          </div>
+     );
+};
+
+export default ViewPatientPDF;
