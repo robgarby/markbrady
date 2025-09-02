@@ -131,78 +131,74 @@ export const extractTriglyceride = (text) => {
 
 // SPECIAL: Chol/HDL Ratio (handles line breaks, fused words like "InHDL", unitless, optional 2nd number)
 export const extractCholHdlRatio = (text) => {
-  const t = scrub(text);
-  const blocks = sliceBlocksByHeaders(t, 60000);
-  const NUM = String.raw`([0-9]+(?:\.[0-9]+)?|[0-9]+\.(?![0-9]))`; // accepts "6.4" or "6."
-  const norm = (s) => (s ? s.replace(/\.$/, "") : s);
+    const t = scrub(text);
+    const blocks = sliceBlocksByHeaders(t, 60000);
+    const NUM = String.raw`([0-9]+(?:\.[0-9]+)?|[0-9]+\.(?![0-9]))`; // accepts "6.4" or "6."
+    const norm = (s) => (s ? s.replace(/\.$/, "") : s);
 
-  // Flexible row title:
-  // - Cholesterol/Cholesterol In HDL Ratio
-  // - Cholesterol/Cholesterol InHDL Ratio  (no space)
-  // - Chol/HDL Ratio, Total Cholesterol/HDL-C Ratio, etc.
-  const ROW_TITLE = new RegExp(
-    String.raw`\b(?:Total\s+)?(?:Chol|Cholesterol)\s*\/\s*` +
-      // either "Cholesterol In HDL" with optional spaces **or** just "HDL"/"HDL-C"
-      String.raw`(?:Chol(?:esterol)?\s*In\s*HDL|HDL(?:-C)?)` +
-      // sometimes labs include an extra trailing "Cholesterol"
-      String.raw`(?:\s*Chol(?:esterol)?)?\s*Ratio\b`,
-    "i"
-  );
+    // Flexible row title:
+    // - Cholesterol/Cholesterol In HDL Ratio
+    // - Cholesterol/Cholesterol InHDL Ratio  (no space)
+    // - Chol/HDL Ratio, Total Cholesterol/HDL-C Ratio, etc.
+    const ROW_TITLE = new RegExp(
+        String.raw`\b(?:Total\s+)?(?:Chol|Cholesterol)\s*\/\s*` +
+        // either "Cholesterol In HDL" with optional spaces **or** just "HDL"/"HDL-C"
+        String.raw`(?:Chol(?:esterol)?\s*In\s*HDL|HDL(?:-C)?)` +
+        // sometimes labs include an extra trailing "Cholesterol"
+        String.raw`(?:\s*Chol(?:esterol)?)?\s*Ratio\b`,
+        "i"
+    );
 
-  // Allow an optional parenthetical note line, then value, optional flag, optional second number
-  const VALUE_AFTER_TITLE = new RegExp(
-    String.raw`(?:\([^)]*\)\s*)?` + // e.g., "(None - generic normal range)" possibly split over lines
-    String.raw`${NUM}` +            // first number = ratio
-    String.raw`(?:\s+(N|H|L|NA\.?))?` + // optional flag
-    String.raw`(?:\s+${NUM})?`,     // optional target (e.g., "5.00")
-    "i"
-  );
+    // Allow an optional parenthetical note line, then value, optional flag, optional second number
+    const VALUE_AFTER_TITLE = new RegExp(
+        String.raw`(?:\([^)]*\)\s*)?` + // e.g., "(None - generic normal range)" possibly split over lines
+        String.raw`${NUM}` +            // first number = ratio
+        String.raw`(?:\s+(N|H|L|NA\.?))?` + // optional flag
+        String.raw`(?:\s+${NUM})?`,     // optional target (e.g., "5.00")
+        "i"
+    );
 
-  // 1) Prefer searching inside each header "block"
-  for (const block of blocks) {
-    const hit = block.match(ROW_TITLE);
-    if (!hit) continue;
+    // 1) Prefer searching inside each header "block"
+    for (const block of blocks) {
+        const hit = block.match(ROW_TITLE);
+        if (!hit) continue;
 
-    // Start AFTER the title so we can't grab digits from the title itself
-    const start = (hit.index ?? 0) + hit[0].length;
-    const after = block.slice(start, start + 2000);
+        // Start AFTER the title so we can't grab digits from the title itself
+        const start = (hit.index ?? 0) + hit[0].length;
+        const after = block.slice(start, start + 2000);
 
-    // Direct try (keeps line breaks)
-    let m = after.match(VALUE_AFTER_TITLE);
-    if (m) {
-      return { value: norm(m[1]), flag: (m[2] || "").toUpperCase(), units: "", refRange: norm(m[3] || "") || undefined };
+        // Direct try (keeps line breaks)
+        let m = after.match(VALUE_AFTER_TITLE);
+        if (m) {
+            return { value: norm(m[1]), flag: (m[2] || "").toUpperCase(), units: "", refRange: norm(m[3] || "") || undefined };
+        }
+
+        // Fallback inside the block with whitespace flattened (handles weird line wraps/spaces)
+        const flat = after.replace(/\s+/g, " ");
+        m = flat.match(new RegExp(String.raw`^(?:\([^)]*\)\s*)?${NUM}(?:\s+(N|H|L|NA\.?))?(?:\s+${NUM})?`, "i"));
+        if (m) {
+            return { value: norm(m[1]), flag: (m[2] || "").toUpperCase(), units: "", refRange: norm(m[3] || "") || undefined };
+        }
     }
 
-    // Fallback inside the block with whitespace flattened (handles weird line wraps/spaces)
-    const flat = after.replace(/\s+/g, " ");
-    m = flat.match(new RegExp(String.raw`^(?:\([^)]*\)\s*)?${NUM}(?:\s+(N|H|L|NA\.?))?(?:\s+${NUM})?`, "i"));
-    if (m) {
-      return { value: norm(m[1]), flag: (m[2] || "").toUpperCase(), units: "", refRange: norm(m[3] || "") || undefined };
+    // 2) Global fallback across the whole doc with whitespace flattened
+    const flatAll = t.replace(/\s+/g, " ");
+    const ANYWHERE = new RegExp(
+        String.raw`(?:Total\s+)?(?:Chol|Cholesterol)\s*\/\s*(?:Chol(?:esterol)?\s*In\s*HDL|HDL(?:-C)?)` +
+        String.raw`(?:\s*Chol(?:esterol)?)?\s*Ratio\b\s*` +
+        String.raw`(?:\([^)]*\)\s*)?` +
+        NUM +
+        String.raw`(?:\s+(N|H|L|NA\.?))?` +
+        String.raw`(?:\s+${NUM})?`,
+        "i"
+    );
+    const g = flatAll.match(ANYWHERE);
+    if (g) {
+        return { value: norm(g[1]), flag: (g[2] || "").toUpperCase(), units: "", refRange: norm(g[3] || "") || undefined };
     }
-  }
 
-  // 2) Global fallback across the whole doc with whitespace flattened
-  const flatAll = t.replace(/\s+/g, " ");
-  const ANYWHERE = new RegExp(
-    String.raw`(?:Total\s+)?(?:Chol|Cholesterol)\s*\/\s*(?:Chol(?:esterol)?\s*In\s*HDL|HDL(?:-C)?)` +
-      String.raw`(?:\s*Chol(?:esterol)?)?\s*Ratio\b\s*` +
-      String.raw`(?:\([^)]*\)\s*)?` +
-      NUM +
-      String.raw`(?:\s+(N|H|L|NA\.?))?` +
-      String.raw`(?:\s+${NUM})?`,
-    "i"
-  );
-  const g = flatAll.match(ANYWHERE);
-  if (g) {
-    return { value: norm(g[1]), flag: (g[2] || "").toUpperCase(), units: "", refRange: norm(g[3] || "") || undefined };
-  }
-
-  return { value: null };
+    return { value: null };
 };
-
-
-
-
 
 export const extractA1CStandalone = (text) => {
     const t = scrub(text);
@@ -344,7 +340,6 @@ export const extractGFRStandalone = (text) => {
     return { value: null };
 };
 
-
 // ADD this new dedicated extractor
 export const extractCreatinineSolid = (text) => {
     const t = scrub(text);
@@ -371,8 +366,6 @@ export const extractCreatinineSolid = (text) => {
     }
     return { value: null };
 };
-
-
 
 // REPLACE the numeric parts inside extractNearestHeader with NUM that accepts trailing dot
 export const extractNearestHeader = (text, opts) => {
@@ -426,28 +419,592 @@ export const extractNearestHeader = (text, opts) => {
     return { value: null };
 };
 
+// SPECIAL: Creatine Kinase (CK) — U/L or IU/L; flag optional; trailing-dot numbers OK
+export const extractCreatineKinase = (text) => {
+    const t = scrub(text);
+    const blocks = sliceBlocksByHeaders(t, 60000);
+    if (!blocks.length) return { value: null };
 
+    // number: "250", "250.0", or "250."
+    const NUM = String.raw`([0-9]+(?:\.[0-9]+)?|[0-9]+\.(?![0-9]))`;
+    // title variants: "Creatine Kinase", "Creatine Kinase [CK]", or plain "CK" (not CKD)
+    const TITLE = new RegExp(String.raw`\b(?:Creatine\s+Kinase(?:\s*\[CK\])?|CK)\b(?!D)`, "i");
+    const UNITS = /\b(?:U\/L|IU\/L)\b/i;
 
-/* ------------------ Patient meta (optional) ------------------ */
-export const extractPatientMeta = (raw) => {
-    const cleaned = scrub(raw);
-    const rawName =
-        (cleaned.match(/PATIENT:\s*([A-Z ,.'-]+)\s*\|/i)?.[1] ||
-            cleaned.match(/^([A-Z ,.'-]+)\s+DOB:/m)?.[1] ||
-            "").trim();
-    const parts = rawName.split(",");
-    const name = parts.length > 1 ? `${parts[1].trim()} ${parts[0].trim()}` : rawName;
+    for (const block of blocks) {
+        const th = block.match(TITLE);
+        if (!th) continue;
+        const after = block.slice((th.index ?? 0) + th[0].length, (th.index ?? 0) + th[0].length + 1200);
 
-    return {
-        name,
-        healthNumber: (cleaned.match(/HCN:\s*([\d ]{10,})/)?.[1] || "").replace(/\s+/g, "").trim(),
-        dateOfBirth: (cleaned.match(/DOB:\s*([0-9]{1,2} [A-Za-z]+ \d{4})/)?.[1] || "").trim(),
-        sex: (cleaned.match(/\bFemale\b|\bMale\b/i)?.[0] || "").trim(),
-        providerName: (cleaned.match(/Ordering Provider\s+([A-Z ,.-]+)/i)?.[1] || "").trim(),
-        providerNumber: (cleaned.match(/\(MDL\s+(\d+)\)/i)?.[1] || null),
-        orderDate: (cleaned.match(/Order Date\s+(\d{1,2} [A-Za-z]+ \d{4})/i)?.[1] || "").trim(),
-    };
+        const m = after.match(new RegExp(
+            String.raw`(?:\([^)]*\)\s*)?` + // optional note line
+            NUM +                            // value
+            String.raw`(?:\s+(N|H|L|NA\.?))?`, "i"
+        ));
+        if (!m) continue;
+
+        // require units soon after to avoid narrative hits
+        const tail = after.slice(m.index ?? 0, (m.index ?? 0) + 200);
+        if (!UNITS.test(tail)) continue;
+
+        const around = tail;
+        return {
+            value: m[1].replace(/\.$/, ""),
+            flag: (m[2] || "").toUpperCase(),
+            units: (tail.match(UNITS) || [""])[0],
+            refRange: grabRefRange(around),
+        };
+    }
+    return { value: null };
 };
+
+// SPECIAL: Alanine Aminotransferase (ALT) — U/L or IU/L; handles "Aminotransaminase" header; flag optional
+export const extractALTSolid = (text) => {
+    const t = scrub(text);
+    const blocks = sliceBlocksByHeaders(t, 60000);
+    if (!blocks.length) return { value: null };
+
+    const NUM = String.raw`([0-9]+(?:\.[0-9]+)?|[0-9]+\.(?![0-9]))`;
+    // Accept: "Alanine Aminotransferase", "Alanine Aminotransaminase", optional [ALT], or lone "ALT"
+    const TITLE = /\b(?:Alanine\s+Aminotrans(?:ferase|aminase)(?:\s*\[ALT\])?|ALT)\b/i;
+    const UNITS = /\b(?:U\/L|IU\/L)\b/i;
+
+    for (const block of blocks) {
+        const th = block.match(TITLE);
+        if (!th) continue;
+        const after = block.slice((th.index ?? 0) + th[0].length, (th.index ?? 0) + th[0].length + 1200);
+
+        const m = after.match(new RegExp(
+            String.raw`(?:\([^)]*\)\s*)?` + // optional note line
+            NUM +                            // value
+            String.raw`(?:\s+(N|H|L|NA\.?))?`, "i"
+        ));
+        if (!m) continue;
+
+        const tail = after.slice(m.index ?? 0, (m.index ?? 0) + 240);
+        if (!UNITS.test(tail)) continue;
+
+        const around = tail;
+        return {
+            value: m[1].replace(/\.$/, ""),
+            flag: (m[2] || "").toUpperCase(),
+            units: (tail.match(UNITS) || [""])[0],
+            refRange: grabRefRange(around),
+        };
+    }
+    return { value: null };
+};
+
+// SPECIAL: Urea — mmol/L or mg/dL; avoids "Urate"; flag optional
+export const extractUreaSolid = (text) => {
+    const t = scrub(text);
+    const blocks = sliceBlocksByHeaders(t, 60000);
+    if (!blocks.length) return { value: null };
+
+    const NUM = String.raw`([0-9]+(?:\.[0-9]+)?|[0-9]+\.(?![0-9]))`;
+
+    // Two passes:
+    //  1) "Urea" (common in Canadian reports, mmol/L)
+    //  2) "Urea Nitrogen" or "BUN" (may be mg/dL or mmol/L)
+    const TITLE_UREA = /\bUrea\b(?!\s*Nitrogen)\b/i;
+    const TITLE_BUN = /\b(?:Urea\s+Nitrogen|BUN)\b/i;
+    const UNITS_UREA = /\bmmol\/L\b/i;
+    const UNITS_BUN = /\b(?:mg\/dL|mmol\/L)\b/i;
+
+    // helper to search with a given title + units
+    const findWith = (titleRe, unitsRe) => {
+        for (const block of blocks) {
+            const th = block.match(titleRe);
+            if (!th) continue;
+            const after = block.slice((th.index ?? 0) + th[0].length, (th.index ?? 0) + th[0].length + 1200);
+
+            const m = after.match(new RegExp(
+                String.raw`(?:\([^)]*\)\s*)?` + // optional note line
+                NUM +                            // value
+                String.raw`(?:\s+(N|H|L|NA\.?))?`, "i"
+            ));
+            if (!m) continue;
+
+            const tail = after.slice(m.index ?? 0, (m.index ?? 0) + 240);
+            if (!unitsRe.test(tail)) continue;
+
+            const around = tail;
+            return {
+                value: m[1].replace(/\.$/, ""),
+                flag: (m[2] || "").toUpperCase(),
+                units: (tail.match(unitsRe) || [""])[0],
+                refRange: grabRefRange(around),
+            };
+        }
+        return null;
+    };
+
+    return findWith(TITLE_UREA, UNITS_UREA) || findWith(TITLE_BUN, UNITS_BUN) || { value: null };
+};
+
+// ---- NEW: Lipoprotein(a) / Lp(a) ------------------------------------------
+export const extractLipoproteinA = (text) => {
+    const t = scrub(text);
+    const blocks = sliceBlocksByHeaders(t, 60000);
+    if (!blocks.length) return { value: null };
+    const NUM = String.raw`([0-9]+(?:\.[0-9]+)?|[0-9]+\.(?![0-9]))`;
+    const TITLE = /\b(?:Lipoprotein\s*\(?a\)?|Lp\(?a\)?)\b/i;
+    const UNITS = /\b(?:nmol\/L|mg\/dL)\b/i;
+
+    for (const block of blocks) {
+        const th = block.match(TITLE);
+        if (!th) continue;
+        const after = block.slice((th.index ?? 0) + th[0].length, (th.index ?? 0) + th[0].length + 1400);
+        const m = after.match(new RegExp(String.raw`(?:\([^)]*\)\s*)?${NUM}(?:\s+(N|H|L|NA\.?))?`, "i"));
+        if (!m) continue;
+        const tail = after.slice(m.index ?? 0, (m.index ?? 0) + 240);
+        if (!UNITS.test(tail)) continue;
+        const around = tail;
+        return {
+            value: m[1].replace(/\.$/, ""),
+            flag: (m[2] || "").toUpperCase(),
+            units: (tail.match(UNITS) || [""])[0],
+            refRange: grabRefRange(around),
+        };
+    }
+    return { value: null };
+};
+
+// ---- NEW: Apolipoprotein B / Apo B ----------------------------------------
+export const extractApolipoproteinB = (text) => {
+    const t = scrub(text);
+    const blocks = sliceBlocksByHeaders(t, 60000);
+    if (!blocks.length) return { value: null };
+    const NUM = String.raw`([0-9]+(?:\.[0-9]+)?|[0-9]+\.(?![0-9]))`;
+    const TITLE = /\b(?:Apolipoprotein\s*B|Apo\s*B)\b/i;
+    const UNITS = /\b(?:g\/L|mg\/dL)\b/i;
+
+    for (const block of blocks) {
+        const th = block.match(TITLE);
+        if (!th) continue;
+        const after = block.slice((th.index ?? 0) + th[0].length, (th.index ?? 0) + th[0].length + 1400);
+        const m = after.match(new RegExp(String.raw`(?:\([^)]*\)\s*)?${NUM}(?:\s+(N|H|L|NA\.?))?`, "i"));
+        if (!m) continue;
+        const tail = after.slice(m.index ?? 0, (m.index ?? 0) + 240);
+        if (!UNITS.test(tail)) continue;
+        const around = tail;
+        return {
+            value: m[1].replace(/\.$/, ""),
+            flag: (m[2] || "").toUpperCase(),
+            units: (tail.match(UNITS) || [""])[0],
+            refRange: grabRefRange(around),
+        };
+    }
+    return { value: null };
+};
+
+// ---- NEW: BNP (B-type natriuretic peptide) --------------------------------
+export const extractBNP = (text) => {
+    const t = scrub(text);
+    const blocks = sliceBlocksByHeaders(t, 60000);
+    if (!blocks.length) return { value: null };
+    const NUM = String.raw`([0-9]+(?:\.[0-9]+)?|[0-9]+\.(?![0-9]))`;
+    // include common variants; if you want to EXCLUDE NT-proBNP, remove it here
+    const TITLE = /\b(?:BNP|B-?\s*type\s+Natriuretic\s+Peptide|pro-?BNP|NT-?proBNP)\b/i;
+    const UNITS = /\b(?:ng\/L|pg\/mL)\b/i;
+
+    for (const block of blocks) {
+        const th = block.match(TITLE);
+        if (!th) continue;
+        const after = block.slice((th.index ?? 0) + th[0].length, (th.index ?? 0) + th[0].length + 1600);
+        const m = after.match(new RegExp(String.raw`(?:\([^)]*\)\s*)?${NUM}(?:\s+(N|H|L|NA\.?))?`, "i"));
+        if (!m) continue;
+        const tail = after.slice(m.index ?? 0, (m.index ?? 0) + 260);
+        if (!UNITS.test(tail)) continue;
+        const around = tail;
+        return {
+            value: m[1].replace(/\.$/, ""),
+            flag: (m[2] || "").toUpperCase(),
+            units: (tail.match(UNITS) || [""])[0],
+            refRange: grabRefRange(around),
+        };
+    }
+    return { value: null };
+};
+
+// ---- NEW: Albumin (SERUM) --------------------------------------------------
+export const extractAlbuminSerum = (text) => {
+    const t = scrub(text);
+    const blocks = sliceBlocksByHeaders(t, 60000);
+    if (!blocks.length) return { value: null };
+    const NUM = String.raw`([0-9]+(?:\.[0-9]+)?|[0-9]+\.(?![0-9]))`;
+    const TITLE = /\bAlbumin\b/i;           // units will disambiguate from urine
+    const UNITS = /\bg\/L\b/i;              // serum uses g/L
+
+    for (const block of blocks) {
+        const th = block.match(TITLE);
+        if (!th) continue;
+        const after = block.slice((th.index ?? 0) + th[0].length, (th.index ?? 0) + th[0].length + 1000);
+        const m = after.match(new RegExp(String.raw`(?:\([^)]*\)\s*)?${NUM}(?:\s+(N|H|L|NA\.?))?`, "i"));
+        if (!m) continue;
+        const tail = after.slice(m.index ?? 0, (m.index ?? 0) + 200);
+        if (!UNITS.test(tail)) continue;      // avoids "Albumin; Urine" (mg/L)
+        const around = tail;
+        return {
+            value: m[1].replace(/\.$/, ""),
+            flag: (m[2] || "").toUpperCase(),
+            units: (tail.match(UNITS) || [""])[0],
+            refRange: grabRefRange(around),
+        };
+    }
+    return { value: null };
+};
+
+// ---- NEW: Vitamin B12 (Cobalamins) ----------------------------------------
+export const extractVitaminB12 = (text) => {
+    const t = scrub(text);
+    const blocks = sliceBlocksByHeaders(t, 60000);
+    if (!blocks.length) return { value: null };
+    const NUM = String.raw`([0-9]+(?:\.[0-9]+)?|[0-9]+\.(?![0-9]))`;
+    const TITLE = /\bVitamin\s*B\s*12\b/i;
+    const UNITS = /\bpmol\/L\b/i;
+
+    for (const block of blocks) {
+        const th = block.match(TITLE);
+        if (!th) continue;
+        const after = block.slice((th.index ?? 0) + th[0].length, (th.index ?? 0) + th[0].length + 1000);
+        const m = after.match(new RegExp(String.raw`(?:\([^)]*\)\s*)?${NUM}(?:\s+(N|H|L|NA\.?))?`, "i"));
+        if (!m) continue;
+        const tail = after.slice(m.index ?? 0, (m.index ?? 0) + 240);
+        if (!UNITS.test(tail)) continue;
+        const around = tail;
+        return {
+            value: m[1].replace(/\.$/, ""),
+            flag: (m[2] || "").toUpperCase(),
+            units: (tail.match(UNITS) || [""])[0],
+            refRange: grabRefRange(around),
+        };
+    }
+    return { value: null };
+};
+
+// ---- NEW: Ferritin ---------------------------------------------------------
+export const extractFerritinSolid = (text) => {
+    const t = scrub(text);
+    const blocks = sliceBlocksByHeaders(t, 60000);
+    if (!blocks.length) return { value: null };
+    const NUM = String.raw`([0-9]+(?:\.[0-9]+)?|[0-9]+\.(?![0-9]))`;
+    const TITLE = /\bFerritin\b/i;
+    const UNITS = /\bug\/L\b/i;
+
+    for (const block of blocks) {
+        const th = block.match(TITLE);
+        if (!th) continue;
+        const after = block.slice((th.index ?? 0) + th[0].length, (th.index ?? 0) + th[0].length + 1200);
+        const m = after.match(new RegExp(String.raw`(?:\([^)]*\)\s*)?${NUM}(?:\s+(N|H|L|NA\.?))?`, "i"));
+        if (!m) continue;
+        const tail = after.slice(m.index ?? 0, (m.index ?? 0) + 260);
+        if (!UNITS.test(tail)) continue;
+        const around = tail;
+        return {
+            value: m[1].replace(/\.$/, ""),
+            flag: (m[2] || "").toUpperCase(),
+            units: (tail.match(UNITS) || [""])[0],
+            refRange: grabRefRange(around),
+        };
+    }
+    return { value: null };
+};
+
+// ---- NEW: Albumin; Urine (Urine Albumin) -----------------------------------
+// ---- FIXED: Albumin; Urine (Urine Albumin) — skip detection-limit like "< 20" / "≤ 20" -----------------
+// ---- FIXED: Albumin; Urine (Urine Albumin) — skip "< 5", "≤ 20", detection-limit contexts ----
+export const extractUrineAlbumin = (text) => {
+  const t = scrub(text);
+  const blocks = sliceBlocksByHeaders(t, 60000);
+  if (!blocks.length) return { value: null };
+
+  const NUM = String.raw`([0-9]+(?:\.[0-9]+)?|[0-9]+\.(?![0-9]))`;
+  const TITLE = /\b(?:Albumin;\s*Urine|Urine\s+Albumin)\b/i; // row title
+  const UNITS = /\bmg\/L\b/i;
+
+  // Helper: does the region look like a detection-limit statement?
+  const isDetectionCtx = (s) =>
+    /(detection\s*limit|less\s*than|below\s*limit|unable\s*to\s*calculate)/i.test(s);
+
+  for (const block of blocks) {
+    const th = block.match(TITLE);
+    if (!th) continue;
+
+    // Scan after the title for number + mg/L pairs
+    const after = block.slice((th.index ?? 0) + th[0].length, (th.index ?? 0) + th[0].length + 1600);
+
+    // Capture optional comparator + value, optional flag, then require mg/L nearby
+    const RE = new RegExp(
+      String.raw`([<≤>]=?)?\s*${NUM}(?:\s+(N|H|L|NA\.?))?[\s\S]{0,100}?mg\/L`,
+      "ig"
+    );
+
+    let m;
+    while ((m = RE.exec(after)) !== null) {
+      const op = (m[1] || "").trim();                     // "<", "≤", ">", ">=", etc.
+      const valStr = (m[2] || "").replace(/\.$/, "");     // "5." -> "5"
+      const valNum = parseFloat(valStr);
+      const ctx = after.slice(Math.max(0, m.index - 80), Math.min(after.length, m.index + m[0].length + 80));
+
+      // If it's a detection-limit style (e.g., "≤ 20 mg/L") OR an explicit "< 5" value → treat as NOT DETECTED (blank)
+      if (op === "<" || op === "≤" || isDetectionCtx(ctx) || (!Number.isNaN(valNum) && op === "<" && valNum <= 5)) {
+        continue; // skip and keep looking for a real measurement
+      }
+
+      // Must truly be mg/L
+      if (!UNITS.test(m[0])) continue;
+
+      // Found a real numeric measurement — return it
+      return {
+        value: valStr,
+        flag: (m[3] || "").toUpperCase(),
+        units: "mg/L",
+        refRange: grabRefRange(ctx),
+      };
+    }
+  }
+  // No acceptable measurement found → blank
+  return { value: null };
+};
+
+
+
+// SPECIAL: Albumin/Creatinine Ratio (ACR) — unitless value, requires mg/mmol (…creat/creatinine/Cr)
+// Handles: "Albumin/Creatinine Ratio; Urine", "Urine Albumin/Creatinine Ratio", "Albumin:Creatinine Ratio", "ACR"
+export const extractACR = (text) => {
+  const t = scrub(text);
+  const blocks = sliceBlocksByHeaders(t, 60000);
+  if (!blocks.length) return { value: null };
+
+  const NUM = String.raw`([0-9]+(?:\.[0-9]+)?|[0-9]+\.(?![0-9]))`;   // accepts "0.9" and "0.9."
+  const norm = (s) => (s ? s.replace(/\.$/, "") : s);
+
+  // Title variants seen in Ontario-style reports
+  const TITLE_VARIANTS = [
+    /\bAlbumin\s*\/\s*Creatinine\s*Ratio\b/i,
+    /\bAlbumin\s*(?:to|:)\s*Creatinine\s*Ratio\b/i,
+    /\bUrine\s+Albumin\s*\/\s*Creatinine\s*Ratio\b/i,
+    /\bAlbumin\/Creatinine\s*Ratio;\s*Urine\b/i,
+    /\bACR\b/i, // short form
+  ];
+
+  // Units: mg/mmol (optionally followed by creat/creatinine/Cr, with punctuation/spacing quirks)
+  const UNITS_RE = /\bmg\s*\/\s*mmol(?:\s*(?:creat(?:inine)?|cr)\.?)?$/i;
+
+  // After the title: optional note line, FIRST number = value, optional flag, optional second number (often target)
+  const VALUE_RE = new RegExp(
+    String.raw`(?:\([^)]*\)\s*)?` +        // e.g., "(None - generic normal range)"
+    String.raw`${NUM}` +                   // ACR value
+    String.raw`(?:\s+(N|H|L|NA\.?))?` +    // optional flag
+    String.raw`(?:\s+${NUM})?`,            // optional target (e.g., "3.0")
+    "i"
+  );
+
+  // 1) Prefer searching inside each header/table block
+  for (const block of blocks) {
+    // find the first matching title in this block
+    let titleEnd = -1;
+    for (const TR of TITLE_VARIANTS) {
+      const m = block.match(TR);
+      if (m) { titleEnd = (m.index ?? 0) + m[0].length; break; }
+    }
+    if (titleEnd < 0) continue;
+
+    // Start AFTER the title to avoid catching digits inside the title itself
+    const after = block.slice(titleEnd, titleEnd + 2000);
+
+    // Direct match (keeps line breaks)
+    let m = after.match(VALUE_RE);
+    // Fallback with flattened whitespace (handles hard line wraps & fused words)
+    if (!m) {
+      const flat = after.replace(/\s+/g, " ");
+      m = flat.match(VALUE_RE);
+      if (m) {
+        // rebuild a local "tail" from the unflattened string near the numeric hit
+        const idx = Math.max(0, after.search(/[0-9]/)); // rough vicinity
+        const tail = after.slice(idx, idx + 700).replace(/\s+/g, " ");
+        if (!UNITS_RE.test(tail)) continue;
+        const unitMatch = tail.match(UNITS_RE);
+        const ref = grabRefRange(tail);
+        return { value: norm(m[1]), flag: (m[2] || "").toUpperCase(), units: (unitMatch ? unitMatch[0] : "mg/mmol"), refRange: ref || norm(m[3] || "") || undefined };
+      }
+    }
+
+    if (m) {
+      // confirm units appear near the hit
+      const tail = after.slice(m.index ?? 0, (m.index ?? 0) + 700).replace(/\s+/g, " ");
+      if (!UNITS_RE.test(tail)) continue;
+      const unitMatch = tail.match(UNITS_RE);
+      const ref = grabRefRange(tail);
+      return {
+        value: norm(m[1]),
+        flag: (m[2] || "").toUpperCase(),
+        units: (unitMatch ? unitMatch[0] : "mg/mmol"),
+        refRange: ref || norm(m[3] || "") || undefined,
+      };
+    }
+  }
+
+  // 2) Global fallback (flattened) in case the row sits outside our slices
+  const flatAll = t.replace(/\s+/g, " ");
+  const ANYWHERE = new RegExp(
+    String.raw`(?:Albumin\s*\/\s*Creatinine\s*Ratio|Albumin\s*(?:to|:)\s*Creatinine\s*Ratio|Urine\s+Albumin\s*\/\s*Creatinine\s*Ratio|ACR)\b\s*` +
+    String.raw`(?:\([^)]*\)\s*)?` +
+    NUM + String.raw`(?:\s+(N|H|L|NA\.?))?` + String.raw`(?:\s+` + NUM + String.raw`)?\s*` +
+    String.raw`mg\s*\/\s*mmol(?:\s*(?:creat(?:inine)?|cr)\.?)?`,
+    "i"
+  );
+  const g = flatAll.match(ANYWHERE);
+  if (g) {
+    // Find the first unit instance after the numeric to return a clean unit string
+    const unitHit = g[0].match(/\bmg\s*\/\s*mmol(?:\s*(?:creat(?:inine)?|cr)\.?)?\b/i);
+    return {
+      value: norm(g[1]),
+      flag: (g[2] || "").toUpperCase(),
+      units: (unitHit ? unitHit[0] : "mg/mmol"),
+      refRange: norm(g[3] || "") || undefined,
+    };
+  }
+
+  return { value: null };
+};
+
+// -- Address & telephone from PATIENT panel (two-line "Address" format) --
+const extractPatientAddressFromPanel = (panel) => {
+  const norm = (s) => (s || "").replace(/\s+/g, " ").trim();
+
+  const normalizePostal = (pcRaw) => {
+    const m = (pcRaw || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    // K0B 1B0 style
+    return /^[A-Z]\d[A-Z]\d[A-Z]\d$/.test(m) ? `${m.slice(0, 3)} ${m.slice(3)}` : "";
+  };
+
+  // Telephone: supports "Telephone 613-..." or line-break after label; trim stray trailing punctuation
+  const telMatchSame = panel.match(/Telephone\s+([+0-9()\-\s]{7,})(?:\s*\(Home\)|\s*\(.*?\))?/i);
+  const telMatchNext = panel.match(/Telephone\s*\n\s*([+0-9()\-\s]{7,})(?:\s*\(.*?\))?/i);
+  let telephone = norm((telMatchSame?.[1] || telMatchNext?.[1] || ""));
+  telephone = telephone.replace(/[^\d+)]*$/g, "").replace(/\s+$/, "");
+
+  // Address label can be "Address" or "Address:" and may have "(Home)" on the label line
+  // Expect two lines after the label:
+  //   Line 1: street
+  //   Line 2: CITY PROV POSTAL  (commas optional, city can be multi-word)
+  const addrBlock =
+    panel.match(/Address:?(?:\s*\(Home\))?\s*\n([^\n]+)\n([^\n]+)(?:\s*\(Home\))?/i) ||
+    panel.match(/Address:?(?:\s*\(Home\))?\s*\n\s*\n([^\n]+)\n([^\n]+)(?:\s*\(Home\))?/i);
+
+  let street = "", city = "", province = "", postalCode = "", fullAddress = "";
+
+  if (addrBlock) {
+    street = norm(addrBlock[1] || "");
+    const line2 = norm(addrBlock[2] || "");
+
+    // Preferred: "CITY PROV POSTAL"
+    let m = line2.match(/^(.+?)\s+([A-Z]{2})\s+([A-Z]\d[A-Z][ -]?\d[A-Z]\d)$/i);
+    if (m) {
+      city = norm(m[1]);
+      province = m[2].toUpperCase();
+      postalCode = normalizePostal(m[3]);
+    } else {
+      // Variants: "CITY, PROV POSTAL" or odd spacing
+      m = line2.match(/^(.+?)[,\s]+([A-Z]{2})[,\s]+([A-Z]\d[A-Z][ -]?\d[A-Z]\d)$/i);
+      if (m) {
+        city = norm(m[1]);
+        province = m[2].toUpperCase();
+        postalCode = normalizePostal(m[3]);
+      } else {
+        // Last resort: find PROV + POSTAL anywhere; left side is city
+        const pp = line2.match(/\b([A-Z]{2})\b\s+([A-Z]\d[A-Z][ -]?\d[A-Z]\d)/i);
+        if (pp) {
+          province = pp[1].toUpperCase();
+          postalCode = normalizePostal(pp[2]);
+          city = norm(line2.slice(0, pp.index).replace(/[,\s]+$/g, ""));
+        } else {
+          // keep data if unparsable
+          city = line2;
+        }
+      }
+    }
+
+    fullAddress = [street, [city, province].filter(Boolean).join(" "), postalCode]
+      .filter(Boolean)
+      .join(", ");
+  }
+
+  return { street, city, province, postalCode, telephone, fullAddress };
+};
+
+// ===================== extractPatientMeta (paste this once) =====================
+export const extractPatientMeta = (raw) => {
+  const cleaned = scrub(raw);
+
+  // Narrow to the PATIENT panel to avoid facility/provider addresses
+  const patStart = cleaned.search(/\bPATIENT\b/i);
+  const provStart = cleaned.search(/\bPROVIDER\b/i);
+  const patPanel =
+    patStart >= 0
+      ? cleaned.slice(patStart, provStart > patStart ? provStart : patStart + 2000)
+      : cleaned;
+
+  // Name (prefer "PATIENT: LAST, FIRST |", else "Patient LAST, FIRST")
+  const rawName =
+    (patPanel.match(/PATIENT:\s*([A-Z ,.'-]+)\s*\|/i)?.[1] ||
+      patPanel.match(/\bPatient\s+([A-Z ,.'-]+)\b/i)?.[1] ||
+      cleaned.match(/^([A-Z ,.'-]+)\s+DOB:/m)?.[1] ||
+      "").trim();
+  const parts = rawName.split(",");
+  const name = parts.length > 1 ? `${parts[1].trim()} ${parts[0].trim()}` : rawName;
+
+  // ✅ Address + Telephone using the robust two-line parser
+  const { street, city, province, postalCode, telephone, fullAddress } =
+    extractPatientAddressFromPanel(patPanel);
+
+  return {
+    // Core identity
+    name,
+
+    // Dates / sex
+    dateOfBirth:
+      (patPanel.match(/Date of Birth\s+([0-9]{1,2} [A-Za-z]+ \d{4})/i)?.[1] || "").trim(),
+    sex: (patPanel.match(/Sex\s+(Female|Male)/i)?.[1] || "").trim(),
+
+    // Contact / identifiers
+    telephone,
+    healthNumber: (() => {
+      const hcn =
+        cleaned.match(/HCN:\s*([\d ]{10,})/)?.[1] ||
+        patPanel.match(/\bONTARIO Health Number\s+([\d ]{10,})/i)?.[1] ||
+        "";
+      const digits = hcn.replace(/\D+/g, "").slice(0, 10);
+      return digits ? `${digits.slice(0, 4)} ${digits.slice(4, 7)} ${digits.slice(7, 10)}` : "";
+    })(),
+
+    // ✅ Address fields (your 'address' field is the street line)
+    address: street,
+    street,
+    city,
+    province,
+    postalCode,
+    fullAddress,
+
+    // Provider info (unchanged)
+    providerName:
+      (cleaned.match(/Ordering Provider\s+([A-Z ,.'-]+)/i)?.[1] ||
+        cleaned.match(/Provider\s+([A-Z ,.'-]+)\s+\(MDL/i)?.[1] ||
+        "").trim(),
+    providerNumber: cleaned.match(/\(MDL\s+(\d+)\)/i)?.[1] || null,
+
+    // Order / last updated (unchanged)
+    orderDate:
+      (cleaned.match(/Order Date\s+([0-9]{1,2} [A-Za-z]+ \d{4})/i)?.[1] || "").trim(),
+    lastUpdated:
+      (cleaned.match(/Last Updated(?: in OLIS)?:?\s+([0-9]{1,2} [A-Za-z]+ \d{4}(?: \d{2}:\d{2}(?::\d{2})?)?)/i)?.[1] ||
+        "").trim(),
+  };
+};
+
+
 
 /* ------------------ Registry / one-call runner ------------------ */
 const LIPID_UNITS = ["mmol/L"];
@@ -469,9 +1026,19 @@ export const EXTRACTORS = {
     potassium: (t) => extractNearestHeader(t, { aliases: ["Potassium"], allowedUnits: ["mmol/L"] }),
     calcium: (t) => extractNearestHeader(t, { aliases: ["Calcium"], allowedUnits: ["mmol/L"] }),
     gfr: (t) => extractGFRStandalone(t),
+    creatineKinase: (t) => extractCreatineKinase(t),
+    alanineAminotransferase: (t) => extractALTSolid(t),
+    urea: (t) => extractUreaSolid(t),
+    lipoproteinA: (t) => extractLipoproteinA(t),
+    apolipoproteinB: (t) => extractApolipoproteinB(t),
+    bnp: (t) => extractBNP(t),
+
+    albumin: (t) => extractAlbuminSerum(t),    // serum albumin (g/L)
+    vitaminB12: (t) => extractVitaminB12(t),   // pmol/L
+    ferritin: (t) => extractFerritinSolid(t),  // ug/L
+    urineAlbumin: (t) => extractUrineAlbumin(t),
+    albuminCreatinineRatio: (t) => extractACR(t),
 };
-
-
 
 // Convenience: run everything and return a {key:value} map
 export const runAllExtractors = (text) =>

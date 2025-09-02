@@ -6,20 +6,25 @@ import PatientDetails from '../DisplayPatient/displayPatient.component';
 import LabResultsEditor from '../DisplayPatient/editPatient.component';
 import PatientSummary from '../DisplayPatient/viewPatientPDF.component';
 import PatientFilesUpload from '../DisplayPatient/patientUploadPDF';
+import PrintLabView from '../DisplayPatient/displayPrintView.component';
 
 const DisplayBox = () => {
+  const { visibleBox } = useGlobalContext();
+  const isPrintView = visibleBox === 'printView';
 
-     const {visibleBox } = useGlobalContext();
-
-    return (
-        <div className='p-3 alert-light vh-100' style={{ width: '100%', height: '100%' }}>
-            {visibleBox === 'VerifyCount' && <PatientSearch />}
-            {visibleBox === 'ClientDetails' && <PatientDetails />}
-            {visibleBox === 'EditLab' && <LabResultsEditor />}
-            {visibleBox === 'pdfViewer' && <PatientSummary />}
-            {visibleBox === 'uploadPDF' && <PatientFilesUpload />}
-        </div>
-    );
+  return (
+    <div
+      className={isPrintView ? '' : 'p-3 alert-light vh-100'}
+      style={isPrintView ? { width: '100%', height: 'auto', background: '#fff' } : { width: '100%', height: '100%' }}
+    >
+      {visibleBox === 'VerifyCount' && <PatientSearch />}
+      {visibleBox === 'ClientDetails' && <PatientDetails />}
+      {visibleBox === 'EditLab' && <LabResultsEditor />}
+      {visibleBox === 'pdfViewer' && <PatientSummary />}
+      {visibleBox === 'uploadPDF' && <PatientFilesUpload />}
+      {visibleBox === 'printView' && <PrintLabView />}
+    </div>
+  );
 };
 
 export default DisplayBox;

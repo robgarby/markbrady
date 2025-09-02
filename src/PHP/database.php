@@ -21,6 +21,246 @@ $data = json_decode($input, true);
 
 // print_r($data); // Debugging: Output the received data
 // exit;
+
+function insertNewClient($data, $conn)
+{
+     $patient = $data['patient'];
+     // Extract patient fields
+     $name = $patient['name'];
+     $healthNumber = $patient['healthNumber'];
+     $sex = $patient['sex'];
+     $dateOfBirth = date('Y-m-d', strtotime($patient['dateOfBirth']));
+     $address = $patient['address'];
+     $street = $patient['street'];
+     $city = $patient['city'];
+     $province = $patient['province'];
+     $postalCode = $patient['postalCode'];
+     $telephone = $patient['telephone'];
+     $fullAddress = $patient['fullAddress'];
+     $clientName = $name;
+     $clientStatus = 'new';
+
+     $providerName = $patient['providerName'];
+     $providerNumber = $patient['providerNumber'];
+     $orderDate = date('Y-m-d', strtotime($patient['orderDate']));
+     $labResults = $patient['labResults'];
+
+     // Helper function
+     $getVal = function ($arr, $key) {
+          return isset($arr[$key]) && is_numeric($arr[$key]) ? $arr[$key] : 'NULL';
+     };
+
+     // Create INSERT query with full field list
+     $sql = "INSERT INTO Patient (
+          clientName, clientStatus, healthNumber, sex, dateOfBirth,
+          `address`, `street`, `city`, `province`, `postalCode`, `fullAddress`, `telephone`,
+          `providerName`, `providerNumber`, `orderDate`,
+          `cholesterol`, `cholesterolDate`,
+          `triglyceride`, `triglycerideDate`,
+          `hdl`, `hdlDate`,
+          `ldl`, `ldlDate`,
+          nonHdl, nonHdlDate,
+          cholesterolHdlRatio, cholesterolHdlRatioDate,
+          creatineKinase, creatineKinaseDate,
+          alanineAminotransferase, alanineAminotransferaseDate,
+          lipoproteinA, lipoproteinADate,
+          apolipoproteinB, apolipoproteinBDate,
+          natriureticPeptideB, natriureticPeptideBDate,
+          urea, ureaDate,
+          creatinine, creatinineDate,
+          gfr, gfrDate,
+          albumin, albuminDate,
+          sodium, sodiumDate,
+          potassium, potassiumDate,
+          vitaminB12, vitaminB12Date,
+          ferritin, ferritinDate,
+          hemoglobinA1C, hemoglobinA1CDate,
+          urineAlbumin,urineAlbuminDate,
+          albuminCreatinineRatio,albuminCreatinineRatioDate
+     ) VALUES (
+          '%s', '%s', '%s', '%s', '%s',
+          '%s', '%s', '%s', '%s', '%s', '%s', '%s',
+          '%s', '%s', '%s',
+          %s, '%s',
+          %s, '%s',
+          %s, '%s',
+          %s, '%s',
+          %s, '%s',
+          %s, '%s',
+          %s, '%s',
+          %s, '%s',
+          %s, '%s',
+          %s, '%s',
+          %s, '%s',
+          %s, '%s',
+          %s, '%s',
+          %s, '%s',
+          %s, '%s',
+          %s, '%s',
+          %s, '%s',
+          %s, '%s',
+          %s, '%s',
+          %s, '%s',
+          %s, '%s',
+          %s, '%s'
+     )";
+
+     $testSql = sprintf(
+          $sql,
+          $clientName,
+          $clientStatus,
+          $healthNumber,
+          $sex,
+          $dateOfBirth,
+          $address,
+          $street,
+          $city,
+          $province,
+          $postalCode,
+          $fullAddress,
+          $telephone,
+          $providerName,
+          $providerNumber,
+          $orderDate,
+
+          $getVal($labResults, 'cholesterol'),
+          $orderDate,
+          $getVal($labResults, 'triglyceride'),
+          $orderDate,
+          $getVal($labResults, 'hdl'),
+          $orderDate,
+          $getVal($labResults, 'ldl'),
+          $orderDate,
+          $getVal($labResults, 'nonHdl'),
+          $orderDate,
+          $getVal($labResults, 'cholesterolHdlRatio'),
+          $orderDate,
+          $getVal($labResults, 'creatineKinase'),
+          $orderDate,
+          $getVal($labResults, 'alanineAminotransferase'),
+          $orderDate,
+          $getVal($labResults, 'lipoproteinA'),
+          $orderDate,
+          $getVal($labResults, 'apolipoproteinB'),
+          $orderDate,
+          $getVal($labResults, 'natriureticPeptideB'),
+          $orderDate,
+          $getVal($labResults, 'urea'),
+          $orderDate,
+          $getVal($labResults, 'creatinine'),
+          $orderDate,
+          $getVal($labResults, 'gfr'),
+          $orderDate,
+          $getVal($labResults, 'albumin'),
+          $orderDate,
+          $getVal($labResults, 'sodium'),
+          $orderDate,
+          $getVal($labResults, 'potassium'),
+          $orderDate,
+          $getVal($labResults, 'vitaminB12'),
+          $orderDate,
+          $getVal($labResults, 'ferritin'),
+          $orderDate,
+          $getVal($labResults, 'hemoglobinA1C'),
+          $orderDate,
+          $getVal($labResults, 'urineAlbumin'),
+          $orderDate,
+          $getVal($labResults, 'albuminCreatinineRatio'),
+          $orderDate
+     );
+     // Run insert
+     $insert = $conn->query($testSql);
+
+     // History logging
+     $historySql = "INSERT INTO Patient_History (
+          clientName, clientStatus, healthNumber, sex, dateOfBirth,
+          `address`, `street`, `city`, `province`, `postalCode`, `fullAddress`, `telephone`,
+          providerName, providerNumber, orderDate,
+          cholesterol, cholesterolDate,
+          triglyceride, triglycerideDate,
+          hdl, hdlDate,
+          ldl, ldlDate,
+          nonHdl, nonHdlDate,
+          cholesterolHdlRatio, cholesterolHdlRatioDate,
+          creatineKinase, creatineKinaseDate,
+          alanineAminotransferase, alanineAminotransferaseDate,
+          lipoproteinA, lipoproteinADate,
+          apolipoproteinB, apolipoproteinBDate,
+          natriureticPeptideB, natriureticPeptideBDate,
+          urea, ureaDate,
+          creatinine, creatinineDate,
+          gfr, gfrDate,
+          albumin, albuminDate,
+          sodium, sodiumDate,
+          potassium, potassiumDate,
+          vitaminB12, vitaminB12Date,
+          ferritin, ferritinDate,
+          hemoglobinA1C, hemoglobinA1CDate,
+          urineAlbumin,urineAlbuminDate,
+          albuminCreatinineRatio,albuminCreatinineRatioDate
+     )
+     SELECT 
+          clientName, clientStatus, healthNumber, sex, dateOfBirth,
+          address, street, city, province, postalCode, fullAddress, telephone,
+          providerName, providerNumber, orderDate,
+          cholesterol, cholesterolDate,
+          triglyceride, triglycerideDate,
+          hdl, hdlDate,
+          ldl, ldlDate,
+          nonHdl, nonHdlDate,
+          cholesterolHdlRatio, cholesterolHdlRatioDate,
+          creatineKinase, creatineKinaseDate,
+          alanineAminotransferase, alanineAminotransferaseDate,
+          lipoproteinA, lipoproteinADate,
+          apolipoproteinB, apolipoproteinBDate,
+          natriureticPeptideB, natriureticPeptideBDate,
+          urea, ureaDate,
+          creatinine, creatinineDate,
+          gfr, gfrDate,
+          albumin, albuminDate,
+          sodium, sodiumDate,
+          potassium, potassiumDate,
+          vitaminB12, vitaminB12Date,
+          ferritin, ferritinDate,
+          hemoglobinA1C, hemoglobinA1CDate,
+          urineAlbumin,urineAlbuminDate,
+          albuminCreatinineRatio,albuminCreatinineRatioDate
+     FROM Patient WHERE healthNumber = '$healthNumber'";
+
+     if ($insert) {
+          $historyInsert = $conn->query($historySql);
+
+          if ($historyInsert) {
+               echo json_encode(['success' => 'Yes']);
+          } else {
+               echo json_encode(['success' => 'No', 'error' => 'Failed to insert into Patient_History']);
+          }
+     } else {
+          echo json_encode(['success' => 'No', 'error' => 'Failed to insert into Patient']);
+     }
+     $conn->close();
+     exit;
+}
+
+function mergeData($key, $value, $orderDate, $conn, $healthNumber)
+{
+     $a = "SELECT $key, {$key}Date FROM Patient WHERE healthNumber = '$healthNumber'";
+     $aa = $conn->query($a);
+     if ($aa && $row = $aa->fetch_assoc()) {
+          $existingDate = $row["{$key}Date"];
+          if ($existingDate >= $orderDate) {
+               // If the existing date is more recent or the same, do not update
+               return;
+          } else {
+               if ($value !== '' && $value !== null) {
+                    $sql = "UPDATE Patient SET $key = $value, {$key}Date = '$orderDate' WHERE healthNumber = '$healthNumber'";
+                    echo $sql;
+                    // $conn->query($sql) or die ($sql);
+               }
+          }
+     }
+}
+
 function insertToHistory($conn, $data): bool
 {
      $patient = $data['patient'];
@@ -54,7 +294,7 @@ function insertToHistory($conn, $data): bool
      // SQL Insert
      $sql = "INSERT INTO Patient_History (
         clientName, clientStatus, healthNumber, sex, dateOfBirth,
-        address, street, city, province, postalCode, fullAddress, telephone,
+        `address`, `street`, `city`, `province`, `postalCode`, `fullAddress`, `telephone`,
         providerName, providerNumber, orderDate,
         cholesterol, cholesterolDate,
         triglyceride, triglycerideDate,
@@ -181,276 +421,113 @@ function insertToHistory($conn, $data): bool
      }
 }
 
-
-
-if ($data['script'] === 'newClient') {
-
+function updateClient($data, $conn)
+{
      $patient = $data['patient'];
-
-     // Extract patient fields
-     $name = $patient['name'];
      $healthNumber = $patient['healthNumber'];
-     $sex = $patient['sex'];
-     $dateOfBirth = date('Y-m-d', strtotime($patient['dateOfBirth']));
-     $address = $patient['address'];
-     $street = $patient['street'];
-     $city = $patient['city'];
-     $province = $patient['province'];
-     $postalCode = $patient['postalCode'];
-     $telephone = $patient['telephone'];
-     $fullAddress = $patient['fullAddress'];
-     $clientStatus = $patient['clientStatus'];
-     $clientName = $name;
+     $labResults = $patient['labResults'] ?? [];
+     $orderDate = !empty($patient['orderDate']) ? date('Y-m-d', strtotime($patient['orderDate'])) : null;
 
-     $providerName = $patient['providerName'];
-     $providerNumber = $patient['providerNumber'];
-     $orderDate = date('Y-m-d', strtotime($patient['orderDate']));
-     $labResults = $patient['labResults'];
+     // Insert history first
+     $returnValue = insertToHistory($conn, $data);
 
-     function getVal($arr, $key)
-     {
-          return isset($arr[$key]) && is_numeric($arr[$key]) ? $arr[$key] : 'NULL';
+     // Load current patient row (may be null if not created yet)
+     $cc = $conn->query("SELECT * FROM Patient WHERE healthNumber = '" . $conn->real_escape_string($healthNumber) . "'");
+     $client = $cc ? $cc->fetch_assoc() : null;
+
+     // Build SET clause safely
+     $sets = [];
+     $params = [];
+     $types = '';
+
+     foreach ($labResults as $key => $value) {
+          if ($value === '' || $value === null)
+               continue;
+
+          // only allow simple column names (avoid SQL injection on dynamic identifiers)
+          if (!preg_match('/^[A-Za-z0-9_]+$/', $key))
+               continue;
+
+          // skip if existing date is newer or same
+          $existingDate = $client["{$key}Date"] ?? null;
+          if ($existingDate && $orderDate && $existingDate >= $orderDate)
+               continue;
+
+          // value column
+          $sets[] = "`$key` = '$value'";
+          // matching Date column
+          if ($orderDate) {
+               $sets[] = "`{$key}Date` = '$orderDate'";
+          }
      }
 
-
-     // Create INSERT query with full field list
-     $sql = "INSERT INTO Patient (
-        clientName, clientStatus, healthNumber, sex, dateOfBirth,
-        address, street, city, province, postalCode, fullAddress, telephone,
-        providerName, providerNumber, orderDate,
-        cholesterol, cholesterolDate,
-        triglyceride, triglycerideDate,
-        hdl, hdlDate,
-        ldl, ldlDate,
-        nonHdl, nonHdlDate,
-        cholesterolHdlRatio, cholesterolHdlRatioDate,
-        creatineKinase, creatineKinaseDate,
-        alanineAminotransferase, alanineAminotransferaseDate,
-        lipoproteinA, lipoproteinADate,
-        apolipoproteinB, apolipoproteinBDate,
-        natriureticPeptideB, natriureticPeptideBDate,
-        urea, ureaDate,
-        creatinine, creatinineDate,
-        gfr, gfrDate,
-        albumin, albuminDate,
-        sodium, sodiumDate,
-        potassium, potassiumDate,
-        vitaminB12, vitaminB12Date,
-        ferritin, ferritinDate,
-        hemoglobinA1C, hemoglobinA1CDate,
-        urineAlbumin,urineAlbuminDate,
-        albuminCreatinineRatio,albuminCreatinineRatioDate
-    ) VALUES (
-        '%s', '%s', '%s', '%s', '%s',
-        '%s', '%s', '%s', '%s', '%s', '%s', '%s',
-        '%s', '%s', '%s',
-        %s, '%s',
-        %s, '%s',
-        %s, '%s',
-        %s, '%s',
-        %s, '%s',
-        %s, '%s',
-        %s, '%s',
-        %s, '%s',
-        %s, '%s',
-        %s, '%s',
-        %s, '%s',
-        %s, '%s',
-        %s, '%s',
-        %s, '%s',
-        %s, '%s',
-        %s, '%s',
-        %s, '%s',
-        %s, '%s',
-        %s, '%s',
-        %s, '%s',
-        %s, '%s',
-        %s, '%s'
-    )";
-
-     $testSql = sprintf(
-          $sql,
-          $clientName,
-          $clientStatus,
-          $healthNumber,
-          $sex,
-          $dateOfBirth,
-          $address,
-          $street,
-          $city,
-          $province,
-          $postalCode,
-          $fullAddress,
-          $telephone,
-          $providerName,
-          $providerNumber,
-          $orderDate,
-
-          getVal($labResults, 'cholesterol'),
-          $orderDate,
-          getVal($labResults, 'triglyceride'),
-          $orderDate,
-          getVal($labResults, 'hdl'),
-          $orderDate,
-          getVal($labResults, 'ldl'),
-          $orderDate,
-          getVal($labResults, 'nonHdl'),
-          $orderDate,
-          getVal($labResults, 'cholesterolHdlRatio'),
-          $orderDate,
-          getVal($labResults, 'creatineKinase'),
-          $orderDate,
-          getVal($labResults, 'alanineAminotransferase'),
-          $orderDate,
-          getVal($labResults, 'lipoproteinA'),
-          $orderDate,
-          getVal($labResults, 'apolipoproteinB'),
-          $orderDate,
-          getVal($labResults, 'natriureticPeptideB'),
-          $orderDate,
-          getVal($labResults, 'urea'),
-          $orderDate,
-          getVal($labResults, 'creatinine'),
-          $orderDate,
-          getVal($labResults, 'gfr'),
-          $orderDate,
-          getVal($labResults, 'albumin'),
-          $orderDate,
-          getVal($labResults, 'sodium'),
-          $orderDate,
-          getVal($labResults, 'potassium'),
-          $orderDate,
-          getVal($labResults, 'vitaminB12'),
-          $orderDate,
-          getVal($labResults, 'ferritin'),
-          $orderDate,
-          getVal($labResults, 'hemoglobinA1C'),
-          $orderDate,
-          getVal($labResults, 'urineAlbumin'),
-          $orderDate,
-          getVal($labResults, 'albuminCreatinineRatio'),
-          $orderDate
-     );
-
-     // Run insert
-     $insert = $conn->query($testSql) or die($testSql);
-
-
-     // History logging
-     $historySql = "INSERT INTO Patient_History (
-        clientName, clientStatus, healthNumber, sex, dateOfBirth,
-        address, street, city, province, postalCode, fullAddress, telephone,
-        providerName, providerNumber, orderDate,
-        cholesterol, cholesterolDate,
-        triglyceride, triglycerideDate,
-        hdl, hdlDate,
-        ldl, ldlDate,
-        nonHdl, nonHdlDate,
-        cholesterolHdlRatio, cholesterolHdlRatioDate,
-        creatineKinase, creatineKinaseDate,
-        alanineAminotransferase, alanineAminotransferaseDate,
-        lipoproteinA, lipoproteinADate,
-        apolipoproteinB, apolipoproteinBDate,
-        natriureticPeptideB, natriureticPeptideBDate,
-        urea, ureaDate,
-        creatinine, creatinineDate,
-        gfr, gfrDate,
-        albumin, albuminDate,
-        sodium, sodiumDate,
-        potassium, potassiumDate,
-        vitaminB12, vitaminB12Date,
-        ferritin, ferritinDate,
-        hemoglobinA1C, hemoglobinA1CDate,
-        urineAlbumin,urineAlbuminDate,
-        albuminCreatinineRatio,albuminCreatinineRatioDate
-    )
-    SELECT 
-        clientName, clientStatus, healthNumber, sex, dateOfBirth,
-        address, street, city, province, postalCode, fullAddress, telephone,
-        providerName, providerNumber, orderDate,
-        cholesterol, cholesterolDate,
-        triglyceride, triglycerideDate,
-        hdl, hdlDate,
-        ldl, ldlDate,
-        nonHdl, nonHdlDate,
-        cholesterolHdlRatio, cholesterolHdlRatioDate,
-        creatineKinase, creatineKinaseDate,
-        alanineAminotransferase, alanineAminotransferaseDate,
-        lipoproteinA, lipoproteinADate,
-        apolipoproteinB, apolipoproteinBDate,
-        natriureticPeptideB, natriureticPeptideBDate,
-        urea, ureaDate,
-        creatinine, creatinineDate,
-        gfr, gfrDate,
-        albumin, albuminDate,
-        sodium, sodiumDate,
-        potassium, potassiumDate,
-        vitaminB12, vitaminB12Date,
-        ferritin, ferritinDate,
-        hemoglobinA1C, hemoglobinA1CDate,
-        urineAlbumin,urineAlbuminDate,
-        albuminCreatinineRatio,albuminCreatinineRatioDate
-    FROM Patient WHERE healthNumber = '$healthNumber'";
-
-     if ($insert) {
-          $historyInsert = $conn->query($historySql);
-
-          if ($historyInsert) {
-               echo json_encode(['success' => 'Yes']);
+     if (!empty($sets)) {
+          $sql = "UPDATE Patient SET " . implode(', ', $sets) . " WHERE healthNumber = '$healthNumber'";
+          $stmt = $conn->query($sql);
+          if ($conn->query($sql)) {
+               echo json_encode(['status' => 'updated']);
           } else {
-               echo json_encode(['success' => 'No', 'error' => 'Failed to insert into Patient_History']);
+               echo json_encode(['error' => 'Update failed: ' . $conn->error]);
           }
      } else {
-          echo json_encode(['success' => 'No', 'error' => 'Failed to insert into Patient']);
+          echo json_encode(['status' => 'updated']);
      }
+
+
+}
+
+if ($data['script'] === 'updatePatientNote') {
+     $healthNumber = $data['healthNumber'];
+     $patientNote = $data['patientNote'];
+
+     // Prepare and execute query to update patient note
+     $stmt = $conn->prepare("UPDATE Patient SET patientNote = ? WHERE healthNumber = ?");
+     $stmt->bind_param("ss", $patientNote, $healthNumber);
+     $stmt->execute();
+
+     if ($stmt->affected_rows > 0) {
+          echo json_encode(['status' => 'updated']);
+     } else {
+          echo json_encode(['error' => 'Update failed: ' . $conn->error]);
+     }
+
+     $stmt->close();
+}
+
+if ($data['script'] === 'saveTheDataButton') {
+     if ($data['patientStatus'] === 'new') {
+          insertNewClient($data, $conn);
+     }
+}
+
+if ($data['script'] === 'updatePatient') {
+     updateClient($data, $conn);
+}
+
+if ($data['script'] === 'patientNoteSearch') {
+
+     $noteTerm = $data['noteTerm'] ?? '';
+     $noteTerm = '%' . $noteTerm . '%';
+
+     // Prepare and execute query to search for patient notes containing the noteTerm
+     $stmt = $conn->prepare("SELECT * FROM Patient WHERE patientNote LIKE ?");
+     $stmt->bind_param("s", $noteTerm);
+     $stmt->execute();
+     $result = $stmt->get_result();
+
+     $notes = [];
+     while ($row = $result->fetch_assoc()) {
+          $notes[] = $row;
+     }
+
+     echo json_encode($notes);
+
+     $stmt->close();
      $conn->close();
      exit;
 }
 
-function mergeData($key, $value, $orderDate, $conn, $healthNumber)
-{
-     $a = "SELECT $key, {$key}Date FROM Patient WHERE healthNumber = '$healthNumber'";
-     $aa = $conn->query($a);
-     if ($aa && $row = $aa->fetch_assoc()) {
-          $existingDate = $row["{$key}Date"];
-          if ($existingDate >= $orderDate) {
-               // If the existing date is more recent or the same, do not update
-               return;
-          } else {
-               if ($value !== '' && $value !== null) {
-                    $sql = "UPDATE Patient SET $key = $value, {$key}Date = '$orderDate' WHERE healthNumber = '$healthNumber'";
-                    $conn->query($sql);
-               }
-          }
-     }
-}
 
-if ($data['script'] === 'updateClient') {
-     $patient = $data['patient'];
-     $healthNumber = $patient['healthNumber'];
-     $labResults = $patient['labResults'];
-     $orderDate = date('Y-m-d', strtotime($patient['orderDate']));
-     $a = "select count(*) from Patient_History where healthNumber = '$healthNumber' and orderDate = '$orderDate'";
-     $result = $conn->query($a);
-     $row = $result->fetch_row();
-     $recordCount = $row[0]; // Count how many records match
-     if ($recordCount > 0) {
-          echo json_encode(['status' => 'duplicate']);
-          $conn->close();
-          exit;
-     } else {
-          $returnValue = insertToHistory($conn, $data);
-          if ($returnValue) {
-               foreach ($labResults as $key => $value) {
-                    mergeData($key, $value, $orderDate, $conn, $healthNumber);
-               }
-               echo json_encode(['status' => 'inserted']);
-          } else {
-               echo json_encode(['success' => 'No', 'error' => 'Failed to insert into Patient_History']);
-          }
-
-     }
-}
 
 if ($data['script'] === 'getStatus') {
      $healthNumber = $data['healthNumber'];
@@ -462,9 +539,25 @@ if ($data['script'] === 'getStatus') {
      $stmt->store_result();
 
      if ($stmt->num_rows > 0) {
-          echo json_encode(['status' => 'update']); // healthNumber exists
+          $labDate = isset($data['labdate']) ? $data['labdate'] : null;
+          if ($labDate) {
+               $healthNumberNoSpaces = str_replace(' ', '', $healthNumber);
+               $stmt2 = $conn->prepare("SELECT 1 FROM patientFiles WHERE healthNumber = ? AND labDate = ?");
+               $stmt2->bind_param("ss", $healthNumberNoSpaces, $labDate);
+               $stmt2->execute();
+               $stmt2->store_result();
+               if ($stmt2->num_rows > 0) {
+                    echo json_encode(['status' => 'update', 'lab' => 'Exists']);
+                    $stmt2->close();
+                    $conn->close();
+                    exit;
+               }
+               $stmt2->close();
+          }
+          echo json_encode(['status' => 'update']);
+
      } else {
-          echo json_encode(['status' => 'new']); // healthNumber does not exist
+          echo json_encode(['status' => 'new', 'lab' => 'None']); // healthNumber does not exist
      }
 
      $stmt->close();
