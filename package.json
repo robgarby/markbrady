@@ -1,7 +1,8 @@
 {
-  "name": "markbrady",
+  "name": "optimizing",
   "pdfjs-dist": "^3.11.174",
-  "version": "0.1.0",
+  "version": "2.0.1",
+  "dateTime": "2025-09-03 12:00:00",
   "private": true,
   "dependencies": {
     "@react-pdf-viewer/core": "^3.12.0",
@@ -44,5 +45,8 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
+  },
+  "devDependencies": {
+    "cross-env": "^10.0.0"
   }
 }

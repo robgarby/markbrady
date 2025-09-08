@@ -29,6 +29,7 @@ if (isset($_FILES['pdf']) && isset($_POST['healthNumber'])) {
      $healthNumber = preg_replace("/[^0-9]/", "", $_POST['healthNumber']);
      $orderDate = date('Ymd', strtotime($_POST['orderDate'] ?? 'today'));
      $clientStatus = $_POST['patientStatus'] ?? '';
+     $nextAppointment = $_POST['nextAppointment'] ?? null;
      $uploadDir = __DIR__ . "/uploads/";
      if (!is_dir($uploadDir)) {
           mkdir($uploadDir, 0777, true);

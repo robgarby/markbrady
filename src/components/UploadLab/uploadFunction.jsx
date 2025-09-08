@@ -5,17 +5,20 @@
 export const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 export const scrub = (raw) =>
-    (raw || "")
-        .replace(/Page No:\s*\d+/gi, "")
-        .replace(/Privacy Disclaimer:[\s\S]*?(ConnectingOntario|Generated from ConnectingOntario)/gi, "")
-        .replace(/Generated from OLIS[\s\S]*?(EDT|EST)/gi, "")
-        .replace(/User Id:.*?Organization:.*?Date:.*?(AM|PM)/gi, "")
-        .replace(/\(An age[- ]based population\)/gi, "")
-        .replace(/^\s*Test:\s.*$/gim, "")
-        .replace(/^\s*Last Updated:\s.*$/gim, "")
-        .replace(/[ \t]+/g, " ")
-        .replace(/\n{2,}/g, "\n")
-        .trim();
+  (raw || "")
+    .replace(/Page No:\s*\d+/gi, "")
+    .replace(/Privacy Disclaimer:[\s\S]*?(ConnectingOntario|Generated from ConnectingOntario)/gi, "")
+    .replace(/Generated from OLIS[\s\S]*?(EDT|EST)/gi, "")
+    .replace(/User Id:.*?Organization:.*?Date:.*?(AM|PM)/gi, "")
+    .replace(/\(An age[- ]based population\)/gi, "")
+    .replace(/^\s*Test:\s.*$/gim, "")
+    .replace(/^\s*Last Updated:\s.*$/gim, "")
+    .replace(/\s*\(?\bLifeLabs\b\)?\s*/gi, " ")
+    .replace(/\s*\(?\bLab\s*[:#]?\s*\d{3,}\)?\s*/gi, " ")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{2,}/g, "\n")
+    .trim();
+
 
 export const HEADER_REGEXES = [
     /Name\s+Result\s+Flag\s+Ref(?:\.|)\s*Range\s+Units/i,
@@ -711,164 +714,115 @@ export const extractFerritinSolid = (text) => {
     return { value: null };
 };
 
-// ---- NEW: Albumin; Urine (Urine Albumin) -----------------------------------
-// ---- FIXED: Albumin; Urine (Urine Albumin) — skip detection-limit like "< 20" / "≤ 20" -----------------
-// ---- FIXED: Albumin; Urine (Urine Albumin) — skip "< 5", "≤ 20", detection-limit contexts ----
+//Works Kinda
 export const extractUrineAlbumin = (text) => {
   const t = scrub(text);
-  const blocks = sliceBlocksByHeaders(t, 60000);
+  const blocks = sliceBlocksByHeaders(t, 80000);
   if (!blocks.length) return { value: null };
 
-  const NUM = String.raw`([0-9]+(?:\.[0-9]+)?|[0-9]+\.(?![0-9]))`;
-  const TITLE = /\b(?:Albumin;\s*Urine|Urine\s+Albumin)\b/i; // row title
-  const UNITS = /\bmg\/L\b/i;
+  const TITLE = /\bAlbumin;\s*Urine\b(?:\s*\(amended\))?/gi;
+  const NUM = /([<>]=?)?\s*([0-9]+(?:\.[0-9]+)?)(?:\s+(N|H|L|NA\.?))?/gi;
+  const UNITS = /mg\/L/i;
 
-  // Helper: does the region look like a detection-limit statement?
   const isDetectionCtx = (s) =>
-    /(detection\s*limit|less\s*than|below\s*limit|unable\s*to\s*calculate)/i.test(s);
+    /(detection\s*limit|below\s*limit|less\s*than|unable\s*to\s*calculate)/i.test(s);
 
   for (const block of blocks) {
-    const th = block.match(TITLE);
-    if (!th) continue;
+    let mTitle;
+    while ((mTitle = TITLE.exec(block)) !== null) {
+      const start = mTitle.index + mTitle[0].length;
+      const after = block.slice(start, start + 2000); // look ahead near the title
 
-    // Scan after the title for number + mg/L pairs
-    const after = block.slice((th.index ?? 0) + th[0].length, (th.index ?? 0) + th[0].length + 1600);
+      let m;
+      NUM.lastIndex = 0;
+      while ((m = NUM.exec(after)) !== null) {
+        const op = (m[1] || "").trim();
+        const valStr = (m[2] || "").replace(/\.$/, "");
+        const flag = (m[3] || "").toUpperCase();
 
-    // Capture optional comparator + value, optional flag, then require mg/L nearby
-    const RE = new RegExp(
-      String.raw`([<≤>]=?)?\s*${NUM}(?:\s+(N|H|L|NA\.?))?[\s\S]{0,100}?mg\/L`,
-      "ig"
-    );
+        // Ensure units are in the vicinity of this match
+        const vicinity = after.slice(Math.max(0, m.index - 80), Math.min(after.length, m.index + 200));
+        if (!UNITS.test(vicinity)) continue;
 
-    let m;
-    while ((m = RE.exec(after)) !== null) {
-      const op = (m[1] || "").trim();                     // "<", "≤", ">", ">=", etc.
-      const valStr = (m[2] || "").replace(/\.$/, "");     // "5." -> "5"
-      const valNum = parseFloat(valStr);
-      const ctx = after.slice(Math.max(0, m.index - 80), Math.min(after.length, m.index + m[0].length + 80));
+        // Skip detection-limit and comparator values; keep scanning next match
+        if (op === "<" || op === "≤" || op === ">" || isDetectionCtx(vicinity)) continue;
 
-      // If it's a detection-limit style (e.g., "≤ 20 mg/L") OR an explicit "< 5" value → treat as NOT DETECTED (blank)
-      if (op === "<" || op === "≤" || isDetectionCtx(ctx) || (!Number.isNaN(valNum) && op === "<" && valNum <= 5)) {
-        continue; // skip and keep looking for a real measurement
+        return {
+          value: valStr,
+          flag,
+          units: "mg/L",
+          refRange: grabRefRange(vicinity),
+        };
       }
-
-      // Must truly be mg/L
-      if (!UNITS.test(m[0])) continue;
-
-      // Found a real numeric measurement — return it
-      return {
-        value: valStr,
-        flag: (m[3] || "").toUpperCase(),
-        units: "mg/L",
-        refRange: grabRefRange(ctx),
-      };
+      // if this title didn’t yield a value, loop to next title occurrence
     }
   }
-  // No acceptable measurement found → blank
   return { value: null };
 };
 
-
-
-// SPECIAL: Albumin/Creatinine Ratio (ACR) — unitless value, requires mg/mmol (…creat/creatinine/Cr)
-// Handles: "Albumin/Creatinine Ratio; Urine", "Urine Albumin/Creatinine Ratio", "Albumin:Creatinine Ratio", "ACR"
+// Works Kinda
 export const extractACR = (text) => {
   const t = scrub(text);
-  const blocks = sliceBlocksByHeaders(t, 60000);
+  const blocks = sliceBlocksByHeaders(t, 80000);
   if (!blocks.length) return { value: null };
 
-  const NUM = String.raw`([0-9]+(?:\.[0-9]+)?|[0-9]+\.(?![0-9]))`;   // accepts "0.9" and "0.9."
-  const norm = (s) => (s ? s.replace(/\.$/, "") : s);
-
-  // Title variants seen in Ontario-style reports
-  const TITLE_VARIANTS = [
-    /\bAlbumin\s*\/\s*Creatinine\s*Ratio\b/i,
-    /\bAlbumin\s*(?:to|:)\s*Creatinine\s*Ratio\b/i,
-    /\bUrine\s+Albumin\s*\/\s*Creatinine\s*Ratio\b/i,
-    /\bAlbumin\/Creatinine\s*Ratio;\s*Urine\b/i,
-    /\bACR\b/i, // short form
-  ];
-
-  // Units: mg/mmol (optionally followed by creat/creatinine/Cr, with punctuation/spacing quirks)
-  const UNITS_RE = /\bmg\s*\/\s*mmol(?:\s*(?:creat(?:inine)?|cr)\.?)?$/i;
-
-  // After the title: optional note line, FIRST number = value, optional flag, optional second number (often target)
-  const VALUE_RE = new RegExp(
-    String.raw`(?:\([^)]*\)\s*)?` +        // e.g., "(None - generic normal range)"
-    String.raw`${NUM}` +                   // ACR value
-    String.raw`(?:\s+(N|H|L|NA\.?))?` +    // optional flag
-    String.raw`(?:\s+${NUM})?`,            // optional target (e.g., "3.0")
-    "i"
+  const TITLE = new RegExp(
+    String.raw`\b(?:` +
+      // Albumin/Creatinine Ratio variants, optional "; Urine", optional "(Amended)"
+      String.raw`(?:Albumin\s*\/\s*Creatinine|Albumin\s*(?:to|:)\s*Creatinine)\s*Ratio` +
+      String.raw`(?:\s*;\s*Urine)?(?:\s*\(amended\))?` +
+    String.raw`|ACR)\b`,
+    "gi"
   );
 
-  // 1) Prefer searching inside each header/table block
+  const NUM = /([0-9]+(?:\.[0-9]+)?)(?:\s+(N|H|L|NA\.?))?/gi;
+  const UNITS = /\bmg\s*\/\s*mmol(?:\s*(?:creat(?:inine)?|cr)\.?)?/i;
+
   for (const block of blocks) {
-    // find the first matching title in this block
-    let titleEnd = -1;
-    for (const TR of TITLE_VARIANTS) {
-      const m = block.match(TR);
-      if (m) { titleEnd = (m.index ?? 0) + m[0].length; break; }
-    }
-    if (titleEnd < 0) continue;
+    let mTitle;
+    while ((mTitle = TITLE.exec(block)) !== null) {
+      const start = mTitle.index + mTitle[0].length;
+      const after = block.slice(start, start + 2500);
 
-    // Start AFTER the title to avoid catching digits inside the title itself
-    const after = block.slice(titleEnd, titleEnd + 2000);
+      // If this page occurrence is just a header, there might be "Result: NOT APPLICABLE" near it — keep scanning.
+      // We look for the first numeric followed by acceptable units in the vicinity.
+      let m;
+      NUM.lastIndex = 0;
+      while ((m = NUM.exec(after)) !== null) {
+        const tail = after.slice(m.index, m.index + 600).replace(/\s+/g, " ");
+        if (!UNITS.test(tail)) continue;
 
-    // Direct match (keeps line breaks)
-    let m = after.match(VALUE_RE);
-    // Fallback with flattened whitespace (handles hard line wraps & fused words)
-    if (!m) {
-      const flat = after.replace(/\s+/g, " ");
-      m = flat.match(VALUE_RE);
-      if (m) {
-        // rebuild a local "tail" from the unflattened string near the numeric hit
-        const idx = Math.max(0, after.search(/[0-9]/)); // rough vicinity
-        const tail = after.slice(idx, idx + 700).replace(/\s+/g, " ");
-        if (!UNITS_RE.test(tail)) continue;
-        const unitMatch = tail.match(UNITS_RE);
-        const ref = grabRefRange(tail);
-        return { value: norm(m[1]), flag: (m[2] || "").toUpperCase(), units: (unitMatch ? unitMatch[0] : "mg/mmol"), refRange: ref || norm(m[3] || "") || undefined };
+        return {
+          value: m[1].replace(/\.$/, ""),
+          flag: (m[2] || "").toUpperCase(),
+          units: (tail.match(UNITS) || ["mg/mmol"])[0],
+          refRange: grabRefRange(tail) || undefined,
+        };
       }
-    }
-
-    if (m) {
-      // confirm units appear near the hit
-      const tail = after.slice(m.index ?? 0, (m.index ?? 0) + 700).replace(/\s+/g, " ");
-      if (!UNITS_RE.test(tail)) continue;
-      const unitMatch = tail.match(UNITS_RE);
-      const ref = grabRefRange(tail);
-      return {
-        value: norm(m[1]),
-        flag: (m[2] || "").toUpperCase(),
-        units: (unitMatch ? unitMatch[0] : "mg/mmol"),
-        refRange: ref || norm(m[3] || "") || undefined,
-      };
+      // try the next title occurrence if no value found here
     }
   }
 
-  // 2) Global fallback (flattened) in case the row sits outside our slices
-  const flatAll = t.replace(/\s+/g, " ");
-  const ANYWHERE = new RegExp(
-    String.raw`(?:Albumin\s*\/\s*Creatinine\s*Ratio|Albumin\s*(?:to|:)\s*Creatinine\s*Ratio|Urine\s+Albumin\s*\/\s*Creatinine\s*Ratio|ACR)\b\s*` +
-    String.raw`(?:\([^)]*\)\s*)?` +
-    NUM + String.raw`(?:\s+(N|H|L|NA\.?))?` + String.raw`(?:\s+` + NUM + String.raw`)?\s*` +
-    String.raw`mg\s*\/\s*mmol(?:\s*(?:creat(?:inine)?|cr)\.?)?`,
+  // Global fallback if titles are oddly split across blocks
+  const flat = t.replace(/\s+/g, " ");
+  const ANY = new RegExp(
+    String.raw`(?:Albumin\s*\/\s*Creatinine|Albumin\s*(?:to|:)\s*Creatinine)\s*Ratio(?:\s*;\s*Urine)?(?:\s*\(amended\))?\s*` +
+    String.raw`([0-9]+(?:\.[0-9]+)?)(?:\s+(N|H|L|NA\.?))?.{0,80}?` +
+    String.raw`(mg\s*\/\s*mmol(?:\s*(?:creat(?:inine)?|cr)\.?)?)`,
     "i"
   );
-  const g = flatAll.match(ANYWHERE);
+  const g = flat.match(ANY);
   if (g) {
-    // Find the first unit instance after the numeric to return a clean unit string
-    const unitHit = g[0].match(/\bmg\s*\/\s*mmol(?:\s*(?:creat(?:inine)?|cr)\.?)?\b/i);
     return {
-      value: norm(g[1]),
+      value: g[1],
       flag: (g[2] || "").toUpperCase(),
-      units: (unitHit ? unitHit[0] : "mg/mmol"),
-      refRange: norm(g[3] || "") || undefined,
+      units: g[3],
     };
   }
 
   return { value: null };
 };
+
 
 // -- Address & telephone from PATIENT panel (two-line "Address" format) --
 const extractPatientAddressFromPanel = (panel) => {

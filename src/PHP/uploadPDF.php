@@ -23,28 +23,36 @@ $response = ['success' => 'No'];
 
 if (isset($_FILES['pdf']) && isset($_POST['healthNumber'])) {
      $file = $_FILES['pdf'];
+     $originalFileName = $file['name'];
      $healthNumber = preg_replace("/[^0-9]/", "", $_POST['healthNumber']);
-     $orderDate = date('Ymd', strtotime($_POST['orderDate'] ?? 'today'));
-
      $uploadDir = __DIR__ . "/uploads/";
      if (!is_dir($uploadDir)) {
           mkdir($uploadDir, 0777, true);
      }
-
-     $filename = $uploadDir . $healthNumber . '_' . $orderDate . '.pdf';
+     $filename = $uploadDir . $healthNumber . '_' . $originalFileName;
      if (move_uploaded_file($file['tmp_name'], $filename)) {
-          $stmt = $conn->prepare("INSERT INTO patientFiles (healthNumber, PDFfileName, PDFtimeStamp, labDate) VALUES (?, ?, NOW(), ?)");
+          // Derive values
           $fileNameOnly = basename($filename);
-          $stmt->bind_param("sss", $healthNumber, $fileNameOnly, $orderDate);
-          if (!$stmt->execute()) {
-               $response['error'] = 'Database insert failed: ' . $stmt->error;
+          $shortName = isset($originalFileName) ? $originalFileName : pathinfo($fileNameOnly, PATHINFO_FILENAME);
+
+          // Prepare with NOW() in SQL (3 placeholders; timestamp set by SQL)
+          $sql = "INSERT INTO patientPDF (healthNumber, PDFfileName, shortName, PDFtimeStamp, labDate)
+            VALUES (?, ?, ?, NOW(), NOW())";
+          $stmt = $conn->prepare($sql);
+          if (!$stmt) {
+               $response['error'] = "Prepare failed: {$conn->error}";
+          } else {
+               // 3 placeholders => 3 bound params
+               $stmt->bind_param("sss", $healthNumber, $fileNameOnly, $shortName);
+               if (!$stmt->execute()) {
+                    $response['error'] = "Database insert failed: {$stmt->error}";
+               }
+               $stmt->close();
           }
-          $stmt->close();
-          $response['success'] = 'Yes';
-          $response['message'] = 'File uploaded successfully.';
      } else {
           $response['error'] = 'Failed to move uploaded file.';
      }
+
 } else {
      $response['error'] = 'Missing file or health number.';
 }

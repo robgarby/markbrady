@@ -21,6 +21,7 @@ const UploadLab = () => {
   const [msg, setMsg] = useState("");
   const [patientStatus, setPatientStatus] = useState(null); // "new" or "existing"
   const [labExists, setLabExists] = useState(false);
+  const [nextAppointment, setNextAppointment] = useState(null);
 
   const navigate = useNavigate();
 
@@ -33,9 +34,21 @@ const UploadLab = () => {
     setPatientStatus(null);
     setLabExists(false);
     setMsg(message);
-    // Clear the file input; bump key so onChange will fire even for same file name
+    setNextAppointment(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
     setFileKey((k) => k + 1);
+  };
+
+  const setTheDate = (dateString) => {
+    const parsed = Date.parse(dateString);
+    if (!isNaN(parsed)) {
+      const d = new Date(parsed);
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, "0");
+      const dd = String(d.getDate()).padStart(2, "0");
+      setNextAppointment(`${yyyy}-${mm}-${dd}`);
+    }
+    setNextAppointment(dateString);
   };
 
   const handleFileChange = async (e) => {
@@ -90,7 +103,6 @@ const UploadLab = () => {
         setPatientStatus(status.status);
         if (status.lab === "Exists") {
           setLabExists(true);
-          console.log("Lab exists:", status);
         }
         setPatient({ ...meta, labResults });
         setMsg("");
@@ -117,6 +129,7 @@ const UploadLab = () => {
         formData.append("pdf", f, f.name);
         formData.append("healthNumber", (patient.healthNumber || "").replace(/\D+/g, ""));
         formData.append("patientStatus", patientStatus || "");
+        formData.append("nextAppointment", nextAppointment || "");
         if (patient.orderDate) formData.append("orderDate", patient.orderDate);
         const response = await fetch(
           "https://optimizingdyslipidemia.com/PHP/uploadClientPDF.php",
@@ -130,7 +143,7 @@ const UploadLab = () => {
           const db = await fetch("https://optimizingdyslipidemia.com/PHP/database.php", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ patient, patientStatus, script: "saveTheDataButton" }),
+            body: JSON.stringify({ nextAppointment: nextAppointment, patient, patientStatus, script: "saveTheDataButton" }),
           });
 
           // If server-side debug prints remain, this may throw due to invalid JSON:
@@ -160,13 +173,12 @@ const UploadLab = () => {
 
       // Server sends JSON like { success: "Yes", message: "File uploaded successfully." }
       const result = await response.json();
-      console.log(result);
       if (result?.success === 'Yes') {
         setMsg('Updating Database');
         const db = await fetch("https://optimizingdyslipidemia.com/PHP/database.php", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ patient, script: "updatePatient" }),
+          body: JSON.stringify({ nextAppointment: nextAppointment, patient: patient, script: "updatePatient" }),
         });
 
         // If server-side debug prints remain, this may throw due to invalid JSON:
@@ -206,22 +218,21 @@ const UploadLab = () => {
 
   return (
     <div className="container my-3">
-      /* Header */
-        <div className="row mb-2">
-          <div className="col-48 d-flex">
-            <h5 className="mb-2">Upload &amp; Parse Lab PDF</h5>
-            <div className="ms-auto">
-          <button
-            className="btn btn-primary"
-            onClick={() => navigate('/dashboard')}
-          >
-            Return to Dashboard
-          </button>
-            </div>
+      <div className="row mb-2">
+        <div className="col-48 d-flex">
+          <h5 className="mb-2">Upload &amp; Parse Lab PDF</h5>
+          <div className="ms-auto">
+            <button
+              className="btn btn-primary"
+              onClick={() => navigate('/dashboard')}
+            >
+              Return to Dashboard
+            </button>
           </div>
         </div>
+      </div>
 
-        {/* Controls */}
+      {/* Controls */}
       <div className="row g-2 mb-3">
         <div className="col-24">
           <input
@@ -328,21 +339,38 @@ const UploadLab = () => {
               </div>
             </div>
 
-            <div className="col-11 d-flex align-items-center justify-content-center">
-              {labExists ? (
-                <div className="alert alert-danger w-100 text-center m-0">
-                  This Lab Exists in DB
+            <div className="col-11">
+              <div className="d-flex flex-column justify-content-center align-items-center h-100 border rounded p-3">
+                {labExists ? (
+                  <div className="alert alert-danger text-center m-0 w-100">
+                    This Lab Exists in DB
+                  </div>
+                ) : (
+                  <button
+                    onClick={letsSaveTheData}
+                    className={`btn text-white ${patientStatus === "new" ? "btn-success" : "btn-warning"
+                      }`}
+                    style={{ minWidth: 220 }}
+                  >
+                    {patientStatus === "new" ? "Add New Patient" : "Update Existing Client"}
+                  </button>
+                )}
+
+                {/* Next Appointment */}
+                <div className="w-100 mt-3">
+                  <label className="form-label mb-1">Next Appointment</label>
+                  <input
+                    type="date"
+                    className="form-control"
+                    value={nextAppointment || ""}
+                    onChange={(e) =>
+                      setTheDate(e.target.value)
+                    }
+                  />
                 </div>
-              ) : (
-                <button
-                  onClick={() => letsSaveTheData()}
-                  className={`btn text-white ${patientStatus === "new" ? "btn-success" : "btn-warning"
-                    } w-100`}
-                >
-                  {patientStatus === "new" ? "Add New Patient" : "Update Existing Client"}
-                </button>
-              )}
+              </div>
             </div>
+
           </div>
 
           {/* Results */}

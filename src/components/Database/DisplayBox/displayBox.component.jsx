@@ -7,6 +7,8 @@ import LabResultsEditor from '../DisplayPatient/editPatient.component';
 import PatientSummary from '../DisplayPatient/viewPatientPDF.component';
 import PatientFilesUpload from '../DisplayPatient/patientUploadPDF';
 import PrintLabView from '../DisplayPatient/displayPrintView.component';
+import LabRangeSearch from '../PatientSearch/criteriaSearch.component';
+import ResultsPage from '../PatientSearch/results.component';
 
 const DisplayBox = () => {
   const { visibleBox } = useGlobalContext();
@@ -23,6 +25,8 @@ const DisplayBox = () => {
       {visibleBox === 'pdfViewer' && <PatientSummary />}
       {visibleBox === 'uploadPDF' && <PatientFilesUpload />}
       {visibleBox === 'printView' && <PrintLabView />}
+      {visibleBox === 'CriteriaSearch' && <LabRangeSearch />}
+      {visibleBox === 'searchResults' && <ResultsPage />}
     </div>
   );
 };
