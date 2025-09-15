@@ -69,7 +69,7 @@ const SideBar = () => {
             </button>
             <button
               className={`btn my-2 w-100 ${visibleBox !== "referClient" ? "btn-purple" : "btn-warning"}`}
-              onClick={() => setVisibleBox("referClient")}
+              onClick={() => setVisibleBox("printView")}
             >
               Doctor Referal
             </button>

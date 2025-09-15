@@ -1,11 +1,22 @@
 // src/components/.../displayPatient.component.jsx
 import React, { useEffect, useState, useRef } from 'react';
 import { useGlobalContext } from '../../../Context/global.context';
+import PatientMedsBox from "./patientMedsBox.component.jsx";
+import PatientConditionDisplay from "./Patient/patientConditionDisplay.componentl.jsx";
+
+
 import { useNavigate } from 'react-router-dom';
 
 const PatientDetails = () => {
   const gc = useGlobalContext();
-  const { activePatient, setActivePatient, conditionData, updateConditions } = gc || {};
+  const {
+    activePatient,
+    setActivePatient,
+    conditionData,
+    updateConditions,
+    medsArray,
+    updateMedsArray,
+  } = gc || {};
   const navigate = useNavigate();
 
   const [patient, setPatient] = useState(activePatient || {});
@@ -43,19 +54,83 @@ const PatientDetails = () => {
             patientID: patient.id,
             conditionCodes: next.join(','),
           }),
-        }).catch(() => {});
-      } catch (_) {}
+        }).catch(() => { });
+      } catch (_) { }
       return next;
     });
   };
 
   // ===== Meds =====
-  // Array<{ code: string, dose: string }>
+  // Patient-specific meds list (local): [{ code, dose }]
   const [medList, setMedList] = useState([]);
+
+  // Add box inputs
+  // We no longer auto-generate code letter-by-letter; we build it on add/pick.
   const [newMedCode, setNewMedCode] = useState('');
   const [newMedDose, setNewMedDose] = useState('');
 
-  // "ASP[50],TLL{30}" -> [{code:"ASP", dose:"50"}, {code:"TLL", dose:"30"}]
+  // Typeahead state (filter medsArray)
+  const [medQuery, setMedQuery] = useState('');
+  const [showMedSuggestions, setShowMedSuggestions] = useState(false);
+  const medInputWrapRef = useRef(null);
+
+  // --- Code Builder ---
+  // Build up-to-8-char code: 3 letters of name + dose + '-' + 2 random (trim dose to fit)
+  const randomPair = () => Math.random().toString(36).slice(2, 4).toUpperCase();
+  const normalizeDoseForCode = (dose) => (dose || '').toString().replace(/[^A-Za-z0-9]/g, '');
+  const firstThreeLetters = (name) => (name || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3) || 'MED';
+
+  const buildMedCode = (name, dose, existing = []) => {
+    const prefix = firstThreeLetters(name);
+    const rand = randomPair();
+    let doseNorm = normalizeDoseForCode(dose);
+
+    // target max length = 8 total: [prefix(3)] + [doseVar(?)] + '-' + [rand(2)]
+    // => dose length must be <= (8 - 3 - 1 - 2) = 2
+    const maxDoseLen = Math.max(0, 8 - (3 + 1 + 2));
+    doseNorm = doseNorm.slice(0, maxDoseLen);
+
+    let candidate = `${prefix}${doseNorm}-${rand}`;
+
+    // Ensure uniqueness vs medsArray codes (just in case)
+    if (Array.isArray(existing) && existing.length) {
+      let tries = 0;
+      while (existing.some((m) => String(m.code || '').toUpperCase() === candidate) && tries < 10) {
+        candidate = `${prefix}${doseNorm}-${randomPair()}`;
+        tries++;
+      }
+    }
+    return candidate;
+  };
+
+  // Ensure a med exists in global medsArray (in-memory only)
+  const ensureMedInArray = (name, code, dose) => {
+    if (typeof updateMedsArray !== 'function') return;
+    updateMedsArray((prev = []) => {
+      const prevArr = Array.isArray(prev) ? prev : [];
+      const existsByCode = prevArr.find((m) => (m.code || '').toUpperCase() === (code || '').toUpperCase());
+      const existsByName = prevArr.find((m) => (m.name || '').toLowerCase() === (name || '').toLowerCase());
+
+      if (existsByCode || existsByName) {
+        // If it exists but has no dose, set a default dose if provided
+        const next = prevArr.map((m) => {
+          if (
+            (m.code && code && m.code.toUpperCase() === code.toUpperCase()) ||
+            (m.name && name && m.name.toLowerCase() === name.toLowerCase())
+          ) {
+            const mergedDose = m.dose || dose || '';
+            return { ...m, dose: mergedDose };
+          }
+          return m;
+        });
+        return next;
+      }
+
+      return [...prevArr, { name: name || code, code, dose: dose || '' }];
+    });
+  };
+
+  // Parse "ASP[50],TLL{30}" -> [{code:"ASP", dose:"50"}, {code:"TLL", dose:"30"}]
   const parseMeds = (str) => {
     const tokens = (str || '').split(',').map((s) => s.trim()).filter(Boolean);
     const out = [];
@@ -66,12 +141,14 @@ const PatientDetails = () => {
     }
     return out;
   };
+  // Serialize back to "CODE[dose]"
   const serializeMeds = (arr) =>
     (arr || [])
       .filter((m) => m?.code)
       .map((m) => `${m.code.toUpperCase()}[${(m.dose ?? '').toString().trim()}]`)
       .join(',');
 
+  // Update dose inline in patient list
   const updateMedDose = (code, dose) => {
     if (!code) return;
     setMedList((prev) => {
@@ -81,20 +158,7 @@ const PatientDetails = () => {
     });
   };
 
-  const addMedication = () => {
-    const code = (newMedCode || '').toUpperCase().replace(/[^A-Z0-9]/g, '').trim();
-    const dose = (newMedDose || '').toString().trim();
-    if (!code) return;
-    setMedList((prev) => {
-      const idx = prev.findIndex((m) => m.code === code);
-      const next = idx >= 0 ? prev.map((m, i) => (i === idx ? { ...m, dose } : m)) : [...prev, { code, dose }];
-      setPatient((p) => ({ ...p, medsData: serializeMeds(next) }));
-      return next;
-    });
-    setNewMedCode('');
-    setNewMedDose('');
-  };
-
+  // Remove med from patient list
   const removeMedication = (code) => {
     if (!code) return;
     if (!window.confirm(`Remove ${code}?`)) return;
@@ -105,28 +169,105 @@ const PatientDetails = () => {
     });
   };
 
+  // Internal adder used by both: button and suggestion
+  const addMedicationInternal = (code, name, dose) => {
+    if (!code) return;
+    ensureMedInArray(name || code, code, dose); // add to global ref list (no DB)
+    setMedList((prev) => {
+      const idx = prev.findIndex((m) => m.code === code);
+      const next = idx >= 0 ? prev.map((m, i) => (i === idx ? { ...m, dose } : m)) : [...prev, { code, dose }];
+      setPatient((p) => ({ ...p, medsData: serializeMeds(next) }));
+      return next;
+    });
+    // reset add box
+    setNewMedCode('');
+    setNewMedDose('');
+    setMedQuery('');
+    setShowMedSuggestions(false);
+  };
+
+  // Add via button (from inputs)
+  const addMedication = () => {
+    const name = medQuery.trim();
+    const dose = (newMedDose || '').toString().trim();
+    // Build code deterministically from name+dose; fall back to typed code if provided
+    const existing = Array.isArray(medsArray) ? medsArray : [];
+    const autoCode = buildMedCode(name, dose, existing);
+    const code = (newMedCode || autoCode).toUpperCase().replace(/[^A-Z0-9-]/g, '');
+    addMedicationInternal(code, name || code, dose);
+  };
+
+  // Add via suggestion click
+  const pickSuggestedMed = (med) => {
+    const name = med?.name || med?.code || '';
+    const doseFromList = (med?.dose ?? med?.defaultDose ?? med?.usualDose ?? '').toString().trim();
+    const dose = doseFromList || newMedDose || '';
+    const existing = Array.isArray(medsArray) ? medsArray : [];
+    const code = buildMedCode(name, dose, existing);
+    addMedicationInternal(code, name, dose);
+  };
+
+  // Close suggestions on outside click
+  useEffect(() => {
+    const onDocDown = (e) => {
+      if (!medInputWrapRef.current) return;
+      if (!medInputWrapRef.current.contains(e.target)) setShowMedSuggestions(false);
+    };
+    document.addEventListener('mousedown', onDocDown);
+    return () => document.removeEventListener('mousedown', onDocDown);
+  }, []);
+
+  // Lazy-load medsArray when opening Meds tab
+  const medsFetchInFlightRef = useRef(false);
+  const handleMedsTabClick = () => {
+    setMoTab('meds');
+    if (medsFetchInFlightRef.current) return;
+    if (Array.isArray(medsArray) && medsArray.length > 0) return;
+    if (typeof updateMedsArray !== 'function') return;
+    medsFetchInFlightRef.current = true;
+    try {
+      fetch('https://optimizingdyslipidemia.com/PHP/database.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        keepalive: true,
+        body: JSON.stringify({ script: 'getMeds' }),
+      })
+        .then((resp) => resp.json())
+        .then((data) => {
+          if (Array.isArray(data?.meds)) updateMedsArray(data.meds);
+          else if (Array.isArray(data?.medications)) updateMedsArray(data.medications);
+          else if (Array.isArray(data)) updateMedsArray(data);
+        })
+        .catch(() => { })
+        .finally(() => {
+          medsFetchInFlightRef.current = false;
+        });
+    } catch {
+      medsFetchInFlightRef.current = false;
+    }
+  };
+
   // ===== Recommendations =====
   const [recs, setRecs] = useState('');
-
   const saveRecommendations = () => {
     if (!patient?.id) return;
-    setPatient((p) => ({ ...p, recommendations: recs })); // mirror locally
-    // Fire-and-forget; backend script to implement later
+    setPatient((p) => ({ ...p, recommendations: recs }));
     try {
       fetch('https://optimizingdyslipidemia.com/PHP/database.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         keepalive: true,
         body: JSON.stringify({
-          script: 'updatePatientRecommendations', // implement later in PHP
+          script: 'updatePatientRecommendations', // implement on backend when ready
           patientID: patient.id,
           recommendations: recs,
         }),
-      }).catch(() => {});
-    } catch (_) {}
+      }).catch(() => { });
+    } catch (_) { }
   };
 
   // ===== Bootstrapping =====
+  // Load master condition list ONCE
   const conditionsFetchedRef = useRef(false);
   useEffect(() => {
     if (
@@ -153,11 +294,11 @@ const PatientDetails = () => {
     }
   }, [conditionData?.length, updateConditions]);
 
+  // Fetch local patient snapshot on ID change
   const lastLoadedIdRef = useRef(null);
   useEffect(() => {
     const id = activePatient?.id;
 
-    // no patient: mirror context fields
     if (!id) {
       setPatient(activePatient || {});
       setSelectedCodes(parseCodes(activePatient?.conditionData ?? ''));
@@ -167,7 +308,6 @@ const PatientDetails = () => {
       return;
     }
 
-    // already loaded this id? sync locals & exit
     if (lastLoadedIdRef.current === id) {
       setPatient((prev) => (prev?.id === id ? prev : activePatient));
       setSelectedCodes(parseCodes(activePatient?.conditionData ?? ''));
@@ -212,9 +352,10 @@ const PatientDetails = () => {
 
   if (!patient) return <div className="text-muted">No patient selected.</div>;
 
+  // ===== Common UI helpers =====
   const renderRow = (label, value, date) => {
     if (value === null || value === '' || (typeof value === 'string' && value.trim() === '') ||
-        (!isNaN(parseFloat(value)) && parseFloat(value) === 0)) return null;
+      (!isNaN(parseFloat(value)) && parseFloat(value) === 0)) return null;
     const displayValue = date ? `${value} (${date})` : value;
     return (
       <div className="d-flex justify-content-between py-1 border-bottom">
@@ -266,7 +407,7 @@ const PatientDetails = () => {
       headers: { 'Content-Type': 'application/json' },
       keepalive: true,
       body: JSON.stringify({ script: 'updateAppointment', patientID: patient.id, appointmentDate: iso }),
-    }).catch(() => {});
+    }).catch(() => { });
   };
 
   const savePrivateNote = async () => {
@@ -417,7 +558,7 @@ const PatientDetails = () => {
             {renderRow('LDL', patient.ldl, patient.ldlDate)}
             {renderRow('Non-HDL', patient.nonHdl, patient.nonHdlDate)}
             {renderRow('Cholesterol/HDL Ratio', patient.cholesterolHdlRatio, patient.cholesterolHdlRatioDate)}
-            {renderRow('Creatine Kinase', patient.creatineKinase, patient.creatineKinaseDate)}
+            {renderRow('Creatine Kinase', patient.creatineKinase, patient.creatineKinotransferaseDate)}
             {renderRow('ALT (Alanine Aminotransferase)', patient.alanineAminotransferase, patient.alanineAminotransferaseDate)}
             {renderRow('Lipoprotein A', patient.lipoproteinA, patient.lipoproteinADate)}
             {renderRow('Apolipoprotein B', patient.apolipoproteinB, patient.apolipoproteinBDate)}
@@ -435,191 +576,12 @@ const PatientDetails = () => {
             {renderRow('Albumin/Creatinine Ratio', patient.albuminCreatinineRatio, patient.albuminCreatinineRatioDate)}
           </div>
 
-          {/* Right column: tabs */}
-          <div className="flex-grow-1 ms-3 gap-2 d-flex flex-column" style={{ overflowY: 'hidden', minHeight: 0, minWidth: 0 }}>
-            {/* Button bar (three equal tabs) */}
-            <div className="alert-navy p-2 rounded-2 mb-1">
-              <div className="row g-2">
-                <div className="col-16">
-                  <button
-                    type="button"
-                    onClick={() => setMoTab('conditions')}
-                    className={`btn ${moTab === 'conditions' ? 'btn-primary' : 'btn-outline-primary'} w-100`}
-                    aria-pressed={moTab === 'conditions'}
-                  >
-                    Conditions
-                  </button>
-                </div>
-                <div className="col-16">
-                  <button
-                    type="button"
-                    onClick={() => setMoTab('meds')}
-                    className={`btn ${moTab === 'meds' ? 'btn-primary' : 'btn-outline-primary'} w-100`}
-                    aria-pressed={moTab === 'meds'}
-                  >
-                    Meds
-                  </button>
-                </div>
-                <div className="col-16">
-                  <button
-                    type="button"
-                    onClick={() => setMoTab('recs')}
-                    className={`btn ${moTab === 'recs' ? 'btn-primary' : 'btn-outline-primary'} w-100`}
-                    aria-pressed={moTab === 'recs'}
-                  >
-                    Recommendations
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* CONDITIONS (list scrolls) */}
-            {moTab === 'conditions' && (
-              <div className="d-flex flex-column" style={{ flex: '1 1 0', minHeight: 0 }}>
-                <div className="flex-grow-1" style={{ overflowY: 'auto', minHeight: 0 }}>
-                  <div className="container-fluid px-1">
-                    <div className="row g-2">
-                      {(Array.isArray(conditionData) ? conditionData : []).map((c, idx) => {
-                        const label = labelForCondition(c);
-                        const code = codeForCondition(c, label);
-                        const id = `cond_${idx}`;
-                        const checked = !!code && selectedCodes.includes(code);
-                        return (
-                          <div key={id} className="col-24 col-md-16 col-lg-12">
-                            <div className="border rounded p-2 d-flex align-items-center">
-                              <span className="flex-grow-1 min-w-0 text-truncate me-2 small" title={`${label}${code ? ` (${code})` : ''}`}>
-                                {label}
-                              </span>
-                              <div className="form-check form-switch m-0">
-                                <input
-                                  id={id}
-                                  type="checkbox"
-                                  className="form-check-input"
-                                  checked={checked}
-                                  onChange={() => toggleConditionCode(code)}
-                                />
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* MEDS (add row fixed, list scrolls) */}
-            {moTab === 'meds' && (
-              <div className="d-flex flex-column" style={{ flex: '1 1 0', minHeight: 0 }}>
-                {/* Add row (same line, no Save button) */}
-                <div className="border rounded p-2 mb-2">
-                  <div className="d-flex align-items-end">
-                    <div className="col-18 me-2">
-                      <label className="form-label mb-1">Medication Code</label>
-                      <input
-                        type="text"
-                        className="form-control"
-                        value={newMedCode}
-                        onChange={(e) => setNewMedCode(e.target.value)}
-                        placeholder="e.g., ASP"
-                      />
-                    </div>
-                    <div className="col-10 me-2">
-                      <label className="form-label mb-1">Dose</label>
-                      <input
-                        type="text"
-                        className="form-control"
-                        value={newMedDose}
-                        onChange={(e) => setNewMedDose(e.target.value)}
-                        placeholder="e.g., 50"
-                      />
-                    </div>
-                    <div className="flex-grow-1 d-flex align-items-end">
-                      <button type="button" className="btn btn-outline-primary w-100" onClick={addMedication}>
-                        Add Medication
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* List (scrolls) */}
-                <div className="flex-grow-1" style={{ overflowY: 'auto', minHeight: 0 }}>
-                  <div className="container-fluid px-1">
-                    <div className="row g-2">
-                      {(medList || []).map((m, idx) => {
-                        const id = `med_${idx}`;
-                        return (
-                          <div key={id} className="col-48">
-                            <div className="border rounded p-2 d-flex align-items-center">
-                              <div className="flex-grow-1 min-w-0 me-2">
-                                <div className="form-control bg-light text-truncate" style={{ cursor: 'default' }}>
-                                  {m.code}
-                                </div>
-                              </div>
-                              <div className="me-2" style={{ width: 140 }}>
-                                <input
-                                  type="text"
-                                  className="form-control"
-                                  value={m.dose}
-                                  onChange={(e) => updateMedDose(m.code, e.target.value)}
-                                  placeholder="Dose"
-                                />
-                              </div>
-                              <button
-                                type="button"
-                                className="btn btn-outline-danger btn-sm"
-                                onClick={() => removeMedication(m.code)}
-                                aria-label={`Remove ${m.code}`}
-                                title={`Remove ${m.code}`}
-                              >
-                                ✕
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                      {(!medList || medList.length === 0) && (
-                        <div className="col-48 text-muted small">
-                          <em>No medications yet. Add one above.</em>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* RECOMMENDATIONS (textarea + Save; content scrolls) */}
-            {moTab === 'recs' && (
-              <div className="d-flex flex-column" style={{ flex: '1 1 0', minHeight: 0 }}>
-                <div className="flex-grow-1" style={{ overflowY: 'auto', minHeight: 0 }}>
-                  <div className="border rounded p-2">
-                    <label className="form-label fw-bold">Recommendations</label>
-                    <textarea
-                      className="form-control"
-                      rows={14}
-                      value={recs}
-                      onChange={(e) => setRecs(e.target.value)}
-                      placeholder="Enter personalized recommendations for this patient..."
-                    />
-                    <div className="d-flex mt-2">
-                      <button
-                        type="button"
-                        className="btn btn-primary ms-auto"
-                        onClick={saveRecommendations}
-                        disabled={!patient?.id}
-                      >
-                        Save Recommendations
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
+          <div className="flex-grow-1 d-flex" style={{ minHeight: 0 }}>
+            <PatientMedsBox patient={activePatient} />
           </div>
 
         </div>
+
       </div>
     </div>
   );

@@ -5,9 +5,9 @@ import logo from '../../assets/markbrady.png';
 import { useGlobalContext } from '../../Context/global.context';
 
 // Read values forwarded from package.json via env (see package.json scripts)
-const version = process.env.REACT_APP_VERSION ?? 'Version 2.0.8';
-const builtAt = process.env.REACT_APP_BUILT_AT ?? 'Fri: 12:10';
-const fixNote = process.env.REACT_APP_FIX_NOTE ?? 'Criteria Search now Turns Green when Value is entered to see easier';
+const version = process.env.REACT_APP_VERSION ?? 'Version 2.2.0';
+const builtAt = process.env.REACT_APP_BUILT_AT ?? 'Wed Sept 14 -12:30 PM';
+const fixNote = process.env.REACT_APP_FIX_NOTE ?? 'This has the 3 Labs - but not two line Meds yet cause of what you are suggesting.. I stopped on that.';
 
 const DashBoard = () => {
   const navigate = useNavigate();

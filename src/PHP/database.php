@@ -203,7 +203,7 @@ function insertNewClient($nextAppointment, $data, $conn)
      )
      SELECT 
           clientName, clientStatus, healthNumber, sex, dateOfBirth, nextAppointment,
-          address, street, city, province, postalCode, fullAddress, telephone,
+          `address`, `street`, `city`, `province`, `postalCode`, `fullAddress`, `telephone`,
           providerName, providerNumber, orderDate,
           cholesterol, cholesterolDate,
           triglyceride, triglycerideDate,
@@ -216,6 +216,7 @@ function insertNewClient($nextAppointment, $data, $conn)
           lipoproteinA, lipoproteinADate,
           apolipoproteinB, apolipoproteinBDate,
           natriureticPeptideB, natriureticPeptideBDate,
+          urea, ureaDate,  
           creatinine, creatinineDate,
           gfr, gfrDate,
           albumin, albuminDate,
@@ -1058,7 +1059,7 @@ if ($data['script'] === 'getConditionData') {
           while ($row = $result->fetch_assoc()) {
                $conditions[] = $row;
           }
-          echo json_encode( $conditions);
+          echo json_encode($conditions);
      } else {
           http_response_code(500);
           echo json_encode([
@@ -1070,24 +1071,17 @@ if ($data['script'] === 'getConditionData') {
 }
 
 if ($data['script'] === 'updatePatientConditions') {
-$patientID = $data['patientID'] ?? null;
-$conditionCodes = $data['conditionCodes'] ?? null;
+     $patientID = $data['patientID'] ?? null;
+     $conditionCodes = $data['conditionCodes'] ?? null;
 
-if (!$patientID || $conditionCodes === null) {
-     http_response_code(400);
-     echo json_encode(['success' => false, 'error' => 'Missing patientID or conditionCodes']);
-     exit;
-}
+     if (!$patientID || $conditionCodes === null) {
+          http_response_code(400);
+          echo json_encode(['success' => false, 'error' => 'Missing patientID or conditionCodes']);
+          exit;
+     }
 
-$stmt = $conn->prepare("UPDATE Patient SET conditionData = ? WHERE id = ?");
-if (!$stmt) {
-     http_response_code(500);
-     echo json_encode(['success' => false, 'error' => 'Prepare failed', 'details' => $conn->error]);
-     exit;
-}
-$stmt->bind_param('si', $conditionCodes, $patientID);
-$stmt->execute();
-$stmt->close();
+     $stmt = "UPDATE Patient SET conditionData = '{$conditionCodes}' WHERE id = '{$patientID}'";
+     $go = $conn->query($stmt) or die($stmt);
 }
 
 if ($data['script'] === 'getPatientById') {
@@ -1117,5 +1111,89 @@ if ($data['script'] === 'getPatientById') {
      }
      $stmt->close();
      $conn->close();
+     exit;
+}
+
+if ($data['script'] === 'getMeds') {
+     // Adjust column names if your table uses different casing/labels.
+     $sql = "
+        SELECT * FROM medications ORDER BY medication ASC
+    ";
+
+     $result = $conn->query($sql);
+
+     if ($result) {
+          $meds = [];
+          while ($row = $result->fetch_assoc()) {
+               $meds[] = $row;
+          }
+
+          echo json_encode([
+               'success' => true,
+               'meds' => $meds
+          ], JSON_UNESCAPED_UNICODE);
+
+     } else {
+          http_response_code(500);
+          echo json_encode([
+               'success' => false,
+               'error' => 'Query failed',
+               'details' => $conn->error
+          ]);
+     }
+     exit;
+}
+
+if ($data['script'] === 'conditionSearch') {
+     $conditionCodes = $data['codes'] ?? [];
+     
+     $patients = [];
+     if (!empty($conditionCodes) && is_array($conditionCodes)) {
+          $seen = [];
+          foreach ($conditionCodes as $code) {
+               $code = trim($code);
+               if ($code === '') continue;
+               // Use FIND_IN_SET for comma-separated values, or LIKE if needed
+               $stmt = $conn->prepare("SELECT * FROM Patient WHERE FIND_IN_SET(?, conditionData)");
+               $stmt->bind_param('s', $code);
+               $stmt->execute();
+               $result = $stmt->get_result();
+               while ($row = $result->fetch_assoc()) {
+                    $id = $row['id'];
+                    if (!isset($seen[$id])) {
+                         $patients[] = $row;
+                         $seen[$id] = true;
+                    }
+               }
+               $stmt->close();
+          }
+     }
+     echo json_encode($patients);
+     exit;
+}
+
+
+if ($data['script'] === 'getMedsArray') {
+     $sql = "SELECT * FROM medications ORDER BY medication ASC";
+     $result = $conn->query($sql);
+     if ($result) {
+          $meds = [];
+          while ($row = $result->fetch_assoc()) {
+               $meds[] = $row;
+          }
+     }
+     $sql2 = "SELECT * FROM medCat ORDER BY medication_cat ASC";
+     $result2 = $conn->query($sql2);
+     if ($result2) {
+          $cats = [];
+          while ($row = $result2->fetch_assoc()) {
+               $cats[] = $row['medication_cat'];
+          }
+     }
+     echo json_encode([
+          'meds' => $meds ?? [],
+          'cats' => $cats ?? []
+     ]);
+     
      exit;
 }

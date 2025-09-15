@@ -63,17 +63,44 @@ const ResultsPage = () => {
     return age >= 0 ? age : "—";
   }
 
-  const editClient = (activeClient) => {
-          setActivePatient(activeClient);
-          setClientBox(true);
-          setVisibleBox('ClientDetails');
-     };
+  // results.component.jsx
+  const editClient = async (activeClient) => {
+    try {
+      const res = await fetch("https://optimizingdyslipidemia.com/PHP/database.php", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        keepalive: true,
+        cache: "no-store",
+        body: JSON.stringify({
+          script: "getPatientById",
+          patientID: Number(activeClient.id), // must be an integer per your PHP
+        }),
+      });
+
+      // Be resilient to non-JSON responses
+      const text = await res.text();
+      let data;
+      try { data = JSON.parse(text); } catch { data = {}; }
+
+      const full = (res.ok && data?.success && data?.patient) ? data.patient : activeClient;
+
+      // Update context so displayPatient and PatientConditionDisplay react immediately
+      setActivePatient(full);
+    } catch (err) {
+      // Network or parsing error – open with the row we already have
+      setActivePatient(activeClient);
+    } finally {
+      setClientBox(true);
+      setVisibleBox('ClientDetails');
+    }
+  };
+
 
   return (
     <div className="container-fluid d-flex flex-column" style={{ height: "100vh" }}>
       {/* Top bar */}
       <div className="d-flex align-items-center justify-content-between py-2">
-        <h5 className="m-0">{title}</h5>
+        <h5 className="m-0">{title}  <span className="text-muted px-2 fs-7">[{results.length}] Records</span></h5>
         <div className="d-flex gap-2">
           <button className="btn btn-sm btn-outline-primary" onClick={backToPatient}>
             Patient Search
