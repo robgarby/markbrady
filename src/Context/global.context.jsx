@@ -76,6 +76,10 @@ export const GlobalContext = ({ children }) => {
     setPatientSearch((prev) => ({ ...prev, ...patch }));
   const clearPatientSearch = () => setPatientSearch(defaultPatientSearch);
 
+  // NEW: Private Mode (persistent; default false)
+  const [privateMode, setPrivateMode] = usePersistentState('privateMode', false);
+  const updatePrivateMode = (v) => setPrivateMode(Boolean(v));
+
   return (
     <AppContext.Provider
       value={{
@@ -101,6 +105,10 @@ export const GlobalContext = ({ children }) => {
         updatePatientSearch,
         clearPatientSearch,
         setPatientSearch,
+
+        // Private mode (persistent)
+        privateMode,
+        updatePrivateMode,
       }}
     >
       {children}

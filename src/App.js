@@ -5,6 +5,7 @@ import SignIn from './components/SignIn/signIn.component';
 import Dashboard from './components/Dashboard/dashboard.component';
 import PDFUploadViewer from './components/UploadLab/uploadLab.component';
 import Database from './components/Database/Database/database.component';
+import AdminPanel from './components/Admin/adminPanel.component.jsx';
 
 function App() {
   return (
@@ -15,6 +16,7 @@ function App() {
           <Route path="/database" element={<Database />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/upload" element={<PDFUploadViewer />} />
+          <Route path="/admin" element={<AdminPanel />} />
           <Route path="*" element={<Navigate to="/signin" />} />
         </Routes>
       </Router>

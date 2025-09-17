@@ -762,7 +762,6 @@ if ($data['script'] === 'providerSearch') {
 
 }
 
-
 if ($data['script'] === 'privateNoteSearch') {
      // 1) Read inputs
      $raw = isset($data['privateNote']) ? trim((string) $data['privateNote']) : '';

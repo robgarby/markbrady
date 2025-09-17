@@ -8,6 +8,14 @@ const ViewPatientPDF = () => {
      const [patientReports, setPatientReports] = useState([]);
      const [pdfToShow, setPdfToShow] = useState(null);
 
+     // Mask for demos: "Patient ####" using first 4 digits of healthNumber
+     const demoPatientLabel = (healthNumber) => {
+          const digits = String(healthNumber || "").replace(/\D/g, "");
+          const first4 = digits.slice(0, 4) || "XXXX";
+          return `Patient ${first4}`;
+     };
+
+
      useEffect(() => {
           const fetchLabReports = async () => {
                try {
@@ -68,7 +76,7 @@ const ViewPatientPDF = () => {
                <div className="p-3 mb-4 border rounded bg-light">
                     <h4 className="text-primary mb-2">Patient Information</h4>
                     <div className="d-flex justify-content-between">
-                         <strong>Client Name:</strong> <span>{activePatient.clientName}</span>
+                         <strong>Client Name:</strong> <span>{demoPatientLabel(activePatient.healthNumber)}</span>
                     </div>
                     <div className="d-flex justify-content-between">
                          <strong>Health Number:</strong> <span>{activePatient.healthNumber}</span>

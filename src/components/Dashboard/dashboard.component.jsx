@@ -5,9 +5,9 @@ import logo from '../../assets/markbrady.png';
 import { useGlobalContext } from '../../Context/global.context';
 
 // Read values forwarded from package.json via env (see package.json scripts)
-const version = process.env.REACT_APP_VERSION ?? 'Version 2.2.0';
-const builtAt = process.env.REACT_APP_BUILT_AT ?? 'Wed Sept 14 -12:30 PM';
-const fixNote = process.env.REACT_APP_FIX_NOTE ?? 'This has the 3 Labs - but not two line Meds yet cause of what you are suggesting.. I stopped on that.';
+const version = process.env.REACT_APP_VERSION ?? 'Version 2.3.1';
+const builtAt = process.env.REACT_APP_BUILT_AT ?? 'Wed Sept 17 - 2:00 PM';
+const fixNote = process.env.REACT_APP_FIX_NOTE ?? 'Re-Aranged front page.. Conditions is fully functional - Medications is under conttruction still';
 
 const DashBoard = () => {
   const navigate = useNavigate();
@@ -20,11 +20,12 @@ const DashBoard = () => {
 
   const handleUploadClick = () => navigate('/upload');
   const handleDatabase = () => navigate('/database');
+  const handleAdminPanel = () => navigate('/admin');
 
   return (
-    <div className="container-fluid bg-light min-vh-100 d-flex align-items-center justify-content-center">
-      <div className="col-36 bg-light">
-        <div className="col-48 text-center mb-5">
+    <div className="container min-vh-100 d-flex align-items-center justify-content-center">
+      <div className="col-36">
+        <div className="col-48 text-center mb-5 bg-light">
           <img src={logo} alt="Dashboard Logo" style={{ maxWidth: '300px', height: 'auto' }} />
         </div>
 
@@ -36,25 +37,35 @@ const DashBoard = () => {
           {fixNote}
         </div>
 
-        <div className="d-flex gap-2 flex-wrap justify-content-center">
-          <div className="col-48 col-md-16 text-center mb-3">
+        <div className="d-flex gap-2 justify-content-center">
+          <div className="col-18 text-center mb-3">
             <button className="btn btn-primary w-100" onClick={handleUploadClick}>
               Upload New Lab
             </button>
           </div>
-          <div className="col-48 col-md-16 text-center mb-3">
+        </div>
+        <div className="d-flex gap-2 justify-content-center">
+          <div className="col-18 text-center mb-3">
+            <button className="btn btn-purple w-100" onClick={handleAdminPanel}>
+              Admin Panel
+            </button>
+          </div>
+          <div className="col-18 text-center mb-3">
             <button className="btn btn-info w-100" onClick={handleDatabase}>
               Work on Database
             </button>
           </div>
-          <div className="col-48 col-md-16 text-center">
-            <button className="btn btn-danger w-100" onClick={logout}>
-              Log Out
-            </button>
-          </div>
         </div>
+          <div className="d-flex gap-2 justify-content-center mt-5">
+            <div className="col-8 text-center">
+              <button className="btn btn-danger w-100" onClick={logout}>
+                Log Out
+              </button>
+            </div>
+          </div>
+        
       </div>
-    </div>
+    </div >
   );
 };
 

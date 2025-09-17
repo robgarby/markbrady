@@ -71,7 +71,6 @@ if ($data['script'] === 'updateRecommendations') {
     exit;
 }
 
-
 if ($data['script'] === 'getPatientById') {
     header('Content-Type: application/json; charset=utf-8');
     $patientID = $data['patientID'] ?? null;
@@ -118,5 +117,61 @@ if ($data['script'] === 'getPatientById') {
         'history' => $history,  // 0..3 rows, newest first
     ]);
 
+    exit;
+}
+
+if ($data['script'] === 'saveConditionData') {
+    $conditions = $data['conditions'];
+    $conditionName = $conditions['conditionName'] ?? '';
+    $conditionCode = $conditions['code'] ?? '';
+    $conditionCategory = 'General';
+    $stmt = "INSERT INTO patient_conditions (conditionName, conditionCatagory, conditionCode) VALUES ('$conditionName', '$conditionCategory', '$conditionCode')";
+    $insert = $conn->query($stmt);
+
+    // New Record has been set - so now get all the conditions and return them
+     $sql = "SELECT * FROM patient_conditions ORDER BY conditionName ASC";
+     $result = $conn->query($sql);
+
+     if ($result) {
+          $conditions = [];
+          while ($row = $result->fetch_assoc()) {
+               $conditions[] = $row;
+          }
+          echo json_encode([
+               'success' => true,
+               'conditions' => $conditions
+          ]);
+     } else {
+          http_response_code(500);
+          echo json_encode([
+               'success' => false,
+               'error' => 'Query failed',
+               'details' => $conn->error
+          ]);
+     }
+   
+     exit;
+}
+
+if ($data['script'] === 'removeConditionByID') {
+    $conditionID = $data['ID'] ?? null;
+    if ($conditionID) {
+        $stmt = $conn->prepare("DELETE FROM patient_conditions WHERE ID = ?");
+        $stmt->bind_param("i", $conditionID);
+        $stmt->execute();
+        $stmt->close();
+    }   
+     exit;
+}
+
+if ($data['script'] === 'updateConditionName') {
+    $id = $data['ID'] ?? null;
+    $conditionName = $data['conditionName'] ?? null;
+    if ($id && $conditionName) {
+        $stmt = $conn->prepare("UPDATE patient_conditions SET conditionName = ? WHERE ID = ?");
+        $stmt->bind_param("si", $conditionName, $id);
+        $stmt->execute();
+        $stmt->close();
+    }
     exit;
 }

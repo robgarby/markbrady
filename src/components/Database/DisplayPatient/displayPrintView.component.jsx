@@ -77,8 +77,16 @@ const LAB_FIELDS = [
 // Show "-" for truly blank values but keep zeroes like 0 or "0.00"
 const printVal = (v) => (v === null || v === undefined || String(v).trim() === "" ? "-" : String(v));
 
+// Mask for demos: "Patient ####" using first 4 digits of healthNumber
+const demoPatientLabel = (healthNumber) => {
+  const digits = String(healthNumber || "").replace(/\D/g, "");
+  const first4 = digits.slice(0, 4) || "XXXX";
+  return `Patient ${first4}`;
+};
+
 const PrintLabView = () => {
-  const { activePatient, setActivePatient, setVisibleBox, conditionData } = useGlobalContext();
+  // 👇 now reading privateMode from context too
+  const { activePatient, setActivePatient, setVisibleBox, conditionData, privateMode } = useGlobalContext();
   const [fresh, setFresh] = useState(activePatient || {});
   const [loading, setLoading] = useState(false);
   const [history, setHistory] = useState([]);
@@ -155,6 +163,10 @@ const PrintLabView = () => {
     fresh?.lastFirstName ||
     "—";
 
+  // 👇 choose name based on privateMode
+  const isPrivate = Boolean(privateMode);
+  const headerName = isPrivate ? demoPatientLabel(fresh?.healthNumber) : (patientName || "—");
+
   // Doctor's note (prefer privateNote if present)
   const doctorNote = fresh?.patientNote ?? fresh?.patientNote ?? "";
 
@@ -198,7 +210,7 @@ const PrintLabView = () => {
       {/* Header: Name + HealthNumber + Back/Print (print-hidden controls) */}
       <div className="row align-items-start g-2 mb-2">
         <div className="col-36">
-          <h1 className="h3 mb-1">{patientName}</h1>
+          <h1 className="h3 mb-1">{headerName}</h1>
           <div className="small">
             <strong>Health Number:</strong> {fresh?.healthNumber || "—"}
           </div>

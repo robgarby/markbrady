@@ -4,7 +4,6 @@ import { useGlobalContext } from '../../../Context/global.context';
 import PatientMedsBox from "./patientMedsBox.component.jsx";
 import PatientConditionDisplay from "./Patient/patientConditionDisplay.componentl.jsx";
 
-
 import { useNavigate } from 'react-router-dom';
 
 const PatientDetails = () => {
@@ -16,6 +15,7 @@ const PatientDetails = () => {
     updateConditions,
     medsArray,
     updateMedsArray,
+    privateMode, // 👈 read private mode from context
   } = gc || {};
   const navigate = useNavigate();
 
@@ -38,6 +38,31 @@ const PatientDetails = () => {
     (fallbackLabel ? fallbackLabel.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6) : null);
   const parseCodes = (str) =>
     (str || '').split(',').map((s) => s.trim().toUpperCase()).filter(Boolean);
+
+  // Mask for demos: "Patient ####" using first 4 digits of healthNumber
+  const demoPatientLabel = (healthNumber) => {
+    const digits = String(healthNumber || "").replace(/\D/g, "");
+    const first4 = digits.slice(0, 4) || "XXXX";
+    return `Patient ${first4}`;
+  };
+
+  // Compute a readable real name from record
+  const realPatientName = (p) => {
+    const raw =
+      p?.clientName ||
+      p?.name ||
+      (p?.firstName && p?.lastName ? `${p.firstName} ${p.lastName}` : p?.lastFirstName || "");
+    if (!raw) return "—";
+    const s = String(raw).trim();
+    if (s.includes(",")) {
+      const [last = "", first = ""] = s.split(",");
+      return `${first.trim()} ${last.trim()}`.trim();
+    }
+    return s;
+  };
+
+  const isPrivate = Boolean(privateMode);
+  const displayName = isPrivate ? demoPatientLabel(patient.healthNumber) : realPatientName(patient);
 
   const toggleConditionCode = (code) => {
     if (!code || !patient?.id) return;
@@ -441,7 +466,9 @@ const PatientDetails = () => {
           <div className="mb-4">
             <h5>Personal Info</h5>
             <div className="d-flex gap-2">
-              <div className="col-24 text-start">Name: {patient.clientName}</div>
+              {/* 👇 Name obeys privateMode */}
+              <div className="col-24 text-start">Name: {displayName}</div>
+
               <div className="col-24 text-start">Health Number: {patient.healthNumber}</div>
             </div>
             <div className="d-flex gap-2 mt-2">
