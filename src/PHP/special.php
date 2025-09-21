@@ -344,3 +344,62 @@ if ($data['script'] === 'saveHistoryValues') {
     }
     exit;
 }
+
+if ($data['script'] === 'medicationSearchByIds') {
+    $ids = $data['ids'] ?? [];
+    $categories = [];
+
+    if (is_array($ids) && count($ids) > 0) {
+        // Prepare placeholders for IN clause
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $types = str_repeat('i', count($ids));
+
+        $stmt = $conn->prepare("SELECT ID, medication_cat FROM medCat WHERE ID IN ($placeholders)");
+        $stmt->bind_param($types, ...$ids);
+        $stmt->execute();
+        $result = $stmt->get_result();
+
+        while ($row = $result->fetch_assoc()) {
+            $categories[] = $row;
+        }
+        $stmt->close();
+
+        // Search medications for each category and collect their IDs
+        $searchIDS = [];
+        foreach ($categories as $cat) {
+            $medCat = $cat['medication_cat'];
+            $stmtMed = $conn->prepare("SELECT ID FROM medications WHERE medication_cat = ?");
+            $stmtMed->bind_param("s", $medCat);
+            $stmtMed->execute();
+            $resultMed = $stmtMed->get_result();
+            while ($rowMed = $resultMed->fetch_assoc()) {
+                $searchIDS[] = $rowMed['ID'];
+            }
+            $stmtMed->close();
+        }
+        // For each medication ID in searchIDS, find patients whose medsData contains that ID
+        $patientsWithMedIds = [];
+        if (!empty($searchIDS)) {
+            // Build a WHERE clause to match any of the IDs in the comma-separated medsData
+            $conditions = [];
+            foreach ($searchIDS as $medId) {
+                // Use FIND_IN_SET for safe matching in comma-separated string
+                $conditions[] = "FIND_IN_SET($medId, medsData)";
+            }
+            $whereClause = implode(' OR ', $conditions);
+            $sql = "SELECT * FROM Patient WHERE $whereClause";
+            $result = $conn->query($sql);
+            if ($result) {
+                while ($row = $result->fetch_assoc()) {
+                    $patientsWithMedIds[] = $row;
+                }
+            }
+             echo json_encode($patientsWithMedIds);// Debugging: Output the matching patients
+        }
+
+
+        exit;
+    }
+
+
+}
