@@ -1,9 +1,9 @@
 // /Context/global.context.jsx
-import React, { createContext, useState, useContext, useEffect } from 'react';
+import React, { createContext, useContext, useEffect, useState } from "react";
 
 const AppContext = createContext();
 
-// --- Helper: persistent state synced to localStorage (for selected slices only) ---
+// Persist a slice to localStorage
 const usePersistentState = (key, initialValue) => {
   const [value, setValue] = useState(() => {
     try {
@@ -13,100 +13,95 @@ const usePersistentState = (key, initialValue) => {
       return initialValue;
     }
   });
-
   useEffect(() => {
     try {
       localStorage.setItem(key, JSON.stringify(value));
-    } catch {
-      // ignore quota/serialization errors
-    }
+    } catch {}
   }, [key, value]);
-
   return [value, setValue];
 };
 
+// Default shape for patient search (matches component usage)
 const defaultPatientSearch = {
-  mode: 'identity',
-  query: '',
-  noteQuery: '',
-  providerQuery: '',
-  appointmentDate: '',
+  mode: "identity",
+  query: "",
+  noteQuery: "",
+  privateNoteQuery: "",
+  providerQuery: "",
+  appointmentDate: "",
   results: [],
   didSearch: false,
 };
 
 export const GlobalContext = ({ children }) => {
-  // --- Non-persistent (in-memory) UI/data slices ---
-  const [visibleBox, setVisibleBox] = useState(null);
-  const [activePatient, setActivePatient] = useState(null);
-  const [clientBox, setClientBox] = useState(false);
+  // --- Core UI ---
+  const [visibleBox, setVisibleBox] = useState(null);       // e.g., "searchResults", "meds", "conditions"
+  const [activePatient, setActivePatient] = useState(null); // selected patient object or null
+  const [clientBox, setClientBox] = useState(false);        // toggles client panel visibility
 
-  // Conditions master list: IN MEMORY ONLY
-  const [conditionData, setConditionData] = useState([]);
-  const updateConditions = (newData) => setConditionData(newData);
-
-  // Medications master list: IN MEMORY ONLY
-  // Shape: [{ name, defaultDose?, category? }, ...]
-  const [medsArray, setMedsArray] = useState([]);
+  // --- Medications master data ---
+  const [medsArray, setMedsArray] = useState([]); // [{ ID, medication, medication_cat, medication_dose }, ...]
   const updateMedsArray = (next) =>
-    setMedsArray((prev) => (typeof next === 'function' ? next(prev) : next));
+    setMedsArray((prev) => (typeof next === "function" ? next(prev) : next));
 
-  // Categories master list: IN MEMORY ONLY
-  // Shape: ["No Category", "Statin", ...] — always keep "No Category" present (and first).
-  const ensureNoCategoryFirst = (arr) => {
-    const flat = (arr || [])
-      .map((c) => (c?.name ?? c ?? '').toString().trim())
-      .filter(Boolean);
-    const dedup = Array.from(new Set(flat));
-    return ['No Category', ...dedup.filter((c) => c !== 'No Category')];
-  };
-
-  const [medsCategory, setMedsCategory] = useState(['No Category']);
+  // --- Medication categories (INIT = []) ---
+  const [medsCategory, setMedsCategory] = useState([]); // [{ ID, medication_cat }, ...] or []
   const updateMedsCategory = (next) =>
-    setMedsCategory((prev) =>
-      ensureNoCategoryFirst(typeof next === 'function' ? next(prev) : next)
-    );
+    setMedsCategory((prev) => (typeof next === "function" ? next(prev) : next));
 
-  // --- Persistent slices (saved to localStorage) ---
+  // --- Conditions data ---
+  const [conditionData, setConditionData] = useState([]); // [{ id|ID, code|conditionCode, name|conditionName, category }, ...]
+  // Keep existing name
+  const updateConditionData = (next) =>
+    setConditionData((prev) => (typeof next === "function" ? next(prev) : next));
+  // Alias expected by some components (PatientConditionsBox / ConditionAdminPanel)
+  const updateConditions = (next) =>
+    setConditionData((prev) => (typeof next === "function" ? next(prev) : next));
+
+  // --- Patient search (persisted) ---
   const [patientSearch, setPatientSearch] = usePersistentState(
-    'patientSearch',
+    "gc.patientSearch",
     defaultPatientSearch
   );
+  // Merge-style updater for convenience in handlers
   const updatePatientSearch = (patch) =>
-    setPatientSearch((prev) => ({ ...prev, ...patch }));
+    setPatientSearch((prev) => ({ ...prev, ...(patch || {}) }));
   const clearPatientSearch = () => setPatientSearch(defaultPatientSearch);
 
-  // NEW: Private Mode (persistent; default false)
-  const [privateMode, setPrivateMode] = usePersistentState('privateMode', false);
-  const updatePrivateMode = (v) => setPrivateMode(Boolean(v));
+  // --- Misc (persisted) ---
+  const [privateMode, setPrivateMode] = usePersistentState("gc.privateMode", false);
+  const updatePrivateMode = (v) =>
+    setPrivateMode(typeof v === "function" ? v(privateMode) : v);
 
   return (
     <AppContext.Provider
       value={{
-        // UI state
-        visibleBox, setVisibleBox,
-        activePatient, setActivePatient,
-        clientBox, setClientBox,
+        // Core UI
+        visibleBox,
+        setVisibleBox,
+        activePatient,
+        setActivePatient,
+        clientBox,
+        setClientBox,
 
-        // Conditions (in-memory)
-        conditionData,
-        updateConditions,
-
-        // Meds (in-memory)
+        // Meds & categories
         medsArray,
         updateMedsArray,
-
-        // Categories (in-memory)
         medsCategory,
         updateMedsCategory,
 
-        // Patient search (persistent)
-        patientSearch,
-        updatePatientSearch,
-        clearPatientSearch,
-        setPatientSearch,
+        // Conditions
+        conditionData,
+        updateConditions,     // ← alias added
+        updateConditionData,  // ← original name kept
 
-        // Private mode (persistent)
+        // Patient search
+        patientSearch,
+        setPatientSearch,     // replace wholesale if needed
+        updatePatientSearch,  // merge helper used by components
+        clearPatientSearch,
+
+        // Misc
         privateMode,
         updatePrivateMode,
       }}

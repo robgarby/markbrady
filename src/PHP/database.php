@@ -1171,7 +1171,6 @@ if ($data['script'] === 'conditionSearch') {
      exit;
 }
 
-
 if ($data['script'] === 'getMedsArray') {
      $sql = "SELECT * FROM medications ORDER BY medication ASC";
      $result = $conn->query($sql);
@@ -1195,4 +1194,32 @@ if ($data['script'] === 'getMedsArray') {
      ]);
      
      exit;
+}
+
+if ($data['script'] === 'updatePaymentMethod') {
+     $patientID = $data['patientID'] ?? null;
+     $paymentMethod = $data['paymentMethod'] ?? null;
+
+     if (!$patientID) {
+          http_response_code(400);
+          echo json_encode(['success' => false, 'error' => 'Missing patient ID']);
+          exit;
+     }
+
+     $stmt = $conn->prepare("UPDATE Patient SET paymentMethod = ? WHERE id = ?");
+     if (!$stmt) {
+          http_response_code(500);
+          echo json_encode(['success' => false, 'error' => 'Prepare failed', 'details' => $conn->error]);
+          exit;
+     }
+     $stmt->bind_param('si', $paymentMethod, $patientID);
+
+     if ($stmt->execute()) {
+          http_response_code(204); // no content
+          exit;
+     } else {
+          http_response_code(500);
+          echo json_encode(['success' => false, 'error' => 'Query failed', 'details' => $stmt->error]);
+          exit;
+     }
 }

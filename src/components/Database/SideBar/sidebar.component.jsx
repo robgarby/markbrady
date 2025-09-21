@@ -22,7 +22,7 @@ const SideBar = () => {
 
   return (
     <>
-      <div className="sidebar d-flex flex-column align-items-center bg-navy">
+      <div className="sidebar d-flex flex-column align-items-center bg-dark">
         <button
           className={`btn my-1 w-75 ${visibleBox !== "VerifyCount" ? "btn-light" : "btn-warning"}`}
           onClick={() => { setVisibleBox("VerifyCount"); setClientBox(false); }}
@@ -36,56 +36,63 @@ const SideBar = () => {
           Criteria Search
         </button>
         <button
-          className={`btn my-1 w-75 ${visibleBox !== "searchResults" ? "btn-success" : "btn-warning"}`}
+          className={`btn my-1 w-75 ${visibleBox !== "searchResults" ? "btn-light" : "btn-warning"}`}
           onClick={() => setVisibleBox("searchResults")}
         >
           Results
         </button>
         {clientBox && (
-          <div className="client-box d-flex flex-column col-100 alert-purple p-3 mt-3">
+          <div className="client-box d-flex flex-column col-100 rounded  p-3 mt-3 fs-7" style={{ background: "#acb0b5ff" }}>
+            <div className="text-center fw-bold mb-2 text-dark">Patient Specific</div>
             <button
-              className={`btn my-1 w-100 ${visibleBox !== "pdfViewer" ? "btn-purple" : "btn-warning"}`}
+              className={`btn my-1 w-100 fs-7 ${visibleBox !== "pdfViewer" ? "btn-light" : "btn-warning"}`}
               onClick={() => setVisibleBox("pdfViewer")}
             >
-              View All PDF's
+              All PDF's
             </button>
              <button
-              className={`btn my-1 w-100 ${visibleBox !== "uploadPDF" ? "btn-purple" : "btn-warning"}`}
+              className={`btn my-1 w-100 fs-7 ${visibleBox !== "uploadPDF" ? "btn-light" : "btn-warning"}`}
               onClick={() => setVisibleBox("uploadPDF")}
             >
               Upload PDF
             </button>
             <button
-              className={`btn my-1 w-100 ${visibleBox !== "viewHistory" ? "btn-purple" : "btn-warning"}`}
+              className={`btn my-1 w-100 fs-7 ${visibleBox !== "viewHistory" ? "btn-light" : "btn-warning"}`}
               onClick={() => setVisibleBox("viewHistory")}
             >
               View History
             </button>
             <button
-              className={`btn my-2 w-100 ${visibleBox !== "EditLab" ? "btn-purple" : "btn-warning"}`}
+              className={`btn my-1 w-100 fs-7 ${visibleBox !== "EditLab" ? "btn-light" : "btn-warning"}`}
               onClick={() => setVisibleBox("EditLab")}
             >
               Edit Labs
             </button>
             <button
-              className={`btn my-2 w-100 ${visibleBox !== "referClient" ? "btn-purple" : "btn-warning"}`}
+              className={`btn my-1 w-100 fs-7 ${visibleBox !== "referClient" ? "btn-light" : "btn-warning"}`}
               onClick={() => setVisibleBox("printView")}
             >
-              Doctor Referal
+              Doc. Referral
             </button>
           </div>
         )}
         <div className="mt-auto w-75">
-          <button className="btn btn-warning my-1 w-100" onClick={() => navigate("/dashboard")}>
+          <button className="btn btn-light my-1 w-100" onClick={() => navigate("/dashboard")}>
             Dashboard
           </button>
           <button
-              className={`btn my-1 w-100 ${visibleBox !== "referClient" ? "btn-purple" : "btn-warning"}`}
+              className={`btn my-1 w-100 ${visibleBox !== "referClient" ? "btn-light" : "btn-warning"}`}
+              onClick={() => navigate("/admin")}
+            >
+              Admin Panel
+            </button>
+             <button
+              className={`btn my-1 w-100 ${visibleBox !== "referClient" ? "btn-light" : "btn-warning"}`}
               onClick={() => navigate("/upload")}
             >
               New Lab
             </button>
-          <button className="btn btn-danger my-1 w-100" onClick={logout}>
+          <button className="btn btn-secondary text-white mt-5 w-100" onClick={logout}>
             Logout
           </button>
         </div>

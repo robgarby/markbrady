@@ -7,11 +7,15 @@ import { useGlobalContext } from "../../Context/global.context";
 const ConditionAdminPanel = lazy(() => import("./editConditions.component.jsx"));
 // Example placeholders: create these files later and add lazy() imports
 const MedsAdminPanel = lazy(() => import("./editMedications.component.jsx"));
+// imports (top of file)
+const CatAdminPanel = lazy(() => import("./editCat.component.jsx")); // <— match your actual filename
+
 // const UsersAdminPanel = lazy(() => import("../admin/UsersAdminPanel.jsx"));
 
 const PANELS = {
   conditions: ConditionAdminPanel,
   meds: MedsAdminPanel,
+  cats: CatAdminPanel,
   // users: UsersAdminPanel,
 };
 
@@ -65,7 +69,7 @@ const PatientAdminPanel = () => {
   const BUTTONS = [
     { key: "conditions", label: "Conditions" },
     { key: "meds", label: "Medications" },
-    { key: "Med Cats", label: "Med Categories" },
+    { key: "cats", label: "Med Categories" },
     { key: "users", label: "Users" },
   ];
 
@@ -152,7 +156,7 @@ const PatientAdminPanel = () => {
                   </div>
                 ) : (
                   <div className="alert alert-warning mb-0">
-                    “{BUTTONS.find((b) => b.key === activeTool)?.label}” editor not implemented yet.
+                    “{BUTTONS.find((b) => b.key === activeTool)?.label}” editor not implemented yet- The Users will be next week
                   </div>
                 )}
               </div>

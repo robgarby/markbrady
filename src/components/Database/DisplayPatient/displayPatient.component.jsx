@@ -3,7 +3,6 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useGlobalContext } from '../../../Context/global.context';
 import PatientMedsBox from "./patientMedsBox.component.jsx";
 import PatientConditionDisplay from "./Patient/patientConditionDisplay.componentl.jsx";
-
 import { useNavigate } from 'react-router-dom';
 
 const PatientDetails = () => {
@@ -15,7 +14,7 @@ const PatientDetails = () => {
     updateConditions,
     medsArray,
     updateMedsArray,
-    privateMode, // 👈 read private mode from context
+    privateMode,
   } = gc || {};
   const navigate = useNavigate();
 
@@ -27,26 +26,19 @@ const PatientDetails = () => {
   const [privateNote, setPrivateNote] = useState(activePatient?.privateNote || '');
   const [privateMsg, setPrivateMsg] = useState('');
 
-  // Tabs: 'conditions' | 'meds' | 'recs'
+  // Tabs (unused in this file, kept for parity)
   const [moTab, setMoTab] = useState('conditions');
 
-  // ===== Conditions =====
-  const [selectedCodes, setSelectedCodes] = useState([]);
-  const labelForCondition = (c) => c?.conditionName ?? c?.name ?? c?.label ?? String(c ?? '');
-  const codeForCondition = (c, fallbackLabel) =>
-    c?.conditionCode ?? c?.code ?? c?.shortCode ?? c?.abbr ??
-    (fallbackLabel ? fallbackLabel.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6) : null);
+  // ===== Helpers =====
   const parseCodes = (str) =>
     (str || '').split(',').map((s) => s.trim().toUpperCase()).filter(Boolean);
 
-  // Mask for demos: "Patient ####" using first 4 digits of healthNumber
   const demoPatientLabel = (healthNumber) => {
     const digits = String(healthNumber || "").replace(/\D/g, "");
     const first4 = digits.slice(0, 4) || "XXXX";
     return `Patient ${first4}`;
   };
 
-  // Compute a readable real name from record
   const realPatientName = (p) => {
     const raw =
       p?.clientName ||
@@ -64,98 +56,7 @@ const PatientDetails = () => {
   const isPrivate = Boolean(privateMode);
   const displayName = isPrivate ? demoPatientLabel(patient.healthNumber) : realPatientName(patient);
 
-  const toggleConditionCode = (code) => {
-    if (!code || !patient?.id) return;
-    setSelectedCodes((prev) => {
-      const next = prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code];
-      setPatient((p) => ({ ...p, conditionData: next.join(',') })); // mirror locally
-      try {
-        fetch('https://optimizingdyslipidemia.com/PHP/database.php', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          keepalive: true,
-          body: JSON.stringify({
-            script: 'updatePatientConditions',
-            patientID: patient.id,
-            conditionCodes: next.join(','),
-          }),
-        }).catch(() => { });
-      } catch (_) { }
-      return next;
-    });
-  };
-
-  // ===== Meds =====
-  // Patient-specific meds list (local): [{ code, dose }]
-  const [medList, setMedList] = useState([]);
-
-  // Add box inputs
-  // We no longer auto-generate code letter-by-letter; we build it on add/pick.
-  const [newMedCode, setNewMedCode] = useState('');
-  const [newMedDose, setNewMedDose] = useState('');
-
-  // Typeahead state (filter medsArray)
-  const [medQuery, setMedQuery] = useState('');
-  const [showMedSuggestions, setShowMedSuggestions] = useState(false);
-  const medInputWrapRef = useRef(null);
-
-  // --- Code Builder ---
-  // Build up-to-8-char code: 3 letters of name + dose + '-' + 2 random (trim dose to fit)
-  const randomPair = () => Math.random().toString(36).slice(2, 4).toUpperCase();
-  const normalizeDoseForCode = (dose) => (dose || '').toString().replace(/[^A-Za-z0-9]/g, '');
-  const firstThreeLetters = (name) => (name || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3) || 'MED';
-
-  const buildMedCode = (name, dose, existing = []) => {
-    const prefix = firstThreeLetters(name);
-    const rand = randomPair();
-    let doseNorm = normalizeDoseForCode(dose);
-
-    // target max length = 8 total: [prefix(3)] + [doseVar(?)] + '-' + [rand(2)]
-    // => dose length must be <= (8 - 3 - 1 - 2) = 2
-    const maxDoseLen = Math.max(0, 8 - (3 + 1 + 2));
-    doseNorm = doseNorm.slice(0, maxDoseLen);
-
-    let candidate = `${prefix}${doseNorm}-${rand}`;
-
-    // Ensure uniqueness vs medsArray codes (just in case)
-    if (Array.isArray(existing) && existing.length) {
-      let tries = 0;
-      while (existing.some((m) => String(m.code || '').toUpperCase() === candidate) && tries < 10) {
-        candidate = `${prefix}${doseNorm}-${randomPair()}`;
-        tries++;
-      }
-    }
-    return candidate;
-  };
-
-  // Ensure a med exists in global medsArray (in-memory only)
-  const ensureMedInArray = (name, code, dose) => {
-    if (typeof updateMedsArray !== 'function') return;
-    updateMedsArray((prev = []) => {
-      const prevArr = Array.isArray(prev) ? prev : [];
-      const existsByCode = prevArr.find((m) => (m.code || '').toUpperCase() === (code || '').toUpperCase());
-      const existsByName = prevArr.find((m) => (m.name || '').toLowerCase() === (name || '').toLowerCase());
-
-      if (existsByCode || existsByName) {
-        // If it exists but has no dose, set a default dose if provided
-        const next = prevArr.map((m) => {
-          if (
-            (m.code && code && m.code.toUpperCase() === code.toUpperCase()) ||
-            (m.name && name && m.name.toLowerCase() === name.toLowerCase())
-          ) {
-            const mergedDose = m.dose || dose || '';
-            return { ...m, dose: mergedDose };
-          }
-          return m;
-        });
-        return next;
-      }
-
-      return [...prevArr, { name: name || code, code, dose: dose || '' }];
-    });
-  };
-
-  // Parse "ASP[50],TLL{30}" -> [{code:"ASP", dose:"50"}, {code:"TLL", dose:"30"}]
+  // ===== Meds helpers carried over (kept minimal for context) =====
   const parseMeds = (str) => {
     const tokens = (str || '').split(',').map((s) => s.trim()).filter(Boolean);
     const out = [];
@@ -166,133 +67,11 @@ const PatientDetails = () => {
     }
     return out;
   };
-  // Serialize back to "CODE[dose]"
-  const serializeMeds = (arr) =>
-    (arr || [])
-      .filter((m) => m?.code)
-      .map((m) => `${m.code.toUpperCase()}[${(m.dose ?? '').toString().trim()}]`)
-      .join(',');
 
-  // Update dose inline in patient list
-  const updateMedDose = (code, dose) => {
-    if (!code) return;
-    setMedList((prev) => {
-      const next = prev.map((m) => (m.code === code ? { ...m, dose } : m));
-      setPatient((p) => ({ ...p, medsData: serializeMeds(next) }));
-      return next;
-    });
-  };
-
-  // Remove med from patient list
-  const removeMedication = (code) => {
-    if (!code) return;
-    if (!window.confirm(`Remove ${code}?`)) return;
-    setMedList((prev) => {
-      const next = prev.filter((m) => m.code !== code);
-      setPatient((p) => ({ ...p, medsData: serializeMeds(next) }));
-      return next;
-    });
-  };
-
-  // Internal adder used by both: button and suggestion
-  const addMedicationInternal = (code, name, dose) => {
-    if (!code) return;
-    ensureMedInArray(name || code, code, dose); // add to global ref list (no DB)
-    setMedList((prev) => {
-      const idx = prev.findIndex((m) => m.code === code);
-      const next = idx >= 0 ? prev.map((m, i) => (i === idx ? { ...m, dose } : m)) : [...prev, { code, dose }];
-      setPatient((p) => ({ ...p, medsData: serializeMeds(next) }));
-      return next;
-    });
-    // reset add box
-    setNewMedCode('');
-    setNewMedDose('');
-    setMedQuery('');
-    setShowMedSuggestions(false);
-  };
-
-  // Add via button (from inputs)
-  const addMedication = () => {
-    const name = medQuery.trim();
-    const dose = (newMedDose || '').toString().trim();
-    // Build code deterministically from name+dose; fall back to typed code if provided
-    const existing = Array.isArray(medsArray) ? medsArray : [];
-    const autoCode = buildMedCode(name, dose, existing);
-    const code = (newMedCode || autoCode).toUpperCase().replace(/[^A-Z0-9-]/g, '');
-    addMedicationInternal(code, name || code, dose);
-  };
-
-  // Add via suggestion click
-  const pickSuggestedMed = (med) => {
-    const name = med?.name || med?.code || '';
-    const doseFromList = (med?.dose ?? med?.defaultDose ?? med?.usualDose ?? '').toString().trim();
-    const dose = doseFromList || newMedDose || '';
-    const existing = Array.isArray(medsArray) ? medsArray : [];
-    const code = buildMedCode(name, dose, existing);
-    addMedicationInternal(code, name, dose);
-  };
-
-  // Close suggestions on outside click
-  useEffect(() => {
-    const onDocDown = (e) => {
-      if (!medInputWrapRef.current) return;
-      if (!medInputWrapRef.current.contains(e.target)) setShowMedSuggestions(false);
-    };
-    document.addEventListener('mousedown', onDocDown);
-    return () => document.removeEventListener('mousedown', onDocDown);
-  }, []);
-
-  // Lazy-load medsArray when opening Meds tab
-  const medsFetchInFlightRef = useRef(false);
-  const handleMedsTabClick = () => {
-    setMoTab('meds');
-    if (medsFetchInFlightRef.current) return;
-    if (Array.isArray(medsArray) && medsArray.length > 0) return;
-    if (typeof updateMedsArray !== 'function') return;
-    medsFetchInFlightRef.current = true;
-    try {
-      fetch('https://optimizingdyslipidemia.com/PHP/database.php', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        keepalive: true,
-        body: JSON.stringify({ script: 'getMeds' }),
-      })
-        .then((resp) => resp.json())
-        .then((data) => {
-          if (Array.isArray(data?.meds)) updateMedsArray(data.meds);
-          else if (Array.isArray(data?.medications)) updateMedsArray(data.medications);
-          else if (Array.isArray(data)) updateMedsArray(data);
-        })
-        .catch(() => { })
-        .finally(() => {
-          medsFetchInFlightRef.current = false;
-        });
-    } catch {
-      medsFetchInFlightRef.current = false;
-    }
-  };
-
-  // ===== Recommendations =====
-  const [recs, setRecs] = useState('');
-  const saveRecommendations = () => {
-    if (!patient?.id) return;
-    setPatient((p) => ({ ...p, recommendations: recs }));
-    try {
-      fetch('https://optimizingdyslipidemia.com/PHP/database.php', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        keepalive: true,
-        body: JSON.stringify({
-          script: 'updatePatientRecommendations', // implement on backend when ready
-          patientID: patient.id,
-          recommendations: recs,
-        }),
-      }).catch(() => { });
-    } catch (_) { }
-  };
+  const [selectedCodes, setSelectedCodes] = useState([]);
+  const [medList, setMedList] = useState([]);
 
   // ===== Bootstrapping =====
-  // Load master condition list ONCE
   const conditionsFetchedRef = useRef(false);
   useEffect(() => {
     if (
@@ -319,7 +98,6 @@ const PatientDetails = () => {
     }
   }, [conditionData?.length, updateConditions]);
 
-  // Fetch local patient snapshot on ID change
   const lastLoadedIdRef = useRef(null);
   useEffect(() => {
     const id = activePatient?.id;
@@ -328,7 +106,6 @@ const PatientDetails = () => {
       setPatient(activePatient || {});
       setSelectedCodes(parseCodes(activePatient?.conditionData ?? ''));
       setMedList(parseMeds(activePatient?.medsData ?? activePatient?.medications ?? ''));
-      setRecs(activePatient?.recommendations ?? '');
       lastLoadedIdRef.current = null;
       return;
     }
@@ -337,7 +114,6 @@ const PatientDetails = () => {
       setPatient((prev) => (prev?.id === id ? prev : activePatient));
       setSelectedCodes(parseCodes(activePatient?.conditionData ?? ''));
       setMedList(parseMeds(activePatient?.medsData ?? activePatient?.medications ?? ''));
-      setRecs(activePatient?.recommendations ?? '');
       return;
     }
 
@@ -355,12 +131,10 @@ const PatientDetails = () => {
           setPatient(data.patient);
           setSelectedCodes(parseCodes(data.patient?.conditionData ?? ''));
           setMedList(parseMeds(data.patient?.medsData ?? data.patient?.medications ?? ''));
-          setRecs(data.patient?.recommendations ?? '');
         } else {
           setPatient(activePatient);
           setSelectedCodes(parseCodes(activePatient?.conditionData ?? ''));
           setMedList(parseMeds(activePatient?.medsData ?? activePatient?.medications ?? ''));
-          setRecs(activePatient?.recommendations ?? '');
         }
       })
       .catch(() => {
@@ -369,7 +143,6 @@ const PatientDetails = () => {
         setPatient(activePatient);
         setSelectedCodes(parseCodes(activePatient?.conditionData ?? ''));
         setMedList(parseMeds(activePatient?.medsData ?? activePatient?.medications ?? ''));
-        setRecs(activePatient?.recommendations ?? '');
       });
 
     return () => { aborted = true; };
@@ -377,7 +150,7 @@ const PatientDetails = () => {
 
   if (!patient) return <div className="text-muted">No patient selected.</div>;
 
-  // ===== Common UI helpers =====
+  // ===== Common UI helper =====
   const renderRow = (label, value, date) => {
     if (value === null || value === '' || (typeof value === 'string' && value.trim() === '') ||
       (!isNaN(parseFloat(value)) && parseFloat(value) === 0)) return null;
@@ -389,13 +162,14 @@ const PatientDetails = () => {
     );
   };
 
+  // ===== Doctor note (moved Save button below textarea) =====
   const onNoteChange = (e) => {
     const next = { ...patient, patientNote: e.target.value };
     setPatient(next);
     if (typeof setActivePatient === 'function') setActivePatient(next);
   };
 
-  const saveTheNote = async () => {
+  const saveDoctorNote = async () => {
     if (!patient) return;
     setSaving(true);
     setMsg('');
@@ -411,7 +185,7 @@ const PatientDetails = () => {
       });
       const text = await resp.text();
       let data; try { data = JSON.parse(text); } catch { data = { message: text }; }
-      setMsg(resp.ok ? (data?.message || 'Note saved.') : (data?.error || 'Error saving note.'));
+      setMsg(resp.ok ? (data?.message || 'Doctor note saved.') : (data?.error || 'Error saving note.'));
     } catch {
       setMsg('Error saving note.');
     } finally {
@@ -419,22 +193,7 @@ const PatientDetails = () => {
     }
   };
 
-  const SetAppointment = (dateStr) => {
-    const iso = dateStr ? new Date(dateStr).toISOString().slice(0, 10) : null;
-    setPatient((prev) => {
-      const next = { ...prev, nextAppointment: iso };
-      if (typeof setActivePatient === 'function') setActivePatient(next);
-      return next;
-    });
-    if (!patient?.id) return;
-    fetch('https://optimizingdyslipidemia.com/PHP/database.php', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      keepalive: true,
-      body: JSON.stringify({ script: 'updateAppointment', patientID: patient.id, appointmentDate: iso }),
-    }).catch(() => { });
-  };
-
+  // ===== Private note (unchanged) =====
   const savePrivateNote = async () => {
     const updatedPatient = { ...patient, privateNote };
     setPatient(updatedPatient);
@@ -455,20 +214,62 @@ const PatientDetails = () => {
     } finally { setSaving(false); }
   };
 
+  // ===== Next Appointment (slightly smaller) =====
+  const SetAppointment = (dateStr) => {
+    const iso = dateStr ? new Date(dateStr).toISOString().slice(0, 10) : null;
+    setPatient((prev) => {
+      const next = { ...prev, nextAppointment: iso };
+      if (typeof setActivePatient === 'function') setActivePatient(next);
+      return next;
+    });
+    if (!patient?.id) return;
+    fetch('https://optimizingdyslipidemia.com/PHP/database.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      keepalive: true,
+      body: JSON.stringify({ script: 'updateAppointment', patientID: patient.id, appointmentDate: iso }),
+    }).catch(() => { });
+  };
+
+  // ===== Payment Method toggles (CASH / Government / Private) =====
+  const currentPayment = String(
+    patient?.paymentMethod ??
+    patient?.paymentMethof ?? // fallback for legacy typo
+    'CASH'
+  );
+
+  const setPaymentMethod = (methodLabel) => {
+    const method = methodLabel; // keep labels exactly: 'CASH' | 'Government' | 'Private' | '?'
+    setPatient((prev) => {
+      const next = { ...prev, paymentMethod: method, paymentMethof: method }; // mirror both keys for safety
+      if (typeof setActivePatient === 'function') setActivePatient(next);
+      return next;
+    });
+    if (!patient?.id) return;
+    fetch('https://optimizingdyslipidemia.com/PHP/database.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      keepalive: true,
+      body: JSON.stringify({
+        script: 'updatePaymentMethod',
+        patientID: patient.id,
+        paymentMethod: method,
+      }),
+    }).catch(() => { });
+  };
+
   // ===== UI =====
   return (
     <div className="container-fluid" style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       {/* Top panel (fixed height) */}
       <div className="d-flex" style={{ flex: '0 0 auto' }}>
         <div className="col-24 offset-0 p-3 alert-secondary">
-          <h3 className="mb-3 text-danger">Patient Information</h3>
+          <h3 className="mb-3 text-dark">Patient Information</h3>
 
           <div className="mb-4">
             <h5>Personal Info</h5>
             <div className="d-flex gap-2">
-              {/* 👇 Name obeys privateMode */}
               <div className="col-24 text-start">Name: {displayName}</div>
-
               <div className="col-24 text-start">Health Number: {patient.healthNumber}</div>
             </div>
             <div className="d-flex gap-2 mt-2">
@@ -524,12 +325,10 @@ const PatientDetails = () => {
         <div className="flex-grow-1 p-3">
           <div className="card shadow-sm h-100">
             <div className="card-header d-flex align-items-end gap-3 flex-wrap">
-              <div className="me-auto">
-                <h6 className="m-0">Notes &amp; Follow-up</h6>
-                <small className="text-muted">Patient Note is searchable</small>
-              </div>
 
-              <div className="d-flex align-items-end" style={{ minWidth: 260 }}>
+
+              {/* Next Appointment (narrower) */}
+              <div className="d-flex align-items-end" style={{ minWidth: 180, maxWidth: 260 }}>
                 <div className="w-100">
                   <label htmlFor="nextAppointment" className="form-label mb-1">Next Appointment</label>
                   <div className="input-group input-group-sm">
@@ -537,7 +336,7 @@ const PatientDetails = () => {
                     <input
                       type="date"
                       id="nextAppointment"
-                      className="form-control"
+                      className="form-control form-control-sm"
                       value={patient.nextAppointment ? patient.nextAppointment.substring(0, 10) : ''}
                       onChange={(e) => SetAppointment(e.target.value)}
                     />
@@ -545,9 +344,74 @@ const PatientDetails = () => {
                 </div>
               </div>
 
-              <button className="btn btn-success text-white ms-2" disabled={saving} onClick={saveTheNote}>
-                {saving ? 'Saving…' : 'Save Note'}
-              </button>
+              {/* Payment Method Toggles */}
+              <div className="d-flex flex-column flex-grow-1" style={{ minWidth: 240 }}>
+                <label className="form-label mb-1 text-muted fw-bold">Medication Coverage</label>
+                <div className="d-flex w-100" role="group" aria-label="Payment method">
+                  {/* ? */}
+                  <input
+                    type="radio"
+                    className="btn-check col-12"
+                    name="paymentMethod"
+                    id="pm-unknown"
+                    autoComplete="off"
+                    checked={currentPayment === '?'}
+                    onChange={() => setPaymentMethod('?')}
+                  />
+                  <label
+                    className={`btn btn-sm flex-grow-1 ${currentPayment === '?' ? 'btn-primary' : 'btn-outline-primary'}`}
+                    htmlFor="pm-unknown"
+                    style={{ minWidth: 0 }}
+                  >?</label>
+                  {/* CASH */}
+                  <input
+                    type="radio"
+                    className="btn-check col-12"
+                    name="paymentMethod"
+                    id="pm-cash"
+                    autoComplete="off"
+                    checked={currentPayment.toUpperCase() === 'CASH'}
+                    onChange={() => setPaymentMethod('CASH')}
+                  />
+                  <label
+                    className={`btn btn-sm flex-grow-1 ${currentPayment.toUpperCase() === 'CASH' ? 'btn-primary' : 'btn-outline-primary'}`}
+                    htmlFor="pm-cash"
+                    style={{ minWidth: 0 }}
+                  >CASH</label>
+                  {/* Government */}
+                  <input
+                    type="radio"
+                    className="btn-check col-12"
+                    name="paymentMethod"
+                    id="pm-gov"
+                    autoComplete="off"
+                    checked={currentPayment.toLowerCase() === 'government'}
+                    onChange={() => setPaymentMethod('Government')}
+                  />
+                  <label
+                    className={`btn btn-sm col-12 ${currentPayment.toLowerCase() === 'government' ? 'btn-primary' : 'btn-outline-primary'}`}
+                    htmlFor="pm-gov"
+                    style={{ minWidth: 0 }}
+                  >Government</label>
+                  {/* Private */}
+                  <input
+                    type="radio"
+                    className="btn-check col-12"
+                    name="paymentMethod"
+                    id="pm-private"
+                    autoComplete="off"
+                    checked={currentPayment.toLowerCase() === 'private'}
+                    onChange={() => setPaymentMethod('Private')}
+                  />
+                  <label
+                    className={`btn btn-sm col-12 ${currentPayment.toLowerCase() === 'private' ? 'btn-primary' : 'btn-outline-primary'}`}
+                    htmlFor="pm-private"
+                    style={{ minWidth: 0 }}
+                  >Private</label>
+                </div>
+              </div>
+
+              {/* (Removed the old header Save Note button) */}
             </div>
 
             <div className="card-body">
@@ -555,14 +419,19 @@ const PatientDetails = () => {
               <textarea
                 id="patientNote"
                 className="form-control"
-                rows={8}
+                rows={7} // reduced rows
                 value={patient.patientNote || ''}
                 onChange={onNoteChange}
                 placeholder="Enter notes about this patient..."
                 maxLength={3000}
               />
+
+              {/* Save Doctor Note moved here, under the Doctor Note area */}
               <div className="d-flex align-items-center mt-2">
-                <small className="text-muted">{msg}</small>
+                <button className="btn btn-success text-white" disabled={saving} onClick={saveDoctorNote}>
+                  {saving ? 'Saving…' : 'Save Doctor Note'}
+                </button>
+                <small className="text-muted ms-3">{msg}</small>
                 <small className="text-muted ms-auto">{(patient.patientNote || '').length}/3000</small>
               </div>
             </div>
@@ -608,7 +477,6 @@ const PatientDetails = () => {
           </div>
 
         </div>
-
       </div>
     </div>
   );

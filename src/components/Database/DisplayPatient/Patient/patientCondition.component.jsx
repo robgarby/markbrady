@@ -68,6 +68,7 @@ const PatientConditionsBox = ({ patient, setPatient }) => {
 
   // Keep selectedCodes in sync with patient
   useEffect(() => {
+    console.log("Patient condition data changed:", patient?.conditionData);
     setSelectedCodes(parseCodes(patient?.conditionData ?? ''));
   }, [patient?.conditionData]);
 

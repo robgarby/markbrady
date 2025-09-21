@@ -5,9 +5,9 @@ import logo from '../../assets/markbrady.png';
 import { useGlobalContext } from '../../Context/global.context';
 
 // Read values forwarded from package.json via env (see package.json scripts)
-const version = process.env.REACT_APP_VERSION ?? 'Version 2.3.1';
-const builtAt = process.env.REACT_APP_BUILT_AT ?? 'Wed Sept 17 - 2:00 PM';
-const fixNote = process.env.REACT_APP_FIX_NOTE ?? 'Re-Aranged front page.. Conditions is fully functional - Medications is under conttruction still';
+const version = process.env.REACT_APP_VERSION ?? 'Version 2.4.3';
+const builtAt = process.env.REACT_APP_BUILT_AT ?? 'Wed Sept 20 - 10:25 AM';
+const fixNote = process.env.REACT_APP_FIX_NOTE ?? 'Medication now can save Brand as well.. All cats are loaded';
 
 const DashBoard = () => {
   const navigate = useNavigate();

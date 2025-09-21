@@ -2,58 +2,26 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useGlobalContext } from "../../../../Context/global.context";
 
-/**
- * PatientMeds — read-only list + custom suggest boxes (name & category) + auto-save
- * Uses context (DO NOT RENAME/MODIFY):
- *   medsArray: [{ name|medication, defaultDose|medication_dose, category|medication_cat }, ...]
- *   medsCategory: ["No Category", "Statin", ...]  (strings or {name} objects)
- */
-
-// ---------- Helpers ----------
+// ---------- Helpers (ID-based) ----------
 const norm = (s) => (s || "").trim().replace(/\s+/g, " ").toLowerCase();
 const unique = (arr) => [...new Set((arr || []).filter(Boolean))];
 
-// Tolerate different DB shapes
-const readMedName = (m) =>
-  (m?.name ?? m?.medication ?? m?.title ?? m?.label ?? "").toString().trim();
-const readMedDose = (m) =>
-  (m?.defaultDose ?? m?.medication_dose ?? m?.dose ?? "").toString();
-const readMedCategory = (m) =>
-  (m?.category ?? m?.medication_cat ?? m?.cat ?? m?.medCategory ?? "").toString().trim();
+const readMasterId = (m) => String(m?.ID ?? m?.id ?? "");
+const readMasterName = (m) => String(m?.medication_name ?? m?.medication ?? m?.name ?? "");
+const readMasterDose = (m) => String(m?.medication_dose ?? m?.defaultDose ?? m?.dose ?? "");
+const readMasterCat = (m) => String(m?.medication_cat ?? m?.category ?? "");
 
-const readCatName = (c) =>
-  (c?.name ?? c?.category ?? c ?? "").toString().trim();
-
-// Parse CSVs -> objects
-const parseMeds = (str) => {
-  if (!str) return [];
-  return str
+// CSV of IDs <-> array
+const parseIdCSV = (str) =>
+  (str || "")
     .split(",")
     .map((t) => t.trim())
-    .filter(Boolean)
-    .map((t) => {
-      // "Name[dose]" or "Name{dose}"
-      const m = t.match(/^\s*([^[\]{},]+?)\s*[\[\{]\s*([^\]\}]*)\s*[\]\}]\s*$/);
-      if (m) return { name: m[1].trim(), dose: String(m[2] ?? "").trim(), category: "No Category" };
-      // "Name:Category:Dose"
-      const parts = t.split(":").map((x) => x.trim());
-      if (parts.length >= 3) return { name: parts[0], category: parts[1] || "No Category", dose: parts[2] || "" };
-      return { name: t, dose: "", category: "No Category" };
-    });
-};
+    .filter(Boolean);
 
-// Single CSV serializer: "Name:Category:Dose"
-const serializeMedsCSV = (arr) =>
-  (arr || [])
-    .filter((m) => (m?.name || "").trim())
-    .map((m) => `${m.name.trim()}:${(m.category || "No Category").trim()}:${(m.dose || "").toString().trim()}`)
-    .join(",");
+const serializeIdCSV = (ids) => (ids || []).map((x) => String(x).trim()).filter(Boolean).join(",");
 
-// ---------- Component ----------
 const PatientMeds = () => {
-  const gc = useGlobalContext();
-
-  // Context (do not modify names)
+  const gc = useGlobalContext() || {};
   const {
     activePatient,
     setActivePatient,
@@ -61,462 +29,343 @@ const PatientMeds = () => {
     updateMedsArray,
     medsCategory,
     updateMedsCategory,
-  } = gc || {};
+  } = gc;
 
-  // ---------- Local state ----------
-  const [medList, setMedList] = useState(() => parseMeds(activePatient?.medsData));
+  // -------- Master indexes (by ID & by normalized name) --------
+  const master = Array.isArray(medsArray) ? medsArray : [];
+  const masterById = useMemo(() => {
+    const map = new Map();
+    for (const m of master) map.set(readMasterId(m), m);
+    return map;
+  }, [master]);
+  const masterByName = useMemo(() => {
+    const map = new Map();
+    for (const m of master) map.set(norm(readMasterName(m)), m);
+    return map;
+  }, [master]);
+
+  // -------- Patient state: ids (strings) --------
+  const [medIds, setMedIds] = useState(() => parseIdCSV(activePatient?.medsData));
   const lastIdRef = useRef(activePatient?.id ?? null);
 
   useEffect(() => {
     const id = activePatient?.id ?? null;
     if (id !== lastIdRef.current) {
       lastIdRef.current = id;
-      setMedList(parseMeds(activePatient?.medsData ?? activePatient?.medications ?? ""));
+      setMedIds(parseIdCSV(activePatient?.medsData));
     }
   }, [activePatient?.id]); // eslint-disable-line
 
-  // ---------- Load masters if empty (UNCHANGED) ----------
-  const loadedMedsRef = useRef(false);
+  // -------- Load masters if empty (IDs + cats) --------
+  const loadedRef = useRef(false);
   useEffect(() => {
-    if (loadedMedsRef.current) return;
+    if (loadedRef.current) return;
     const need = !Array.isArray(medsArray) || medsArray.length === 0;
     if (!need || !updateMedsArray) return;
 
-    loadedMedsRef.current = true;
-
+    loadedRef.current = true;
     fetch("https://optimizingdyslipidemia.com/PHP/database.php", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ script: "getMedsArray" }),
+      body: JSON.stringify({ script: "getMeds" }), // should return [{ID, medication_name, medication_cat, medication_dose}, ...]
     })
       .then((r) => r.json())
       .then((data) => {
-        // Expecting { meds: [...], cats: [...] }
-        updateMedsArray(data.meds);
-        updateMedsCategory(data.cats);
-        console.log("PatientMeds> Loaded medsArray from DB:", data.meds);
-        console.log("PatientMeds> Loaded medsCategory from DB:", data.cats);
+        const list = Array.isArray(data?.meds) ? data.meds : Array.isArray(data) ? data : [];
+        updateMedsArray(list);
+
+        // categories if you need them for "new med" creation UX
+        if (updateMedsCategory && Array.isArray(data?.cats)) updateMedsCategory(data.cats);
       })
       .catch(() => {
-        loadedMedsRef.current = false;
+        loadedRef.current = false;
       });
   }, [medsArray?.length]); // DO NOT CHANGE
 
-  // ---------- Suggestions from context ----------
-  const medNameOptions = useMemo(() => {
-    const list = Array.isArray(medsArray) ? medsArray : [];
-    return unique(list.map(readMedName).filter(Boolean));
-  }, [medsArray]);
+  // -------- Derived rows for display (join IDs -> master) --------
+  const rows = useMemo(() => {
+    return (medIds || []).map((id) => {
+      const m = masterById.get(String(id));
+      return {
+        id: String(id),
+        name: readMasterName(m) || "(Unknown)",
+        category: readMasterCat(m) || "No Category",
+        dose: readMasterDose(m) || "No dose",
+        _raw: m,
+      };
+    });
+  }, [medIds, masterById]);
 
-  const catOptions = useMemo(() => {
-    const list = Array.isArray(medsCategory) ? medsCategory : [];
-    return unique(list.map(readCatName).filter(Boolean));
-  }, [medsCategory]);
+  // -------- Suggestions (from master names) --------
+  const medNameOptions = useMemo(() => unique(master.map(readMasterName).filter(Boolean)), [master]);
 
-  // ---------- Name suggestion pool (context + current patient list) ----------
-  const [medSuggestArray, setMedSuggestArray] = useState(() => {
-    const fromMaster = medNameOptions;
-    const fromPatient = (medList || []).map((m) => m?.name || "");
-    return unique([...fromMaster, ...fromPatient]);
-  });
+  // -------- Persist patient meds (IDs) --------
+  const persistIds = (nextIds, reason = "auto") => {
+    const idsCSV = serializeIdCSV(nextIds);
 
-  const recomputeMedSuggestions = useCallback(() => {
-    const fromMaster = medNameOptions;
-    const fromPatient = (medList || []).map((m) => m?.name || "");
-    setMedSuggestArray(unique([...fromMaster, ...fromPatient]));
-  }, [medNameOptions, medList]);
-
-  useEffect(() => {
-    recomputeMedSuggestions();
-  }, [recomputeMedSuggestions]);
-
-  // ---------- Persist & log ----------
-  const persistMeds = (nextList, reason = "auto") => {
-    const medsCSV = serializeMedsCSV(nextList);
-    const clientCSV = serializeMedsCSV(nextList);
-
-    // mirror to activePatient
-    const nextPatient = {
-      ...(activePatient || {}),
-      medsData: medsCSV,
-      clientMedsArray: clientCSV,
-    };
+    // Mirror to activePatient
+    const nextPatient = { ...(activePatient || {}), medsData: idsCSV };
     if (typeof setActivePatient === "function") setActivePatient(nextPatient);
 
-    // upsert defaults/category into medsArray (keeps master current)
-    if (updateMedsArray) {
-      const map = new Map((Array.isArray(medsArray) ? medsArray : []).map((m) => [norm(readMedName(m)), { ...m }]));
-      for (const m of nextList) {
-        const key = norm(m.name);
-        const d = (m.dose || "").toString().trim();
-        const cat = (m.category || "").toString().trim();
-        if (!key) continue;
-
-        if (map.has(key)) {
-          const orig = map.get(key) || {};
-          const merged = { ...orig };
-          if ("defaultDose" in orig || !("medication_dose" in orig)) merged.defaultDose = d;
-          if ("medication_dose" in orig) merged.medication_dose = d;
-          if ("category" in orig || !("medication_cat" in orig)) merged.category = cat || orig.category || "";
-          if ("medication_cat" in orig) merged.medication_cat = cat || orig.medication_cat || "";
-          map.set(key, merged);
-        } else {
-          map.set(key, { name: m.name, defaultDose: d, category: cat });
-        }
-      }
-
-      updateMedsArray([...map.values()]);
-    }
-    saveClientMedsToDB(nextPatient.id, clientCSV);
+    // Save to DB (IDs)
+    saveClientMedIdsToDB(nextPatient.id, idsCSV);
   };
 
-  const saveClientMedsToDB = (patientId, clientCSV) => {
+  const saveClientMedIdsToDB = (patientId, idsCSV) => {
     if (!patientId) return;
     fetch("https://optimizingdyslipidemia.com/PHP/special.php", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       keepalive: true,
       body: JSON.stringify({
-        script: "updateClientMeds",
+        script: "updateClientMedIds", // <-- update your PHP to expect ID CSV now
         patientId,
-        clientMeds: clientCSV,
+        medIds: idsCSV,
       }),
-    }).catch(() => {
-      // swallow network errors (optional: show toast)
-    });
+    }).catch(() => { });
   };
 
-  // ---------- Add row (TOP) ----------
+  // -------- Add UI (by selecting an existing med OR creating one then adding) --------
   const nameRef = useRef(null);
   const [nameQ, setNameQ] = useState("");
-  const [catQ, setCatQ] = useState(""); // empty until typed or auto-filled
   const [doseQ, setDoseQ] = useState("");
-
-  // Locking when user selects an existing medication
-  const [lockedFromMaster, setLockedFromMaster] = useState(false);
-  const [lockedNameNorm, setLockedNameNorm] = useState("");
-
-  // Submission guards
+  const [catQ, setCatQ] = useState("");
   const [isSaving, setIsSaving] = useState(false);
-  const pendingInsertsRef = useRef(new Set()); // normalized names currently being inserted
 
-  // Suggestions
-  const [showNameSuggest, setShowNameSuggest] = useState(false);
-  const nameSuggestions = useMemo(() => {
-    const q = norm(nameQ);
-    if (!q) return [];
-    return medSuggestArray.filter((n) => norm(n).includes(q)).slice(0, 10);
-  }, [nameQ, medSuggestArray]);
+  const pickedExisting = useMemo(() => masterByName.get(norm(nameQ)) || null, [nameQ, masterByName]);
 
-  const pickName = (n) => {
-    setNameQ(n);
-    const found = (Array.isArray(medsArray) ? medsArray : []).find((m) => norm(readMedName(m)) === norm(n));
-    if (found) {
-      setDoseQ(readMedDose(found));
-      setCatQ(readMedCategory(found) || "No Category");
-      setLockedFromMaster(true);
-      setLockedNameNorm(norm(n));
-    } else {
-      setLockedFromMaster(false);
-      setLockedNameNorm("");
+  const addExisting = (m) => {
+    const id = readMasterId(m);
+    const patientId = activePatient?.id || null;
+    if (!patientId || !id) return;
+
+    // Read current medData CSV and parse to array
+    const currentMedIds = (activePatient?.medsData || "").split(",").map((t) => t.trim()).filter(Boolean);
+
+    // If already exists, do nothing
+    if (currentMedIds.includes(String(id))) {
+      setNameQ("");
+      setDoseQ("");
+      setCatQ("");
+      nameRef.current?.focus();
+      return;
     }
-    setShowNameSuggest(false);
-  };
 
-  const [showCatSuggest, setShowCatSuggest] = useState(false);
-  const catSuggestions = useMemo(() => {
-    const q = norm(catQ);
-    if (!q || (lockedFromMaster && norm(nameQ) === lockedNameNorm)) return [];
-    return catOptions.filter((n) => norm(n).includes(q)).slice(0, 10);
-  }, [catQ, catOptions, lockedFromMaster, nameQ, lockedNameNorm]);
+    // Add new ID and serialize back to CSV
+    const nextMedIds = unique([...currentMedIds, String(id)]);
+    const nextMedData = serializeIdCSV(nextMedIds);
 
-  const pickCategory = (n) => {
-    if (lockedFromMaster && norm(nameQ) === lockedNameNorm) return;
-    setCatQ(n);
-    setShowCatSuggest(false);
-  };
-
-  // Handlers
-  const onNameChange = (e) => {
-    const v = e.target.value;
-    setNameQ(v);
-    setShowNameSuggest(v.trim().length > 0);
-    if (lockedFromMaster && norm(v) !== lockedNameNorm) {
-      setLockedFromMaster(false);
-      setLockedNameNorm("");
-    }
-  };
-
-  const onCatChange = (e) => {
-    if (lockedFromMaster && norm(nameQ) === lockedNameNorm) return;
-    const v = e.target.value;
-    setCatQ(v);
-    setShowCatSuggest(v.trim().length > 0);
-  };
-
-  const onDoseChange = (e) => {
-    if (lockedFromMaster && norm(nameQ) === lockedNameNorm) return;
-    setDoseQ(e.target.value);
-  };
-
-  // --- SINGLE insert path ---
-  const saveNewMedicationToDB = (name, category, defaultDose) => {
-    return fetch("https://optimizingdyslipidemia.com/PHP/special.php", {
+    // Send to DB (fire and forget)
+    fetch("https://optimizingdyslipidemia.com/PHP/special.php", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       keepalive: true,
       body: JSON.stringify({
-        script: "insertMedication",
-        name,
-        category,
-        defaultDose,
+        script: "updateClientMedIds",
+        patientId,
+        medIds: nextMedData,
       }),
-    });
-  };
+    }).catch(() => { });
 
-  const addCatToDB = (category) => {
-    return fetch("https://optimizingdyslipidemia.com/PHP/special.php", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      keepalive: true,
-      body: JSON.stringify({
-        script: "insertMedicationCategory",
-        category,
-      }),
-    });
-  };
-
-  const checkCats = (cat) => {
-    const exists = (Array.isArray(medsCategory) ? medsCategory : []).some(
-      (c) => norm(readCatName(c)) === norm(cat)
-    );
-    if (!exists) {
-      console.log("This is a new Category, adding to master list:", cat);
-      if (typeof updateMedsCategory === "function") {
-        updateMedsCategory([...(Array.isArray(medsCategory) ? medsCategory : []), cat]);
-      }
-      addCatToDB(cat);
+    // Update local state/UI
+    setMedIds(nextMedIds);
+    if (typeof setActivePatient === "function") {
+      setActivePatient({ ...(activePatient || {}), medsData: nextMedData });
     }
-  };
-
-  const addMedication = () => {
-    const name = (nameQ || "").trim();
-    const category = (catQ || "No Category").trim() || "No Category";
-    const dose = (doseQ || "").toString().trim();
-    if (!name || isSaving) return;
-
-    checkCats(category);
-
-    const normalized = norm(name);
-
-    setMedList((prev) => {
-      const idx = prev.findIndex((m) => norm(m.name) === normalized);
-      const next =
-        idx >= 0
-          ? prev.map((m, i) => (i === idx ? { ...m, category, dose } : m))
-          : [...prev, { name, category, dose }];
-
-      const exists = (Array.isArray(medsArray) ? medsArray : []).some(
-        (m) => norm(readMedName(m)) === normalized
-      );
-
-      // INSERT to DB only once for brand-new meds
-      if (!exists && !pendingInsertsRef.current.has(normalized)) {
-        pendingInsertsRef.current.add(normalized);
-        setIsSaving(true);
-        saveNewMedicationToDB(name, category, dose)
-          .catch(() => {}) // swallow network errors (optional: show toast)
-          .finally(() => {
-            pendingInsertsRef.current.delete(normalized);
-            setIsSaving(false);
-          });
-      }
-
-      // Update local master list
-      if (updateMedsArray) {
-        if (exists) {
-          updateMedsArray(
-            (Array.isArray(medsArray) ? medsArray : []).map((m) => {
-              if (norm(readMedName(m)) !== normalized) return m;
-              const merged = { ...m };
-              if ("defaultDose" in m || !("medication_dose" in m)) merged.defaultDose = dose;
-              if ("medication_dose" in m) merged.medication_dose = dose;
-              if ("category" in m || !("medication_cat" in m)) merged.category = category || m.category || "";
-              if ("medication_cat" in m) merged.medication_cat = category || m.medication_cat || "";
-              return merged;
-            })
-          );
-        } else {
-          updateMedsArray([
-            ...(Array.isArray(medsArray) ? medsArray : []),
-            { name, defaultDose: dose, category },
-          ]);
-        }
-      }
-
-      // keep suggestions fresh + persist
-      setMedSuggestArray((prevS) => unique([...prevS, name]));
-      persistMeds(next, "add");
-      return next;
-    });
-
-    // reset + focus (unlock for next add)
     setNameQ("");
-    setCatQ("");
     setDoseQ("");
-    setLockedFromMaster(false);
-    setLockedNameNorm("");
+    setCatQ("");
     nameRef.current?.focus();
-    console.log(medList);
   };
 
-  const handleKeyDownAdd = (e) => {
-    if (e.key === "Enter") addMedication();
+  // Create in master then add ID to patient
+  const createAndAdd = async (name, category, dose) => {
+    if (!name.trim()) return;
+    setIsSaving(true);
+    try {
+      const res = await fetch("https://optimizingdyslipidemia.com/PHP/special.php", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          script: "insertMedicationReturnId", // make this return new { ID, ... } please
+          medication_name: name,
+          medication_cat: category,
+          medication_dose: dose,
+        }),
+      });
+      const text = await res.text();
+      let payload = null;
+      try { payload = JSON.parse(text); } catch { }
+      const newRow = payload?.med || payload; // tolerate {med:{ID,...}} or direct object
+      const id = readMasterId(newRow);
+      if (!id) throw new Error("No ID returned for new medication");
+
+      // update master list so UI can resolve immediately
+      if (typeof updateMedsArray === "function") {
+        updateMedsArray((prev) => [...(Array.isArray(prev) ? prev : []), newRow]);
+      }
+
+      // add to patient by ID
+      setMedIds((prev) => {
+        const next = unique([...(prev || []), String(id)]);
+        persistIds(next, "create-and-add");
+        return next;
+      });
+
+      setNameQ("");
+      setDoseQ("");
+      setCatQ("");
+      nameRef.current?.focus();
+    } catch (e) {
+      console.error(e);
+      // optional: toast error
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  // Remove row
-  const removeMedication = (idx) => {
-    setMedList((prev) => {
-      const name = prev[idx]?.name ?? "";
-      if (!name) return prev;
-      if (!window.confirm(`Remove ${name}?`)) return prev;
-      const next = prev.filter((_, i) => i !== idx);
-      persistMeds(next, "remove");
-      return next;
-    });
+  // Replace the existing removeMedication with this ID-based version
+  const removeMedication = (medId) => {
+    const patientId = activePatient?.id || null;
+    if (!patientId) return;
+
+    const idStr = String(medId);
+
+    // 1) Read current CSV from activePatient
+    const currentMedIds = parseIdCSV(activePatient?.medsData);
+
+    // 2) Remove this ID
+    const nextMedIds = currentMedIds.filter((id) => String(id) !== idStr);
+    const nextMedData = serializeIdCSV(nextMedIds);
+
+    // 3) Update local UI/state
+    setMedIds(nextMedIds);
+    if (typeof setActivePatient === "function") {
+      setActivePatient({ ...(activePatient || {}), medsData: nextMedData });
+    }
+
+    // 4) Fire-and-forget to backend
+    fetch("https://optimizingdyslipidemia.com/PHP/special.php", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      keepalive: true,
+      body: JSON.stringify({
+        script: "updateClientMedIds",   // backend expects CSV of IDs now
+        patientId,
+        medIds: nextMedData,
+      }),
+    }).catch(() => { });
   };
 
-  // ---------- UI ----------
-  const isLocked = lockedFromMaster && norm(nameQ) === lockedNameNorm;
 
+  // -------- UI --------
   return (
     <div className="d-flex flex-column" style={{ position: "relative" }}>
       {/* Top box */}
       <div className="border rounded p-2 mb-2 position-relative">
         <div className="row g-2 align-items-end">
-          {/* Medication Name + suggestions */}
-          <div className="col-18 position-relative">
-            <label className="form-label mb-1">Medication Name</label>
+          {/* Name selector (typeahead-ish) */}
+          <div className="col-24">
+            <label className="form-label mb-1">Medication</label>
             <input
               ref={nameRef}
               type="text"
               className="form-control"
               value={nameQ}
-              onChange={onNameChange}
-              onKeyDown={handleKeyDownAdd}
-              onBlur={() => setTimeout(() => setShowNameSuggest(false), 150)}
-              placeholder="Start typing (e.g., Apo 10, Aspirin)…"
+              onChange={(e) => setNameQ(e.target.value)}
+              placeholder="Type to search master meds…"
+              list="patient-meds-name-datalist"
             />
-            {showNameSuggest && nameQ.trim() && nameSuggestions.length > 0 && (
-              <div
-                className="list-group shadow position-absolute w-100"
-                style={{ zIndex: 10, maxHeight: 240, overflowY: "auto" }}
-              >
-                {nameSuggestions.map((n) => (
-                  <button
-                    key={n}
-                    type="button"
-                    className="list-group-item list-group-item-action"
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => pickName(n)}
-                    title={n}
-                  >
-                    {n}
-                  </button>
-                ))}
+            <datalist id="patient-meds-name-datalist">
+              {medNameOptions.map((n) => (
+                <option key={n} value={n} />
+              ))}
+            </datalist>
+          </div>
+
+          {/* If the typed name matches a master med, we show its cat/dose (read-only) and an Add button */}
+          {pickedExisting ? (
+            <>
+              <div className="col-12">
+                <label className="form-label mb-1">Category</label>
+                <input className="form-control" value={readMasterCat(pickedExisting) || "No Category"} readOnly />
               </div>
-            )}
-          </div>
-
-          {/* Category + suggestions */}
-          <div className="col-18 position-relative">
-            <label className="form-label mb-1">Medication Category</label>
-            <input
-              type="text"
-              className="form-control"
-              value={catQ}
-              onChange={onCatChange}
-              onKeyDown={handleKeyDownAdd}
-              onBlur={() => setTimeout(() => setShowCatSuggest(false), 150)}
-              placeholder="No Category"
-              readOnly={isLocked}
-              aria-readonly={isLocked}
-            />
-            {showCatSuggest && catQ.trim() && catSuggestions.length > 0 && !isLocked && (
-              <div
-                className="list-group shadow position-absolute w-100"
-                style={{ zIndex: 10, maxHeight: 240, overflowY: "auto" }}
-              >
-                {catSuggestions.map((n) => (
-                  <button
-                    key={n}
-                    type="button"
-                    className="list-group-item list-group-item-action"
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => pickCategory(n)}
-                    title={n}
-                  >
-                    {n}
-                  </button>
-                ))}
+              <div className="col-6">
+                <label className="form-label mb-1">Dose</label>
+                <input className="form-control" value={readMasterDose(pickedExisting) || "No dose"} readOnly />
               </div>
-            )}
-          </div>
-
-          {/* Dose */}
-          <div className="col-6">
-            <label className="form-label mb-1">Dose</label>
-            <input
-              type="text"
-              className="form-control"
-              value={doseQ}
-              onChange={onDoseChange}
-              onKeyDown={handleKeyDownAdd}
-              placeholder="e.g., 30mg"
-              readOnly={isLocked}
-              aria-readonly={isLocked}
-            />
-          </div>
-
-          {/* Add Medication */}
-          <div className="col-6 d-flex align-items-end">
-            <button
-              type="button"
-              className="btn btn-outline-primary w-100"
-              onClick={addMedication}
-              tabIndex={0}
-              disabled={isSaving}
-              title={isSaving ? "Saving…" : "Add"}
-            >
-              {isSaving ? "Saving…" : "Add"}
-            </button>
-          </div>
+              <div className="col-6 d-flex align-items-end">
+                <button
+                  type="button"
+                  className="btn btn-outline-primary w-100"
+                  onClick={() => addExisting(pickedExisting)}
+                >
+                  Add
+                </button>
+              </div>
+            </>
+          ) : (
+            // Otherwise, allow creating a new master med, then add by its new ID
+            <>
+              <div className="col-12">
+                <label className="form-label mb-1">Category (new)</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  value={catQ}
+                  onChange={(e) => setCatQ(e.target.value)}
+                  placeholder="e.g., Statin"
+                />
+              </div>
+              <div className="col-6">
+                <label className="form-label mb-1">Default Dose (new)</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  value={doseQ}
+                  onChange={(e) => setDoseQ(e.target.value)}
+                  placeholder="e.g., 20 mg"
+                />
+              </div>
+              <div className="col-6 d-flex align-items-end">
+                <button
+                  type="button"
+                  className="btn btn-outline-primary w-100"
+                  onClick={() => createAndAdd(nameQ.trim(), catQ.trim(), doseQ.trim())}
+                  disabled={isSaving || !nameQ.trim()}
+                  title={isSaving ? "Saving…" : "Create & Add"}
+                >
+                  {isSaving ? "Saving…" : "Create & Add"}
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Read-only list */}
+      {/* Read-only list (joined from IDs) */}
       <div style={{ overflowY: "auto", maxHeight: "60vh" }}>
         <div className="container-fluid px-1">
           <div className="row g-2">
-            {(medList || []).map((m, idx) => (
-              <div key={`med_${idx}`} className="col-48">
+            {rows.map((r, idx) => (
+              <div key={`med_${r.id}_${idx}`} className="col-48">
                 <div className="border rounded p-1 d-flex align-items-center">
-                  <div className="fw-semibold text-truncate col-18 text-start ps-2" title={m.name}>
-                    {m.name || "(Unnamed)"}
+                  <div className="fw-semibold text-truncate col-18 text-start ps-2" title={r.name}>
+                    {r.name}
                   </div>
-                  <div className="text-muted  small text-truncate col-18 text-start ps-2" title={m.category || "No Category"}>
-                    {m.category || "No Category"}
+                  <div className="text-muted small text-truncate col-18 text-start ps-2" title={r.category}>
+                    {r.category}
                   </div>
-                  <div className="small text-truncate col-6 ps-2" title={m.dose || "No dose"}>
-                    {m.dose || "No dose"}
+                  <div className="small text-truncate col-6 ps-2" title={r.dose}>
+                    {r.dose}
                   </div>
                   <div className="col-6 text-end pe-2">
                     <button
                       type="button"
                       className="btn btn-outline-danger btn-sm ms-2"
-                      onClick={() => removeMedication(idx)}
-                      aria-label={`Remove ${m.name}`}
-                      title={`Remove ${m.name}`}
+                      onClick={() => removeMedication(r.id)}
+                      aria-label={`Remove ${r.name}`}
+                      title={`Remove ${r.name}`}
                     >
                       ✕
                     </button>
@@ -525,7 +374,7 @@ const PatientMeds = () => {
               </div>
             ))}
 
-            {(!medList || medList.length === 0) && (
+            {rows.length === 0 && (
               <div className="col-48 text-muted small">
                 <em>No medications yet. Add one above.</em>
               </div>
