@@ -63,7 +63,7 @@ const CriteriaSearch = ({ onResults }) => {
           });
           const text = await res.text();
           let data = null;
-          try { data = JSON.parse(text);} catch { }
+          try { data = JSON.parse(text); } catch { }
           const payload = data;
           console.log(payload);
           if (typeof updateMedsCategory === "function") updateMedsCategory(payload);
@@ -72,9 +72,9 @@ const CriteriaSearch = ({ onResults }) => {
         } finally {
         }
       })();
-    } 
+    }
   }, [medsCategory]);
-  
+
   // ─────────────── Load condition master if needed ───────────────
   useEffect(() => {
     const needsLoad = !Array.isArray(conditionData) || conditionData.length === 0;
@@ -245,12 +245,13 @@ const CriteriaSearch = ({ onResults }) => {
   const [labErr, setLabErr] = useState("");
   const [labLoading, setLabLoading] = useState(false);
 
-  const addLab = () => {
-    const field = String(labSelect || "");
-    if (!field || labs.some((r) => r.field === field)) return;
-    setLabs((prev) => [...prev, { field, gt: "", lt: "" }]);
-    setLabSelect("");
+  // before: const addLab = () => { ... }
+  const addLab = (field) => {
+    const key = String(field || "");
+    if (!key || labs.some((r) => r.field === key)) return;
+    setLabs((prev) => [...prev, { field: key, gt: "", lt: "" }]);
   };
+
 
   const updateLabBound = (idx, bound, val) => {
     setLabs((prev) =>
@@ -342,9 +343,9 @@ const CriteriaSearch = ({ onResults }) => {
 
   const [catSearchArray, setCatSearchArray] = useState([]); // { ID, medication_cat }
 
-  const addMed = () => {
+  const addMed = (val) => {
     const selectedMed = Array.isArray(medsCategory)
-      ? medsCategory.find((m) => String(m.ID ?? m.id ?? "") === String(medSelect))
+      ? medsCategory.find((m) => String(m.ID ?? m.id ?? "") === String(val))
       : null;
     if (!selectedMed) return;
     const id = String(selectedMed.ID ?? selectedMed.id ?? "");
@@ -352,8 +353,8 @@ const CriteriaSearch = ({ onResults }) => {
     const exists = catSearchArray.some((c) => String(c.ID) === id);
     if (!exists) {
       setCatSearchArray((prev) => [
-      ...prev,
-      { ID: id, medication_cat: selectedMed.medication_cat }
+        ...prev,
+        { ID: id, medication_cat: selectedMed.medication_cat }
       ]);
     }
     setMedSelect("");
@@ -447,7 +448,7 @@ const CriteriaSearch = ({ onResults }) => {
             <select
               className="form-select form-select-sm"
               value={condSelect}
-              onChange={(e) => setCondSelect(e.target.value)}
+              onChange={(e) => addCondition(e.target.value)}
             >
               <option value="">— Choose a condition —</option>
               {normalizedConditions.map((c) => (
@@ -456,14 +457,6 @@ const CriteriaSearch = ({ onResults }) => {
                 </option>
               ))}
             </select>
-          </div>
-          <div className="col-auto">
-            <button
-              className="btn btn-outline-primary btn-sm"
-              onClick={() => addCondition(condSelect)}
-            >
-              Add to Search
-            </button>
           </div>
         </div>
 
@@ -502,23 +495,23 @@ const CriteriaSearch = ({ onResults }) => {
       <div className="border rounded p-2 mb-3">
         {/* Add Search For lab */}
         <div className="row g-2 align-items-end mb-2">
-          <div className="col-20">
-            <label className="form-label mb-1">Add Search For</label>
-            <select
-              className="form-select form-select-sm"
-              value={labSelect}
-              onChange={(e) => setLabSelect(e.target.value)}
-            >
-              <option value="">— Choose a lab —</option>
-              {LAB_FIELDS.map(([key, label]) => (
-                <option key={key} value={key}>{label}</option>
-              ))}
-            </select>
-          </div>
-          <div className="col-auto">
-            <button className="btn btn-outline-primary btn-sm" onClick={addLab}>Add to Search</button>
-          </div>
-        </div>
+  <div className="col-20">
+    <label className="form-label mb-1">Add Search For</label>
+    <select
+      className="form-select form-select-sm"
+      // reset after every selection so user can pick another immediately
+      value=""
+      onChange={(e) => addLab(e.target.value)}
+    >
+      <option value="">— Choose a lab —</option>
+      {LAB_FIELDS.map(([key, label]) => (
+        <option key={key} value={key}>{label}</option>
+      ))}
+    </select>
+  </div>
+  {/* Removed the Add button entirely */}
+</div>
+
 
         {/* Selected labs with > and < */}
         <div className="border rounded p-2">
@@ -582,7 +575,7 @@ const CriteriaSearch = ({ onResults }) => {
             <select
               className="form-select form-select-sm"
               value={medSelect}
-              onChange={(e) => setMedSelect(e.target.value)}
+              onChange={(e) => addMed(e.target.value)}
             >
               <option value="">— Choose a medication category —</option>
               {Array.isArray(medsCategory) && medsCategory.length > 0
@@ -596,9 +589,6 @@ const CriteriaSearch = ({ onResults }) => {
                 : null}
             </select>
           </div>
-          <div className="col-auto">
-            <button className="btn btn-outline-primary btn-sm" onClick={addMed}>Add to Search</button>
-          </div>
         </div>
 
         {/* Selected meds */}
@@ -607,7 +597,7 @@ const CriteriaSearch = ({ onResults }) => {
           {catSearchArray.length === 0 ? (
             <div className="text-muted small"><em>No medications category added.</em></div>
           ) : (
-           <div className="row row-cols-4 g-2">
+            <div className="row row-cols-4 g-2">
               {catSearchArray.map((c, i) => (
                 <div key={c.ID ?? i} className="col">
                   <div className="text-start p-1">

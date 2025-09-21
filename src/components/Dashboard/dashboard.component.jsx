@@ -6,8 +6,8 @@ import { useGlobalContext } from '../../Context/global.context';
 
 // Read values forwarded from package.json via env (see package.json scripts)
 const version = process.env.REACT_APP_VERSION ?? 'Version 2.4.3';
-const builtAt = process.env.REACT_APP_BUILT_AT ?? 'Wed Sept 20 - 10:25 AM';
-const fixNote = process.env.REACT_APP_FIX_NOTE ?? 'Medication now can save Brand as well.. All cats are loaded';
+const builtAt = process.env.REACT_APP_BUILT_AT ?? 'Wed Sept 21 - 9:00 AM';
+const fixNote = process.env.REACT_APP_FIX_NOTE ?? 'OK First Version of Criteria Search is Done... lets talk';
 
 const DashBoard = () => {
   const navigate = useNavigate();
