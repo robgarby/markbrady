@@ -45,6 +45,12 @@ const SideBar = () => {
           <div className="client-box d-flex flex-column col-100 rounded  p-3 mt-3 fs-7" style={{ background: "#acb0b5ff" }}>
             <div className="text-center fw-bold mb-2 text-dark">Patient Specific</div>
             <button
+              className={`btn my-1 w-100 fs-7 ${visibleBox !== "ClientDetails" ? "btn-light" : "btn-warning"}`}
+              onClick={() => setVisibleBox("ClientDetails")}
+            >
+              Patient
+            </button>
+            <button
               className={`btn my-1 w-100 fs-7 ${visibleBox !== "pdfViewer" ? "btn-light" : "btn-warning"}`}
               onClick={() => setVisibleBox("pdfViewer")}
             >

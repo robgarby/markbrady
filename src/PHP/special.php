@@ -394,12 +394,113 @@ if ($data['script'] === 'medicationSearchByIds') {
                     $patientsWithMedIds[] = $row;
                 }
             }
-             echo json_encode($patientsWithMedIds);// Debugging: Output the matching patients
+            echo json_encode($patientsWithMedIds);// Debugging: Output the matching patients
         }
 
 
         exit;
     }
-
-
 }
+
+if ($data['script'] === 'notOnMedicationByCategoryIds') {
+    header('Content-Type: application/json; charset=utf-8');
+
+    $ids = $data['ids'] ?? [];
+    if (!is_array($ids) || count($ids) === 0) {
+        // No categories provided — nothing to exclude; return all patients
+        $result = $conn->query("SELECT * FROM Patient");
+        $rows = [];
+        if ($result) {
+            while ($r = $result->fetch_assoc())
+                $rows[] = $r;
+        }
+        echo json_encode($rows, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        exit;
+    }
+
+    // Normalize IDs to integers to be safe
+    $catIds = array_values(array_filter(array_map('intval', $ids), fn($v) => $v > 0));
+    if (count($catIds) === 0) {
+        $result = $conn->query("SELECT * FROM Patient");
+        $rows = [];
+        if ($result) {
+            while ($r = $result->fetch_assoc())
+                $rows[] = $r;
+        }
+        echo json_encode($rows, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        exit;
+    }
+
+    // 1) Get the medication_cat names for the given category IDs
+    $placeholders = implode(',', array_fill(0, count($catIds), '?'));
+    $types = str_repeat('i', count($catIds));
+
+    $categories = [];
+    $stmt = $conn->prepare("SELECT ID, medication_cat FROM medCat WHERE ID IN ($placeholders)");
+    $stmt->bind_param($types, ...$catIds);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    while ($row = $res->fetch_assoc()) {
+        $categories[] = $row;
+    }
+    $stmt->close();
+
+    // 2) For each category, collect med IDs in medications.medication_cat = ?
+    $searchIDS = [];
+    if (!empty($categories)) {
+        $stmtMed = $conn->prepare("SELECT ID FROM medications WHERE medication_cat = ?");
+        foreach ($categories as $cat) {
+            $medCat = $cat['medication_cat'];
+            $stmtMed->bind_param("s", $medCat);
+            $stmtMed->execute();
+            $resMed = $stmtMed->get_result();
+            while ($rowMed = $resMed->fetch_assoc()) {
+                $searchIDS[] = (int) $rowMed['ID'];
+            }
+        }
+        $stmtMed->close();
+    }
+
+    // De‑dupe med IDs
+    $searchIDS = array_values(array_unique(array_filter($searchIDS, fn($v) => $v > 0)));
+
+    // 3) Build final patient query:
+    //    Include anyone with NULL/empty medsData, OR those who do NOT match any of the med IDs.
+    if (empty($searchIDS)) {
+        // No meds found for the chosen categories => nothing to exclude -> everyone qualifies
+        $sql = "SELECT * FROM Patient";
+    } else {
+        // Build OR of FIND_IN_SET over a NULL-safe medsData
+        // COALESCE(medsData,'') ensures NULL behaves like empty (no matches)
+        $conditions = [];
+        foreach ($searchIDS as $mid) {
+            // $mid is int from DB; safe to inline
+            $conditions[] = "FIND_IN_SET($mid, COALESCE(medsData,''))";
+        }
+        $whereOR = implode(' OR ', $conditions);
+
+        // Anyone with medsData NULL/'' OR NOT (any match) is considered NOT on those medications
+        $sql = "
+            SELECT *
+            FROM Patient
+            WHERE (medsData IS NULL OR medsData = '')
+               OR NOT ($whereOR)
+        ";
+    }
+
+    $out = [];
+    $result = $conn->query($sql);
+    if ($result) {
+        while ($row = $result->fetch_assoc()) {
+            $out[] = $row;
+        }
+    }
+
+    echo json_encode($out, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    exit;
+}
+
+// === In special.php ===
+
+
+
