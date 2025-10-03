@@ -68,7 +68,7 @@ const CriteriaSearch = ({ onResults }) => {
     updateMedsCategory,
   } = useGlobalContext();
 
-  // ─────────────── PERSISTED UI STATE (hydrate from localStorage) ───────────────
+  // ─────────────── PERSISTED UI STATE ───────────────
   const [appointmentDate, setAppointmentDate] = useState(() => {
     return localStorage.getItem(LS_KEYS.appt) || "";
   });
@@ -106,43 +106,22 @@ const CriteriaSearch = ({ onResults }) => {
   const [nonMedErr, setNonMedErr] = useState("");
   const [nonMedLoading, setNonMedLoading] = useState(false);
 
-  // Hydration guard so we don't overwrite storage during the first mount
+  // Hydration guard
   const [hydrated, setHydrated] = useState(false);
-  useEffect(() => {
-    setHydrated(true);
-  }, []);
+  useEffect(() => setHydrated(true), []);
 
-  // ─────────────── Persist to localStorage on change (after hydration) ───────────────
-  useEffect(() => {
-    if (!hydrated) return;
-    localStorage.setItem(LS_KEYS.conds, JSON.stringify(conditionSearchArray));
-  }, [conditionSearchArray, hydrated]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    localStorage.setItem(LS_KEYS.labs, JSON.stringify(labs));
-  }, [labs, hydrated]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    localStorage.setItem(LS_KEYS.medCats, JSON.stringify(catSearchArray));
-  }, [catSearchArray, hydrated]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    localStorage.setItem(
-      LS_KEYS.nonMedCats,
-      JSON.stringify(nonMedCatSearchArray)
-    );
-  }, [nonMedCatSearchArray, hydrated]);
-
+  // Persist
+  useEffect(() => { if (hydrated) localStorage.setItem(LS_KEYS.conds, JSON.stringify(conditionSearchArray)); }, [conditionSearchArray, hydrated]);
+  useEffect(() => { if (hydrated) localStorage.setItem(LS_KEYS.labs, JSON.stringify(labs)); }, [labs, hydrated]);
+  useEffect(() => { if (hydrated) localStorage.setItem(LS_KEYS.medCats, JSON.stringify(catSearchArray)); }, [catSearchArray, hydrated]);
+  useEffect(() => { if (hydrated) localStorage.setItem(LS_KEYS.nonMedCats, JSON.stringify(nonMedCatSearchArray)); }, [nonMedCatSearchArray, hydrated]);
   useEffect(() => {
     if (!hydrated) return;
     if (appointmentDate) localStorage.setItem(LS_KEYS.appt, appointmentDate);
     else localStorage.removeItem(LS_KEYS.appt);
   }, [appointmentDate, hydrated]);
 
-  // ─────────────── load meds categories (if needed) ───────────────
+  // Load meds categories
   useEffect(() => {
     if (!Array.isArray(medsCategory) || medsCategory.length === 0) {
       (async () => {
@@ -154,27 +133,22 @@ const CriteriaSearch = ({ onResults }) => {
           });
           const text = await res.text();
           let data = null;
-          try {
-            data = JSON.parse(text);
-          } catch { }
+          try { data = JSON.parse(text); } catch {}
           if (typeof updateMedsCategory === "function") updateMedsCategory(data);
-        } catch (e) {
-          console.error(e);
-        }
+        } catch (e) { console.error(e); }
       })();
     }
   }, [medsCategory, updateMedsCategory]);
 
-  // ─────────────── Load condition master if needed ───────────────
+  // Load condition master
   useEffect(() => {
     const needsLoad = !Array.isArray(conditionData) || conditionData.length === 0;
     const setConditions =
       typeof updateConditions === "function"
         ? updateConditions
         : typeof updateConditionData === "function"
-          ? updateConditionData
-          : null;
-
+        ? updateConditionData
+        : null;
     if (!needsLoad || !setConditions) return;
 
     fetch("https://optimizingdyslipidemia.com/PHP/database.php", {
@@ -187,17 +161,16 @@ const CriteriaSearch = ({ onResults }) => {
         if (Array.isArray(data?.conditions)) setConditions(data.conditions);
         else if (Array.isArray(data)) setConditions(data);
       })
-      .catch(() => { });
+      .catch(() => {});
   }, [conditionData, updateConditions, updateConditionData]);
 
   const allConditions = useMemo(() => {
     if (Array.isArray(conditionData)) return conditionData;
-    if (conditionData && typeof conditionData === "object")
-      return Object.values(conditionData);
+    if (conditionData && typeof conditionData === "object") return Object.values(conditionData);
     return [];
   }, [conditionData]);
 
-  // ─────────────── Derivations / options ───────────────
+  // Options
   const filteredConditions = useMemo(() => {
     const q = condFilter.trim().toLowerCase();
     const src = allConditions.map((c) => ({
@@ -206,19 +179,16 @@ const CriteriaSearch = ({ onResults }) => {
       id: String(c?.ID ?? c?.id ?? c?.conditionID ?? ""),
     }));
     if (!q) return src;
-    return src.filter(
-      (c) => c.label.toLowerCase().includes(q) || c.code.toLowerCase().includes(q)
-    );
+    return src.filter((c) => c.label.toLowerCase().includes(q) || c.code.toLowerCase().includes(q));
   }, [allConditions, condFilter]);
 
   const normalizedConditions = useMemo(
-    () =>
-      filteredConditions.map((c) => {
-        const code = (c.code || "").trim().toUpperCase();
-        const label = (c.label || "").trim();
-        const value = code || label; // fallback to label if no code
-        return { value, code, label, id: c.id };
-      }),
+    () => filteredConditions.map((c) => {
+      const code = (c.code || "").trim().toUpperCase();
+      const label = (c.label || "").trim();
+      const value = code || label;
+      return { value, code, label, id: c.id };
+    }),
     [filteredConditions]
   );
 
@@ -232,7 +202,7 @@ const CriteriaSearch = ({ onResults }) => {
     [conditionSearchArray]
   );
 
-  // ─────────────── Condition handlers ───────────────
+  // Condition handlers
   const addCondition = (val) => {
     const selectedVal = (typeof val === "string" ? val : "") || condSelect;
     if (!selectedVal) return;
@@ -252,11 +222,7 @@ const CriteriaSearch = ({ onResults }) => {
 
     setConditionSearchArray((prev) => [
       ...prev,
-      {
-        ID: String(chosen.id || ""),
-        condition_name: chosen.label,
-        condition_code: chosen.code || "",
-      },
+      { ID: String(chosen.id || ""), condition_name: chosen.label, condition_code: chosen.code || "" },
     ]);
     setCondSelect("");
   };
@@ -270,15 +236,11 @@ const CriteriaSearch = ({ onResults }) => {
 
   const handleConditionSearch = async () => {
     const items = displayConds;
-    if (!items.length) {
-      setCondErr("Add at least one condition.");
-      return;
-    }
+    if (!items.length) { setCondErr("Add at least one condition."); return; }
     const codes = items.map((x) => x.code).filter(Boolean);
     const labels = items.map((x) => x.name).filter(Boolean);
 
-    setCondLoading(true);
-    setCondErr("");
+    setCondLoading(true); setCondErr("");
     try {
       const res = await fetch("https://optimizingdyslipidemia.com/PHP/database.php", {
         method: "POST",
@@ -286,12 +248,7 @@ const CriteriaSearch = ({ onResults }) => {
         body: JSON.stringify({ script: "conditionSearch", codes, labels }),
       });
       const text = await res.text();
-      let data;
-      try {
-        data = JSON.parse(text);
-      } catch {
-        data = [];
-      }
+      let data; try { data = JSON.parse(text); } catch { data = []; }
 
       onResults?.(data);
       updatePatientSearch?.({
@@ -317,7 +274,7 @@ const CriteriaSearch = ({ onResults }) => {
     }
   };
 
-  // ─────────────── Labs handlers ───────────────
+  // Labs
   const addLab = (field) => {
     const key = String(field || "");
     if (!key || labs.some((r) => r.field === key)) return;
@@ -325,20 +282,11 @@ const CriteriaSearch = ({ onResults }) => {
   };
 
   const updateLabBound = (idx, bound, val) => {
-    setLabs((prev) =>
-      prev.map((r, i) => (i === idx ? { ...r, [bound]: cleanNum(val) } : r))
-    );
+    setLabs((prev) => prev.map((r, i) => (i === idx ? { ...r, [bound]: cleanNum(val) } : r)));
   };
 
-  const removeLab = (idx) => {
-    setLabs((prev) => prev.filter((_, i) => i !== idx));
-  };
-
-  const clearLabs = () => {
-    setLabSelect("");
-    setLabs([]);
-    setLabErr("");
-  };
+  const removeLab = (idx) => setLabs((prev) => prev.filter((_, i) => i !== idx));
+  const clearLabs = () => { setLabSelect(""); setLabs([]); setLabErr(""); };
 
   const handleLabSearch = async () => {
     const labsWithDefaults = labs.map((r) => ({
@@ -346,20 +294,13 @@ const CriteriaSearch = ({ onResults }) => {
       gt: String(r.gt).trim() === "" ? -1 : r.gt,
       lt: String(r.lt).trim() === "" ? 10000 : r.lt,
     }));
-
     const invalid = labsWithDefaults.find((r) => r.gt === -1 && r.lt === 10000);
-    if (invalid) {
-      setLabErr("Each lab needs at least one value.");
-      return;
-    }
+    if (invalid) { setLabErr("Each lab needs at least one value."); return; }
 
     const filters = {};
-    for (const r of labsWithDefaults) {
-      filters[r.field] = { gt: parseFloat(r.gt), lt: parseFloat(r.lt) };
-    }
+    for (const r of labsWithDefaults) filters[r.field] = { gt: parseFloat(r.gt), lt: parseFloat(r.lt) };
 
-    setLabLoading(true);
-    setLabErr("");
+    setLabLoading(true); setLabErr("");
     try {
       const res = await fetch("https://optimizingdyslipidemia.com/PHP/database.php", {
         method: "POST",
@@ -367,12 +308,7 @@ const CriteriaSearch = ({ onResults }) => {
         body: JSON.stringify({ script: "labRangeSearch", filters }),
       });
       const text = await res.text();
-      let data;
-      try {
-        data = JSON.parse(text);
-      } catch {
-        data = [];
-      }
+      let data; try { data = JSON.parse(text); } catch { data = []; }
 
       onResults?.(data);
       updatePatientSearch?.({
@@ -398,7 +334,7 @@ const CriteriaSearch = ({ onResults }) => {
     }
   };
 
-  // ─────────────── Med Category handlers ───────────────
+  // Med Category (ON)
   const addMed = (val) => {
     const selectedMed = Array.isArray(medsCategory)
       ? medsCategory.find((m) => String(m.ID ?? m.id ?? "") === String(val))
@@ -407,29 +343,16 @@ const CriteriaSearch = ({ onResults }) => {
     const id = String(selectedMed.ID ?? selectedMed.id ?? "");
     const exists = catSearchArray.some((c) => String(c.ID) === id);
     if (!exists) {
-      setCatSearchArray((prev) => [
-        ...prev,
-        { ID: id, medication_cat: selectedMed.medication_cat },
-      ]);
+      setCatSearchArray((prev) => [...prev, { ID: id, medication_cat: selectedMed.medication_cat }]);
     }
     setMedSelect("");
   };
-
-  const clearMeds = () => {
-    setCatSearchArray([]);
-    setMedSelect("");
-    setMeds([]);
-    setMedErr("");
-  };
+  const clearMeds = () => { setCatSearchArray([]); setMedSelect(""); setMeds([]); setMedErr(""); };
 
   const handleMedSearch = async () => {
-    if (!catSearchArray.length) {
-      setMedErr("Add at least one medication.");
-      return;
-    }
+    if (!catSearchArray.length) { setMedErr("Add at least one medication."); return; }
     const ids = catSearchArray.map((m) => m.ID);
-    setMedLoading(true);
-    setMedErr("");
+    setMedLoading(true); setMedErr("");
     try {
       const res = await fetch("https://optimizingdyslipidemia.com/PHP/special.php", {
         method: "POST",
@@ -437,12 +360,7 @@ const CriteriaSearch = ({ onResults }) => {
         body: JSON.stringify({ script: "medicationSearchByIds", ids }),
       });
       const text = await res.text();
-      let data;
-      try {
-        data = JSON.parse(text);
-      } catch {
-        data = [];
-      }
+      let data; try { data = JSON.parse(text); } catch { data = []; }
 
       onResults?.(data);
       updatePatientSearch?.({
@@ -463,12 +381,10 @@ const CriteriaSearch = ({ onResults }) => {
         results: [],
       });
       setVisibleBox?.("searchResults");
-    } finally {
-      setMedLoading(false);
-    }
+    } finally { setMedLoading(false); }
   };
 
-  // ─────────────── Not‑on Med Category handlers ───────────────
+  // Not-on Med Category (OFF)
   const addNonMed = (val) => {
     const selected = Array.isArray(medsCategory)
       ? medsCategory.find((m) => String(m.ID ?? m.id ?? "") === String(val))
@@ -476,28 +392,15 @@ const CriteriaSearch = ({ onResults }) => {
     if (!selected) return;
     const id = String(selected.ID ?? selected.id ?? "");
     if (nonMedCatSearchArray.some((c) => String(c.ID) === id)) return;
-    setNonMedCatSearchArray((prev) => [
-      ...prev,
-      { ID: id, medication_cat: selected.medication_cat },
-    ]);
+    setNonMedCatSearchArray((prev) => [...prev, { ID: id, medication_cat: selected.medication_cat }]);
     setNonMedSelect("");
   };
-
-  const clearNonMeds = () => {
-    setNonMedCatSearchArray([]);
-    setNonMedSelect("");
-    setNonMedErr("");
-  };
+  const clearNonMeds = () => { setNonMedCatSearchArray([]); setNonMedSelect(""); setNonMedErr(""); };
 
   const handleNonMedSearch = async () => {
-    if (!nonMedCatSearchArray.length) {
-      setNonMedErr("Add at least one medication category to exclude.");
-      return;
-    }
+    if (!nonMedCatSearchArray.length) { setNonMedErr("Add at least one medication category to exclude."); return; }
     const ids = nonMedCatSearchArray.map((m) => m.ID);
-
-    setNonMedLoading(true);
-    setNonMedErr("");
+    setNonMedLoading(true); setNonMedErr("");
     try {
       const res = await fetch("https://optimizingdyslipidemia.com/PHP/special.php", {
         method: "POST",
@@ -505,12 +408,7 @@ const CriteriaSearch = ({ onResults }) => {
         body: JSON.stringify({ script: "notOnMedicationByCategoryIds", ids }),
       });
       const text = await res.text();
-      let data;
-      try {
-        data = JSON.parse(text);
-      } catch {
-        data = [];
-      }
+      let data; try { data = JSON.parse(text); } catch { data = []; }
 
       onResults?.(data);
       updatePatientSearch?.({
@@ -531,9 +429,7 @@ const CriteriaSearch = ({ onResults }) => {
         results: [],
       });
       setVisibleBox?.("searchResults");
-    } finally {
-      setNonMedLoading(false);
-    }
+    } finally { setNonMedLoading(false); }
   };
 
   // ─────────────── SUPER SEARCH ───────────────
@@ -542,7 +438,7 @@ const CriteriaSearch = ({ onResults }) => {
   const handleSuperSearch = async () => {
     const conditionCodes = displayConds.map((x) => x.code).filter(Boolean);
 
-    // Only send labs that have *at least one* bound filled; backend can interpret
+    // Only send labs that have at least one bound filled
     const labsPayload = labs.map((r) => ({
       field: r.field,
       gt: String(r.gt ?? "").trim(),
@@ -562,17 +458,12 @@ const CriteriaSearch = ({ onResults }) => {
           labs: labsPayload,
           conditionCodes,
           appointmentDate,
-          medCategoryIds,
-          nonMedCategoryIds,
+          medCategoryIds,        // ✅ on-meds
+          nonMedCategoryIds,     // ✅ not-on-meds
         }),
       });
       const text = await res.text();
-      let data;
-      try {
-        data = JSON.parse(text);
-      } catch {
-        data = [];
-      }
+      let data; try { data = JSON.parse(text); } catch { data = []; }
 
       onResults?.(data);
       updatePatientSearch?.({
@@ -602,7 +493,6 @@ const CriteriaSearch = ({ onResults }) => {
     clearMeds();
     clearNonMeds();
     setAppointmentDate("");
-    // localStorage updates happen via effects
   };
 
   const hasOn = Array.isArray(catSearchArray) && catSearchArray.length > 0;
@@ -612,15 +502,13 @@ const CriteriaSearch = ({ onResults }) => {
   return (
     <div className="p-2">
       <div className="row g-2">
-        {/* LEFT: Builders (col-32) */}
+        {/* LEFT: Builders */}
         <div className="col-32">
-          {/* Extra Search Details (Date) */}
+          {/* Extra Search Details */}
           <div className="d-flex align-items-center justify-content-between mb-2">
             <h5 className="m-0 ps-4">Extra Search Details</h5>
             <div className="d-flex gap-2 align-items-center">
-              <label htmlFor="AppointmentDate" className="me-2 mb-0">
-                Appointment Date:
-              </label>
+              <label htmlFor="AppointmentDate" className="me-2 mb-0">Appointment Date:</label>
               <input
                 type="date"
                 id="AppointmentDate"
@@ -640,21 +528,13 @@ const CriteriaSearch = ({ onResults }) => {
             </div>
           </div>
 
-          {/* Conditions */}
+          {/* Condition Search */}
           <div className="d-flex align-items-center justify-content-between mb-2">
             <h5 className="m-0 ps-4">Condition Search</h5>
             <div className="d-flex gap-2">
               <button className="btn btn-danger" onClick={clearConditions} disabled={condLoading}>
                 Clear
               </button>
-              {/* <button
-                className="btn btn-success text-white"
-                onClick={handleConditionSearch}
-                disabled={condLoading}
-                style={{ width: 140 }}
-              >
-                {condLoading ? "Searching…" : "Search"}
-              </button> */}
             </div>
           </div>
           {condErr && <div className="alert alert-danger py-1">{condErr}</div>}
@@ -662,7 +542,6 @@ const CriteriaSearch = ({ onResults }) => {
           <div className="border rounded p-2 mb-3">
             <div className="row g-2 align-items-end mb-2">
               <div className="col-20">
-                {/* <label className="form-label mb-1">Add Search For</label> */}
                 <select
                   className="form-select form-select-sm"
                   value={condSelect}
@@ -671,8 +550,7 @@ const CriteriaSearch = ({ onResults }) => {
                   <option value="">— Choose a condition —</option>
                   {normalizedConditions.map((c) => (
                     <option key={c.value} value={c.value}>
-                      {c.label}
-                      {c.code ? ` (${c.code})` : ""}
+                      {c.label}{c.code ? ` (${c.code})` : ""}
                     </option>
                   ))}
                 </select>
@@ -680,11 +558,8 @@ const CriteriaSearch = ({ onResults }) => {
             </div>
 
             <div className="border rounded p-2">
-              {/* <div className="fw-bold mb-2">Selected</div> */}
               {displayConds.length === 0 ? (
-                <div className="text-muted small">
-                  <em>No conditions added.</em>
-                </div>
+                <div className="text-muted small"><em>No conditions added.</em></div>
               ) : (
                 <div className="row row-cols-4 g-2">
                   {conditionSearchArray.map((c, i) => (
@@ -700,21 +575,13 @@ const CriteriaSearch = ({ onResults }) => {
             </div>
           </div>
 
-          {/* Labs */}
+          {/* Lab Search */}
           <div className="d-flex align-items-center justify-content-between mb-2">
             <h5 className="m-0 ps-4">Lab Search</h5>
             <div className="d-flex gap-2">
               <button className="btn btn-danger" onClick={clearLabs} disabled={labLoading}>
                 Clear
               </button>
-              {/* <button
-                className="btn btn-success text-white"
-                onClick={handleLabSearch}
-                disabled={labLoading}
-                style={{ width: 140 }}
-              >
-                {labLoading ? "Searching…" : "Search"}
-              </button> */}
             </div>
           </div>
           {labErr && <div className="alert alert-danger py-1">{labErr}</div>}
@@ -722,7 +589,6 @@ const CriteriaSearch = ({ onResults }) => {
           <div className="border rounded p-2 mb-3">
             <div className="row g-2 align-items-end mb-2">
               <div className="col-20">
-                {/* <label className="form-label mb-1">Add Search For</label> */}
                 <select
                   className="form-select form-select-sm"
                   value={labSelect}
@@ -733,25 +599,19 @@ const CriteriaSearch = ({ onResults }) => {
                 >
                   <option value="">— Choose a lab —</option>
                   {LAB_FIELDS.map(([key, label]) => (
-                    <option key={key} value={key}>
-                      {label}
-                    </option>
+                    <option key={key} value={key}>{label}</option>
                   ))}
                 </select>
               </div>
             </div>
 
             <div className="border rounded p-2">
-              {/* <div className="fw-bold mb-2">Selected</div> */}
               {labs.length === 0 ? (
-                <div className="text-muted small">
-                  <em>No labs added.</em>
-                </div>
+                <div className="text-muted small"><em>No labs added.</em></div>
               ) : (
                 <div className="row g-2">
                   {labs.map((r, i) => {
-                    const label =
-                      LAB_FIELDS.find(([k]) => k === r.field)?.[1] || r.field;
+                    const label = LAB_FIELDS.find(([k]) => k === r.field)?.[1] || r.field;
                     return (
                       <div key={`${r.field}_${i}`} className="col-24">
                         <div className="border rounded p-2 d-flex align-items-center gap-2">
@@ -775,10 +635,7 @@ const CriteriaSearch = ({ onResults }) => {
                               style={{ width: 90 }}
                               inputMode="decimal"
                             />
-                            <button
-                              className="btn btn-sm btn-outline-danger"
-                              onClick={() => removeLab(i)}
-                            >
+                            <button className="btn btn-sm btn-outline-danger" onClick={() => removeLab(i)}>
                               Remove
                             </button>
                           </div>
@@ -791,21 +648,13 @@ const CriteriaSearch = ({ onResults }) => {
             </div>
           </div>
 
-          {/* Medication Category Search */}
+          {/* Medication Category Search (ON) */}
           <div className="d-flex align-items-center justify-content-between mb-2">
             <h5 className="m-0 ps-4">Medication Category Search</h5>
             <div className="d-flex gap-2">
               <button className="btn btn-danger" onClick={clearMeds} disabled={medLoading}>
                 Clear
               </button>
-              {/* <button
-                className="btn btn-success text-white"
-                onClick={handleMedSearch}
-                disabled={medLoading}
-                style={{ width: 140 }}
-              >
-                {medLoading ? "Searching…" : "Search"}
-              </button> */}
             </div>
           </div>
           {medErr && <div className="alert alert-danger py-1">{medErr}</div>}
@@ -813,7 +662,6 @@ const CriteriaSearch = ({ onResults }) => {
           <div className="border rounded p-2 mb-3">
             <div className="row g-2 align-items-end mb-2">
               <div className="col-24 col-md-20">
-                {/* <label className="form-label mb-1">Add Search For</label> */}
                 <select
                   className="form-select form-select-sm"
                   value={medSelect}
@@ -822,32 +670,24 @@ const CriteriaSearch = ({ onResults }) => {
                   <option value="">— Choose a medication category —</option>
                   {Array.isArray(medsCategory) && medsCategory.length > 0
                     ? medsCategory.map((m) => {
-                      const id = String(m?.ID ?? m?.id ?? "");
-                      const label = String(m?.medication_cat);
-                      return (
-                        <option key={id} value={id}>
-                          {label}
-                        </option>
-                      );
-                    })
+                        const id = String(m?.ID ?? m?.id ?? "");
+                        const label = String(m?.medication_cat);
+                        return <option key={id} value={id}>{label}</option>;
+                      })
                     : null}
                 </select>
               </div>
             </div>
 
             <div className="border rounded p-2">
-              {/* <div className="fw-bold mb-2">Selected</div> */}
               {catSearchArray.length === 0 ? (
-                <div className="text-muted small">
-                  <em>No medication categories added.</em>
-                </div>
+                <div className="text-muted small"><em>No medication categories added.</em></div>
               ) : (
                 <div className="row row-cols-4 g-2">
                   {catSearchArray.map((c, i) => (
                     <div key={c.ID ?? i} className="col">
                       <div className="text-start p-1 text-purple fw-bold">
-                        <span>{c.medication_cat}</span>
-                        {c.ID ? <span>{` (${c.ID})`}</span> : null}
+                        <span>{c.medication_cat}</span>{c.ID ? <span>{` (#${c.ID})`}</span> : null}
                       </div>
                     </div>
                   ))}
@@ -856,21 +696,13 @@ const CriteriaSearch = ({ onResults }) => {
             </div>
           </div>
 
-          {/* Not on Medication Search */}
+          {/* Not on Medication Search (OFF) */}
           <div className="d-flex align-items-center justify-content-between mb-2">
             <h5 className="m-0 ps-4 text-danger mt-3 mb-1">Not on Medication Search</h5>
             <div className="d-flex gap-2">
               <button className="btn btn-danger" onClick={clearNonMeds} disabled={nonMedLoading}>
                 Clear
               </button>
-              {/* <button
-                className="btn btn-success text-white"
-                onClick={handleNonMedSearch}
-                disabled={nonMedLoading}
-                style={{ width: 140 }}
-              >
-                {nonMedLoading ? "Searching…" : "Search"}
-              </button> */}
             </div>
           </div>
           {nonMedErr && <div className="alert alert-danger py-1">{nonMedErr}</div>}
@@ -878,7 +710,6 @@ const CriteriaSearch = ({ onResults }) => {
           <div className="border rounded p-2">
             <div className="row g-2 align-items-end mb-2">
               <div className="col-24 col-md-20">
-                {/* <label className="form-label mb-1">Add Categories to Exclude</label> */}
                 <select
                   className="form-select form-select-sm"
                   value={nonMedSelect}
@@ -887,32 +718,24 @@ const CriteriaSearch = ({ onResults }) => {
                   <option value="">— Choose a medication category —</option>
                   {Array.isArray(medsCategory) && medsCategory.length > 0
                     ? medsCategory.map((m) => {
-                      const id = String(m?.ID ?? m?.id ?? "");
-                      const label = String(m?.medication_cat);
-                      return (
-                        <option key={id} value={id}>
-                          {label}
-                        </option>
-                      );
-                    })
+                        const id = String(m?.ID ?? m?.id ?? "");
+                        const label = String(m?.medication_cat);
+                        return <option key={id} value={id}>{label}</option>;
+                      })
                     : null}
                 </select>
               </div>
             </div>
 
             <div className="border rounded p-2">
-              {/* <div className="fw-bold mb-2">Selected (Exclude these categories)</div> */}
               {nonMedCatSearchArray.length === 0 ? (
-                <div className="text-muted small">
-                  <em>No categories selected.</em>
-                </div>
+                <div className="text-muted small"><em>No categories selected.</em></div>
               ) : (
                 <div className="row row-cols-4 g-2">
                   {nonMedCatSearchArray.map((c, i) => (
                     <div key={c.ID ?? i} className="col">
                       <div className="text-start p-1 text-purple fw-bold">
-                        <span>{c.medication_cat}</span>
-                        {c.ID ? <span>{` (${c.ID})`}</span> : null}
+                        <span>{c.medication_cat}</span>{c.ID ? <span>{` (#${c.ID})`}</span> : null}
                       </div>
                     </div>
                   ))}
@@ -922,7 +745,7 @@ const CriteriaSearch = ({ onResults }) => {
           </div>
         </div>
 
-        {/* RIGHT: Super Search Mirror (col-16) */}
+        {/* RIGHT: Super Search Mirror */}
         <div className="col-16">
           <div className="border rounded p-3 h-100">
             <div className="d-flex align-items-center justify-content-between">
@@ -957,15 +780,12 @@ const CriteriaSearch = ({ onResults }) => {
                   <ul className="mb-0">
                     {displayConds.map((c, i) => (
                       <li key={i}>
-                        {c.name}
-                        {c.code ? ` (${c.code})` : ""}
+                        {c.name}{c.code ? ` (${c.code})` : ""}
                       </li>
                     ))}
                   </ul>
                 ) : (
-                  <div className="text-muted small">
-                    <em>No conditions selected</em>
-                  </div>
+                  <div className="text-muted small"><em>No conditions selected</em></div>
                 )}
               </div>
 
@@ -974,8 +794,7 @@ const CriteriaSearch = ({ onResults }) => {
                 {labs.length ? (
                   <ul className="mb-0">
                     {labs.map((r, i) => {
-                      const label =
-                        LAB_FIELDS.find(([k]) => k === r.field)?.[1] || r.field;
+                      const label = LAB_FIELDS.find(([k]) => k === r.field)?.[1] || r.field;
                       const min = String(r.gt ?? "").trim();
                       const max = String(r.lt ?? "").trim();
                       const parts = [];
@@ -989,59 +808,41 @@ const CriteriaSearch = ({ onResults }) => {
                     })}
                   </ul>
                 ) : (
-                  <div className="text-muted small">
-                    <em>No labs selected</em>
-                  </div>
+                  <div className="text-muted small"><em>No labs selected</em></div>
                 )}
               </div>
 
+              {/* ✅ Always show both ON and OFF medication selections — no restriction */}
+              <div className="mb-2">
+                <div className="fw-semibold small text-primary fw-bold">On Medication</div>
+                {hasOn ? (
+                  <ul className="mb-0">
+                    {catSearchArray.map((c, i) => (
+                      <li key={c?.ID ?? `on-${i}`}>
+                        {c?.medication_cat}{c?.ID ? ` (#${c.ID})` : ""}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="text-muted small"><em>No Medications selected</em></div>
+                )}
+              </div>
 
-              {hasOn && hasNot ? (
-                <div className="alert alert-warning p-3">
-                  <div className="fw-semibold mb-1">Pick one filter only</div>
-                  <div className="small text-muted">
-                    DUMB ASS - You can’t filter for both “On Medication” and “NOT On Medications” at the same time.
-                  </div>
-                </div>
-              ) : (
-                <div className="P-0">
-                  <div className="mb-2">
-                    <div className="fw-semibold small text-primary fw-bold">On Medication</div>
-                    {hasOn ? (
-                      <ul className="mb-0">
-                        {catSearchArray.map((c, i) => (
-                          <li key={c?.ID ?? `on-${i}`}>
-                            {c?.medication_cat}
-                            {c?.ID ? ` (#${c.ID})` : ""}
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <div className="text-muted small">
-                        <em>No Medications selected</em>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="mb-2">
-                    <div className="fw-semibold small text-danger fw-bold">NOT On Medications</div>
-                    {hasNot ? (
-                      <ul className="mb-0">
-                        {nonMedCatSearchArray.map((c, i) => (
-                          <li key={c?.ID ?? `not-${i}`}>
-                            {c?.medication_cat}
-                            {c?.ID ? ` (#${c.ID})` : ""}
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <div className="text-muted small">
-                        <em>No Non Medications selected</em>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
+              <div className="mb-2">
+                <div className="fw-semibold small text-danger fw-bold">NOT On Medications</div>
+                {hasNot ? (
+                  <ul className="mb-0">
+                    {nonMedCatSearchArray.map((c, i) => (
+                      <li key={c?.ID ?? `not-${i}`}>
+                        {c?.medication_cat}{c?.ID ? ` (#${c.ID})` : ""}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="text-muted small"><em>No Non Medications selected</em></div>
+                )}
+              </div>
+              {/* End summary mirror */}
             </div>
           </div>
         </div>

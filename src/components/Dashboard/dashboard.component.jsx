@@ -5,9 +5,9 @@ import logo from '../../assets/markbrady.png';
 import { useGlobalContext } from '../../Context/global.context';
 
 // Read values forwarded from package.json via env (see package.json scripts)
-const version = process.env.REACT_APP_VERSION ?? 'Version 2.8';
-const builtAt = process.env.REACT_APP_BUILT_AT ?? 'Fri Sept 26 - 5:00 AM';
-const fixNote = process.env.REACT_APP_FIX_NOTE ?? 'The Not On Medication is Active, but too few patients have this material and since it considers blank not on.. ??';
+const version = process.env.REACT_APP_VERSION ?? 'Version 2.10.0';
+const builtAt = process.env.REACT_APP_BUILT_AT ?? 'Oct 3rd - 5:00 AM ';
+const fixNote = process.env.REACT_APP_FIX_NOTE ?? 'HOSPITAL UPLOAD FIXED - IT NOW SAVES MEDS AND CONDITIONS';
 
 const DashBoard = () => {
   const navigate = useNavigate();

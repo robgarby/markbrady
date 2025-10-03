@@ -291,59 +291,109 @@ export const extractSodiumSolid = (text) => {
     return { value: null };
 };
 
+// Month names used by OLIS/LifeLabs headers like "23 Dec 2024"
+const MONTH_WORD_RE = /\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t|tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\b/i;
+
+/**
+ * Returns true if the digits at `numIdx` in `s` look like a date such as "23 Dec 2024".
+ * We look ahead from the end of the number for a month word within ~20 chars.
+ */
+const isFollowedByMonth = (s, numIdx, numStr) => {
+  const start = (numIdx ?? 0) + String(numStr || "").length;
+  const look = s.slice(start, start + 24); // small window is enough
+  return MONTH_WORD_RE.test(look);
+};
+
+
 // REPLACE your extractGFRStandalone with this
 export const extractGFRStandalone = (text) => {
-    const t = scrub(text);
-    const blocks = sliceBlocksByHeaders(t, 60000); // allow spans across page breaks
-    if (!blocks.length) return { value: null };
+  const t = scrub(text);
+  const blocks = sliceBlocksByHeaders(t, 60000); // allow spans across page breaks
+  if (!blocks.length) return { value: null };
 
-    const TITLE_VARIANTS = [
-        /\bGlomerular\s+Filtration\s+Rate\s+Predicted\b/i,          // NEW
-        /\bGlomerular\s+Filtration\s+Rate\s*\(Predicted\)\b/i,      // NEW
-        /\bGFR\/1\.?73(?:\s*(?:sq|squared)?\s*M\.?)?\s*Predicted;?\s*CKD-?EPI\b/i,
-        /\beGFR\/1\.?73\b/i,
-        /\bGFR\/1\.?73\b/i,
-        /\beGFR\b/i,
-        /\bGFR\b/i,
-    ];
+  // Titles/labels we’ll recognize for eGFR/GFR
+  const TITLE_VARIANTS = [
+    /\bGlomerular\s+Filtration\s+Rate\s+Predicted\b/i,          // NEW: catches LifeLabs/Dynacare phrasing
+    /\bGlomerular\s+Filtration\s+Rate\s*\(Predicted\)\b/i,      // optional variant
+    /\bGFR\/1\.?73(?:\s*(?:sq|squared)?\s*M\.?)?\s*Predicted;?\s*CKD-?EPI\b/i,
+    /\beGFR\/1\.?73\b/i,
+    /\bGFR\/1\.?73\b/i,
+    /\beGFR\b/i,
+    /\bGFR\b/i,
+  ];
 
-    // mL/min, optionally "/1.73 m2" with quirky forms like "m* 2"
-    const UNITS_RE = /\bmL\/min(?:\s*\/\s*1\.?73(?:\s*(?:m2|m\.?2|m\^2|m\*\s*2|m\*2))?)?\b/i;
+  // Units we expect somewhere near the result (may be below in “Reference interval”)
+  const UNITS_RE = /\bmL\/min(?:\s*\/\s*1\.?73(?:\s*(?:m2|m\.?2|m\^2|m\*\s*2|m\*2))?)?\b/i;
 
-    // number accepting trailing dot
-    const NUM = /(?:^|[\s(>])([0-9]{1,3}(?:\.[0-9]+)?|[0-9]{1,3}\.(?![0-9]))\b(?:\s+(N|H|L|NA\.?))?/i;
+  // number (allow trailing dot), optional flag (includes A/NA now)
+  const NUM = /(?:^|[\s(>])([0-9]{1,3}(?:\.[0-9]+)?|[0-9]{1,3}\.(?![0-9]))\b(?:\s+(N|H|L|A|NA\.?))?/i;
 
-    for (const block of blocks) {
-        // find title; start AFTER it
-        let titleEnd = -1;
-        for (const TR of TITLE_VARIANTS) {
-            const m = block.match(TR);
-            if (m) { titleEnd = (m.index ?? 0) + m[0].length; break; }
-        }
-        if (titleEnd < 0) continue;
+  // capture “Reference interval:  =>60 mL/min/1.73m2” (if present)
+  const REF_LINE = /Reference\s*interval:\s*([^\n]+)/i;
 
-        const after = block.slice(titleEnd, titleEnd + 8000);
+  // --- NEW (LifeLabs date guard): skip numbers immediately followed by a month word like "23 Dec 2024"
+  const MONTH_WORD_RE = /\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t|tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\b/i;
+  const isFollowedByMonth = (s, numIdx, numStr) => {
+    const start = (numIdx ?? 0) + String(numStr || "").length;
+    const look = s.slice(start, start + 24);
+    return MONTH_WORD_RE.test(look);
+  };
 
-        const val = after.match(NUM);
-        if (!val) continue;
+  for (const block of blocks) {
+    // Find the first matching title and then scan after it
+    let titleEnd = -1;
+    for (const TR of TITLE_VARIANTS) {
+      const m = block.match(TR);
+      if (m) { titleEnd = (m.index ?? 0) + m[0].length; break; }
+    }
+    if (titleEnd < 0) continue;
 
-        // ensure proper units shortly after the numeric
-        const tail = after.slice(val.index ?? 0, (val.index ?? 0) + 400);
-        const unitsHit = tail.match(UNITS_RE);
-        if (!unitsHit) continue;
+    // Look up to ~2k chars for value/flags/units since units may be listed later
+    const after = block.slice(titleEnd, titleEnd + 2000);
 
-        // Try to capture a simple threshold like ">= 60." or ">89"
-        const ref =
-            (tail.match(new RegExp(String.raw`(>[=]?\s*${NUM_FRAG})`, "i"))?.[1] ||
-                tail.match(new RegExp(String.raw`Ref(?:\.|)?\s*Range\s*([<>]=?\s*${NUM_FRAG}(?:\s*-\s*<?\s*${NUM_FRAG})?)`, "i"))?.[1] ||
-                undefined);
+    // Find the first numeric that's NOT a date like "23 Dec ..."
+    const NUM_G = new RegExp(NUM.source, "ig");
+    let val;
+    while ((val = NUM_G.exec(after))) {
+      const candidate = (val[1] || "").replace(/\.$/, "");
+      if (!isFollowedByMonth(after, val.index ?? 0, candidate)) {
+        break; // keep this match
+      }
+      // else continue to next number
+    }
+    if (!val) continue;
 
-        const value = (val[1] || "").replace(/\.$/, ""); // "77." -> "77"
-        return { value, flag: (val[2] || "").toUpperCase(), units: unitsHit[0].replace(/\s+/g, " ").trim(), refRange: ref };
+    // Try to find units close to the numeric; if not, look further down
+    const nearTail = after.slice(val.index ?? 0, (val.index ?? 0) + 400);
+    let unitsHit = nearTail.match(UNITS_RE);
+
+    // If not found near, search a broader window (handles “See below … Reference interval”)
+    if (!unitsHit) {
+      const wideTail = after.slice(0, 1200);
+      unitsHit = wideTail.match(UNITS_RE) || null;
     }
 
-    return { value: null };
-}
+    // Optional: grab the “Reference interval: …” line, if present
+    const refMatch = after.match(REF_LINE);
+    const refRange = refMatch ? refMatch[1].trim().replace(/\s+/g, " ") : undefined;
+
+    // Normalize value and flag
+    const value = (val[1] || "").replace(/\.$/, ""); // "77." -> "77"
+    const flag = (val[2] || "").toUpperCase();       // includes A now
+
+    // If units weren’t seen near the number, we still accept the result (some panels put units only in the reference line)
+    return {
+      value,
+      flag,
+      units: unitsHit ? unitsHit[0].replace(/\s+/g, " ").trim() : undefined,
+      refRange,
+    };
+  }
+
+  return { value: null };
+};
+
+
 
 
 // ADD this new dedicated extractor

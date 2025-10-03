@@ -26,6 +26,9 @@ const PatientDetails = () => {
   const [privateNote, setPrivateNote] = useState(activePatient?.privateNote || '');
   const [privateMsg, setPrivateMsg] = useState('');
 
+  // NEW: Demo-mode modal state
+  const [showDemoModal, setShowDemoModal] = useState(false);
+
   // Tabs (unused in this file, kept for parity)
   const [moTab, setMoTab] = useState('conditions');
 
@@ -33,12 +36,14 @@ const PatientDetails = () => {
   const parseCodes = (str) =>
     (str || '').split(',').map((s) => s.trim().toUpperCase()).filter(Boolean);
 
+  // Demo label for private mode
   const demoPatientLabel = (healthNumber) => {
     const digits = String(healthNumber || "").replace(/\D/g, "");
     const first4 = digits.slice(0, 4) || "XXXX";
     return `Patient ${first4}`;
   };
 
+  // Real display name (non-private)
   const realPatientName = (p) => {
     const raw =
       p?.clientName ||
@@ -53,8 +58,20 @@ const PatientDetails = () => {
     return s;
   };
 
+  // 🔒 Apply private mode across the component
   const isPrivate = Boolean(privateMode);
+
+  // Mask 3 middle digits when private → 123 XXX 7890 (best with 10-digit HCN)
+  const maskHealthNumber3 = (hcn) => {
+    const digits = String(hcn || "").replace(/\D/g, "");
+    if (!digits) return hcn || "—";
+    const first3 = digits.slice(0, 3);
+    const last4  = digits.slice(-4);
+    return `${first3} XXX ${last4}`;
+  };
+
   const displayName = isPrivate ? demoPatientLabel(patient.healthNumber) : realPatientName(patient);
+  const displayHCN  = isPrivate ? maskHealthNumber3(patient.healthNumber) : (patient.healthNumber || "—");
 
   // ===== Meds helpers carried over (kept minimal for context) =====
   const parseMeds = (str) => {
@@ -270,7 +287,7 @@ const PatientDetails = () => {
             <h5>Personal Info</h5>
             <div className="d-flex gap-2">
               <div className="col-24 text-start">Name: {displayName}</div>
-              <div className="col-24 text-start">Health Number: {patient.healthNumber}</div>
+              <div className="col-24 text-start">Health Number: {displayHCN}</div>
             </div>
             <div className="d-flex gap-2 mt-2">
               <div className="col-24 text-start">Sex: {patient.sex}</div>
@@ -325,7 +342,6 @@ const PatientDetails = () => {
         <div className="flex-grow-1 p-3">
           <div className="card shadow-sm h-100">
             <div className="card-header d-flex align-items-end gap-3 flex-wrap">
-
 
               {/* Next Appointment (narrower) */}
               <div className="d-flex align-items-end" style={{ minWidth: 180, maxWidth: 260 }}>
@@ -411,22 +427,82 @@ const PatientDetails = () => {
                 </div>
               </div>
 
-              {/* (Removed the old header Save Note button) */}
             </div>
+
+            {/* DEMO ACTIONS: any button in this bar will trigger the Demo Mode modal */}
+            <div
+              className="p-2 alert alert-warning d-flex align-items-center m-3 gap-2"
+              onClick={(e) => {
+                // if any button inside this container is clicked -> show demo modal
+                if (e.target.closest('button')) setShowDemoModal(true);
+              }}
+            >
+              <span className="me-2" role="img" aria-label="Info">ℹ️</span>
+              <button type="button" className="btn btn-sm btn-light">Omega 3</button>
+              <button type="button" className="btn btn-sm btn-light">SGLT2i</button>
+              <button type="button" className="btn btn-sm btn-light">nsMRA</button>
+              <button type="button" className="btn btn-sm btn-light">GLP1a/GIP</button>
+              <button type="button" className="btn btn-sm btn-light">PCSK9i</button>
+              {/* You can add more buttons here; any of them will open the modal */}
+              {/* <button type="button" className="btn btn-sm btn-light">Another Action</button> */}
+            </div>
+
+            {/* Demo Mode Modal */}
+            {typeof window !== "undefined" && showDemoModal && (
+              <div
+                className="modal fade show"
+                tabIndex="-1"
+                style={{
+                  display: "block",
+                  background: "rgba(0,0,0,0.4)",
+                  position: "fixed",
+                  zIndex: 1050,
+                  left: 0,
+                  top: 0,
+                  width: "100vw",
+                  height: "100vh",
+                }}
+                aria-modal="true"
+                role="dialog"
+              >
+                <div className="modal-dialog modal-dialog-centered" style={{ maxWidth: 420 }}>
+                  <div className="modal-content">
+                    <div className="modal-header">
+                      <h5 className="modal-title">Demonstration Mode</h5>
+                      <button
+                        type="button"
+                        className="btn-close"
+                        aria-label="Close"
+                        onClick={() => setShowDemoModal(false)}
+                      />
+                    </div>
+                    <div className="modal-body">
+                      <p className="mb-0">
+                        This is <strong className='text-danger'>Demonstration Mode</strong>. When in Use Mode, This will print a patient referral letter for the Medication in question that can be faxed, emailed or printed and given to the provider
+                      </p>
+                    </div>
+                    <div className="modal-footer">
+                      <button className="btn btn-primary" onClick={() => setShowDemoModal(false)}>
+                        OK
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="card-body">
               <label htmlFor="patientNote" className="form-label fw-bold text-primary">Note to Doctor</label>
               <textarea
                 id="patientNote"
                 className="form-control"
-                rows={7} // reduced rows
+                rows={5}
                 value={patient.patientNote || ''}
                 onChange={onNoteChange}
                 placeholder="Enter notes about this patient..."
                 maxLength={3000}
               />
 
-              {/* Save Doctor Note moved here, under the Doctor Note area */}
               <div className="d-flex align-items-center mt-2">
                 <button className="btn btn-success text-white" disabled={saving} onClick={saveDoctorNote}>
                   {saving ? 'Saving…' : 'Save Doctor Note'}
@@ -435,6 +511,7 @@ const PatientDetails = () => {
                 <small className="text-muted ms-auto">{(patient.patientNote || '').length}/3000</small>
               </div>
             </div>
+
           </div>
         </div>
       </div>

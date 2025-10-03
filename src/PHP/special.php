@@ -120,6 +120,31 @@ if ($data['script'] === 'getPatientById') {
     exit;
 }
 
+if ($data['script'] === 'loadConditionData') {
+    $sql = "SELECT * FROM patient_conditions ORDER BY conditionName ASC";
+    $result = $conn->query($sql);
+
+    if ($result) {
+        $conditions = [];
+        while ($row = $result->fetch_assoc()) {
+            $conditions[] = $row;
+        }
+        echo json_encode([
+            'success' => true,
+            'conditions' => $conditions
+        ]);
+    } else {
+        http_response_code(500);
+        echo json_encode([
+            'success' => false,
+            'error' => 'Query failed',
+            'details' => $conn->error
+        ]);
+    }
+
+    exit;
+}
+
 if ($data['script'] === 'saveConditionData') {
     $conditions = $data['conditions'];
     $conditionName = $conditions['conditionName'] ?? '';
@@ -500,6 +525,68 @@ if ($data['script'] === 'notOnMedicationByCategoryIds') {
     exit;
 }
 
+if ($data['script'] === 'getStatus') {
+    $healthNumber = $data['healthNumber'] ?? null;
+    $exists = false;
+
+    if ($healthNumber) {
+        $stmt = $conn->prepare("SELECT COUNT(*) as cnt FROM Patient WHERE healthNumber = ?");
+        $stmt->bind_param("s", $healthNumber);
+        $stmt->execute();
+        $stmt->bind_result($count);
+        $stmt->fetch();
+        $exists = ($count > 0);
+        $stmt->close();
+    }
+
+    echo json_encode(['exists' => $exists]);
+    exit;
+}
+
+if ($data['script'] === 'postMeds') {
+    $healthNumber = $data['healthNumber'] ?? null;
+    $conditionCodes = $data['conditionCodes'] ?? null;
+    $medicationIDs = $data['medicationIDs'] ?? null;
+
+
+    if ($healthNumber !== null) {
+        // Fetch current conditionData for this patient
+        $stmt = $conn->prepare("SELECT conditionData,medsData FROM Patient WHERE healthNumber = ?");
+        $stmt->bind_param("s", $healthNumber);
+        $stmt->execute();
+        $stmt->bind_result($existingConditionData, $existingMedData);
+        $stmt->fetch();
+        $stmt->close();
+
+        // Convert both existing and incoming codes to arrays
+        $existingCodes = array_filter(array_map('trim', explode(',', $existingConditionData ?? '')));
+        $incomingCodes = array_filter(array_map('trim', explode(',', $conditionCodes ?? '')));
+        $existingMedCodes = array_filter(array_map('trim', explode(',', $existingMedData ?? '')));
+        $incomingMedCodes = array_filter(array_map('trim', explode(',', $medicationIDs ?? '')));
+
+ 
+
+        // Merge and deduplicate
+        $finalCodes = array_unique(array_merge($existingCodes, $incomingCodes));
+        $finalMedCodes = array_unique(array_merge($existingMedCodes, $incomingMedCodes));
+
+        // Rebuild as comma-separated string
+        $conditionCodes = implode(',', $finalCodes);
+        $medicationIDs = implode(',', $finalMedCodes);
+    }
+
+    if ($healthNumber !== null) {
+        $stmt = $conn->prepare("UPDATE Patient SET conditionData = ?, medsData = ? WHERE healthNumber = ?");
+        $stmt->bind_param("sss", $conditionCodes, $medicationIDs, $healthNumber);
+        $success = $stmt->execute();
+        $stmt->close();
+
+        echo json_encode(['success' => $success]);
+    } else {
+        echo json_encode(['success' => false, 'error' => 'Missing healthNumber']);
+    }
+    exit;
+}
 // === In special.php ===
 
 

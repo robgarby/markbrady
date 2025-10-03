@@ -10,6 +10,7 @@ import PrintLabView from '../DisplayPatient/displayPrintView.component';
 import LabRangeSearch from '../PatientSearch/criteriaSearch.component';
 import ResultsPage from '../PatientSearch/results.component';
 import PatientHistory from '../History/displayPatientHistory.component';
+import UploadThree from '../../UploadLab/uploadThree.component';
 
 const DisplayBox = () => {
   const { visibleBox } = useGlobalContext();

@@ -81,11 +81,20 @@ const LAB_FIELDS = [
 // Show "-" for truly blank values but keep zeroes like 0 or "0.00"
 const printVal = (v) => (v === null || v === undefined || String(v).trim() === "" ? "-" : String(v));
 
-// Mask for demos
+// Mask for demos: "Patient ####"
 const demoPatientLabel = (healthNumber) => {
   const digits = String(healthNumber || "").replace(/\D/g, "");
   const first4 = digits.slice(0, 4) || "XXXX";
   return `Patient ${first4}`;
+};
+
+// NEW: mask 3 middle digits of HCN when printing privately -> 123 XXX 7890
+const maskHealthNumber3 = (hcn) => {
+  const digits = String(hcn || "").replace(/\D/g, "");
+  if (!digits) return hcn || "—";
+  const first3 = digits.slice(0, 3);
+  const last4  = digits.slice(-4);
+  return `${first3} XXX ${last4}`;
 };
 
 const PrintLabView = () => {
@@ -165,6 +174,7 @@ const PrintLabView = () => {
 
   const isPrivate = Boolean(privateMode);
   const headerName = isPrivate ? demoPatientLabel(fresh?.healthNumber) : (patientName || "—");
+  const displayHCN = isPrivate ? maskHealthNumber3(fresh?.healthNumber) : (fresh?.healthNumber || "—");
 
   const paymentMethod = String(
     fresh?.paymentMethod ?? fresh?.paymentMethof ?? "CASH"
@@ -232,7 +242,7 @@ const PrintLabView = () => {
         <div className="col-36">
           <h1 className="h3 mb-1">{headerName}</h1>
           <div className="small">
-            <strong>Health Number:</strong> {fresh?.healthNumber || "—"}
+            <strong>Health Number:</strong> {displayHCN}
           </div>
           {/* Payment Method */}
           <div className="small mt-1">

@@ -27,7 +27,6 @@ const PatientMeds = () => {
     setActivePatient,
     medsArray,
     updateMedsArray,
-    medsCategory,
     updateMedsCategory,
   } = gc;
 

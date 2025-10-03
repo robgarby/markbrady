@@ -1,14 +1,7 @@
-// uploadLab.component.jsx — 48-col layout, results-only UI, using uploadFunction.jsx
+// src/components/.../uploadLab.component.jsx
 import React, { useEffect, useRef, useState } from "react";
 import * as pdfjsLib from "pdfjs-dist";
-
-import {
-  scrub,
-  extractPatientMeta,
-  runAllExtractors,        // one-call all tests
-  EXTRACTORS,             // (optional) import this if you want to call individual extractors
-} from "./uploadFunction.jsx";
-
+import { scrub, extractPatientMeta, runAllExtractors } from "./uploadFunction.jsx";
 import { useNavigate } from "react-router-dom";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc =
@@ -24,8 +17,6 @@ const UploadLab = () => {
   const [nextAppointment, setNextAppointment] = useState(null);
 
   const navigate = useNavigate();
-
-  // NEW: to reset file input cleanly (even allow re-selecting same file)
   const fileInputRef = useRef(null);
   const [fileKey, setFileKey] = useState(0);
 
@@ -61,7 +52,6 @@ const UploadLab = () => {
       const buf = await file.arrayBuffer();
       const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
 
-      // Gather text from pdf.js — PRESERVE line breaks using hasEOL
       let rawText = "";
       for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i);
@@ -72,7 +62,7 @@ const UploadLab = () => {
           pageText += s;
           pageText += it.hasEOL ? "\n" : " ";
         }
-        rawText += pageText + "\n"; // keep end-of-page break
+        rawText += pageText + "\n";
       }
 
       const text = scrub(rawText);
@@ -80,7 +70,6 @@ const UploadLab = () => {
       const labResults = runAllExtractors(text);
 
       if (meta.orderDate) {
-        // Try to parse dates like "27 May 2025" to "2025-05-27"
         const parsed = Date.parse(meta.orderDate);
         if (!isNaN(parsed)) {
           const d = new Date(parsed);
@@ -91,19 +80,20 @@ const UploadLab = () => {
         }
       }
 
-      // Check if client exists in the database
       setMsg("Checking client status…");
       try {
         const response = await fetch("https://optimizingdyslipidemia.com/PHP/database.php", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ healthNumber: meta.healthNumber, labdate: meta.orderDate, script: "getStatus" }),
+          body: JSON.stringify({
+            healthNumber: meta.healthNumber,
+            labdate: meta.orderDate,
+            script: "getStatus",
+          }),
         });
         const status = await response.json();
         setPatientStatus(status.status);
-        if (status.lab === "Exists") {
-          setLabExists(true);
-        }
+        if (status.lab === "Exists") setLabExists(true);
         setPatient({ ...meta, labResults });
         setMsg("");
       } catch (err) {
@@ -119,7 +109,6 @@ const UploadLab = () => {
     }
   };
 
-
   const letsSaveTheData = async () => {
     setMsg("Saving data…");
     if (patientStatus === "new" && patient && fileInputRef.current && fileInputRef.current.files[0]) {
@@ -131,25 +120,29 @@ const UploadLab = () => {
         formData.append("patientStatus", patientStatus || "");
         formData.append("nextAppointment", nextAppointment || "");
         if (patient.orderDate) formData.append("orderDate", patient.orderDate);
+
         const response = await fetch(
           "https://optimizingdyslipidemia.com/PHP/uploadClientPDF.php",
           { method: "POST", body: formData }
         );
-
-        // Server sends JSON like { success: "Yes", message: "File uploaded successfully." }
         const result = await response.json();
-        if (result?.success === 'Yes') {
-          setMsg('Updating Database');
+
+        if (result?.success === "Yes") {
+          setMsg("Updating Database");
           const db = await fetch("https://optimizingdyslipidemia.com/PHP/database.php", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ nextAppointment: nextAppointment, patient, patientStatus, script: "saveTheDataButton" }),
+            body: JSON.stringify({
+              nextAppointment: nextAppointment,
+              patient,
+              patientStatus,
+              script: "saveTheDataButton",
+            }),
           });
 
-          // If server-side debug prints remain, this may throw due to invalid JSON:
           const dbRes = await db.json().catch(() => ({}));
-          if (dbRes.success === 'Yes') {
-            setMsg('Database updated successfully.');
+          if (dbRes.success === "Yes") {
+            setMsg("Database updated successfully.");
             resetForm("Saved! You can upload the next PDF.");
           } else {
             setMsg("This is a Duplicate Record");
@@ -160,60 +153,41 @@ const UploadLab = () => {
         setMsg("Error uploading PDF.");
       }
     } else {
+      // existing patient update
       const f = fileInputRef.current.files[0];
       const formData = new FormData();
       formData.append("pdf", f, f.name);
       formData.append("healthNumber", (patient.healthNumber || "").replace(/\D+/g, ""));
       formData.append("patientStatus", patientStatus || "");
       if (patient.orderDate) formData.append("orderDate", patient.orderDate);
+
       const response = await fetch(
         "https://optimizingdyslipidemia.com/PHP/uploadClientPDF.php",
         { method: "POST", body: formData }
       );
-
-      // Server sends JSON like { success: "Yes", message: "File uploaded successfully." }
       const result = await response.json();
-      if (result?.success === 'Yes') {
-        setMsg('Updating Database');
+
+      if (result?.success === "Yes") {
+        setMsg("Updating Database");
         const db = await fetch("https://optimizingdyslipidemia.com/PHP/database.php", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ nextAppointment: nextAppointment, patient: patient, script: "updatePatient" }),
+          body: JSON.stringify({
+            nextAppointment: nextAppointment,
+            patient,
+            script: "updatePatient",
+          }),
         });
 
-        // If server-side debug prints remain, this may throw due to invalid JSON:
         const dbRes = await db.json().catch(() => ({}));
-        console.log(dbRes);
-        if (dbRes.status === 'updated') {
-          setMsg('Database updated successfully.');
+        if (dbRes.status === "updated") {
+          setMsg("Database updated successfully.");
           resetForm("Saved! You can upload the next PDF.");
-        } else if (dbRes.status === 'duplicate') {
-          setMsg('This is a Duplicate Record - Please upload a new Lab');
+        } else if (dbRes.status === "duplicate") {
+          setMsg("This is a Duplicate Record - Please upload a new Lab");
         }
-
       }
-
     }
-
-    // try {
-    //   const response = await fetch("https://optimizingdyslipidemia.com/PHP/database.php", {
-    //     method: "POST",
-    //     headers: { "Content-Type": "application/json" },
-    //     body: JSON.stringify({ patient, patientStatus, script: "saveTheDataButton" }),
-    //   });
-    //   const result = await response.json();
-
-    //   // Keep message if provided by backend
-    //   if (result?.message) setMsg(result.message);
-
-    //   // NEW: if backend signals success, reset the whole form so you can upload the next PDF
-    //   if (result && result.success === "Yes") {
-    //     resetForm("Saved! You can upload the next PDF.");
-    //   }
-    // } catch (err) {
-    //   console.error(err);
-    //   setMsg("Error saving data.");
-    // }
   };
 
   return (
@@ -222,10 +196,7 @@ const UploadLab = () => {
         <div className="col-48 d-flex">
           <h5 className="mb-2">Upload &amp; Parse Lab PDF</h5>
           <div className="ms-auto">
-            <button
-              className="btn btn-primary"
-              onClick={() => navigate('/dashboard')}
-            >
+            <button className="btn btn-primary" onClick={() => navigate("/dashboard")}>
               Return to Dashboard
             </button>
           </div>
@@ -243,7 +214,9 @@ const UploadLab = () => {
             onChange={handleFileChange}
           />
         </div>
-        <div className="col-24">{msg && <div className="alert alert-info py-2 m-0">{msg}</div>}</div>
+        <div className="col-24">
+          {msg && <div className="alert alert-info py-2 m-0">{msg}</div>}
+        </div>
       </div>
 
       {/* Patient & Results */}
@@ -256,25 +229,36 @@ const UploadLab = () => {
               <div className="card-body">
                 {/* Identity row */}
                 <div className="row mb-2">
-                  <div className="col-24 col-md-12"><strong>Name:</strong> {patient.name || "—"}</div>
-                  <div className="col-24 col-md-12"><strong>HCN:</strong> {patient.healthNumber || "—"}</div>
+                  <div className="col-24 col-md-12">
+                    <strong>Name:</strong> {patient.name || "—"}
+                  </div>
+                  <div className="col-24 col-md-12">
+                    <strong>HCN:</strong> {patient.healthNumber || "—"}
+                  </div>
                 </div>
 
                 {/* Demographics row */}
                 <div className="row mb-2">
-                  <div className="col-12"><strong>Sex:</strong> {patient.sex || "—"}</div>
-                  <div className="col-12"><strong>DOB:</strong> {patient.dateOfBirth || "—"}</div>
-                  <div className="col-24"><strong>Order Date:</strong> {patient.orderDate || "—"}</div>
+                  <div className="col-12">
+                    <strong>Sex:</strong> {patient.sex || "—"}
+                  </div>
+                  <div className="col-12">
+                    <strong>DOB:</strong> {patient.dateOfBirth || "—"}
+                  </div>
+                  <div className="col-24">
+                    <strong>Order Date:</strong> {patient.orderDate || "—"}
+                  </div>
                 </div>
 
                 {/* Provider row */}
                 <div className="row mb-2">
                   <div className="col-48">
-                    <strong>Provider:</strong> {patient.providerName || "—"} {patient.providerNumber ? `(${patient.providerNumber})` : ""}
+                    <strong>Provider:</strong> {patient.providerName || "—"}{" "}
+                    {patient.providerNumber ? `(${patient.providerNumber})` : ""}
                   </div>
                 </div>
 
-                {/* Address rows (read-only inputs with alert-success when filled) */}
+                {/* Address rows */}
                 <div className="row g-2">
                   <div className="col-48">
                     <label className="form-label mb-1">Full Address</label>
@@ -348,64 +332,91 @@ const UploadLab = () => {
                 ) : (
                   <button
                     onClick={letsSaveTheData}
-                    className={`btn text-white ${patientStatus === "new" ? "btn-success" : "btn-warning"
-                      }`}
+                    className={`btn text-white ${patientStatus === "new" ? "btn-success" : "btn-warning"}`}
                     style={{ minWidth: 220 }}
                   >
                     {patientStatus === "new" ? "Add New Patient" : "Update Existing Client"}
                   </button>
                 )}
 
-                {/* Next Appointment */}
                 <div className="w-100 mt-3">
                   <label className="form-label mb-1">Next Appointment</label>
                   <input
                     type="date"
                     className="form-control"
                     value={nextAppointment || ""}
-                    onChange={(e) =>
-                      setTheDate(e.target.value)
-                    }
+                    onChange={(e) => setTheDate(e.target.value)}
                   />
                 </div>
               </div>
             </div>
-
           </div>
 
-          {/* Results */}
+          {/* ---------- Three horizontal columns (flex-based) ---------- */}
           <div className="col-48">
-            <div className="card">
-              <div className="card-header">Lab Results</div>
-              <div className="card-body">
-                <div className="row g-2">
-                  {Object.entries(patient.labResults || {}).map(([key, value]) => (
-                    <div key={key} className="col-24 col-md-16 d-flex align-items-center">
-                      <div className="col-36 text-end pe-2 fw-bold text-capitalize">{key}:</div>
-                      <div className="col-8">
-                        <input
-                          type="text"
-                          className={`form-control ${isFilled(value) ? "alert-success" : ""}`}
-                          value={value || ""}
-                          onChange={(e) =>
-                            setPatient((prev) => ({
-                              ...prev,
-                              labResults: { ...prev.labResults, [key]: e.target.value },
-                            }))
-                          }
-                          placeholder="—"
-                        />
+            <div
+              className="d-flex gap-3"
+              style={{ flexWrap: "nowrap" }}
+            >
+              {/* Column 1: Current Lab (functional) */}
+              <div className="card h-100" style={{ flex: "0 0 33.333%", minWidth: 0 }}>
+                <div className="card-header">Current Lab</div>
+                <div className="card-body">
+                  <div className="row g-2">
+                    {Object.entries(patient.labResults || {}).map(([key, value]) => (
+                      <div key={key} className="col-24 d-flex align-items-center">
+                        <div className="col-16 text-end pe-2 fw-bold text-capitalize">{key}:</div>
+                        <div className="col-8">
+                          <input
+                            type="text"
+                            className={`form-control ${isFilled(value) ? "alert-success" : ""}`}
+                            value={value || ""}
+                            onChange={(e) =>
+                              setPatient((prev) => ({
+                                ...prev,
+                                labResults: { ...prev.labResults, [key]: e.target.value },
+                              }))
+                            }
+                            placeholder="—"
+                          />
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
-                {/* Add Save/Cancel here if persisting */}
+              </div>
+
+              {/* Column 2: Life Lab Lab (coming soon) */}
+              <div className="card h-100 d-flex align-items-center justify-content-center"
+                   style={{ flex: "0 0 33.333%", minWidth: 0 }}>
+                <div className="w-100">
+                  <div className="card-header">Life Lab Lab</div>
+                  <div className="card-body d-flex align-items-center justify-content-center">
+                    <div className="text-muted">Coming soon</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Column 3: Hospital Record (coming soon) */}
+              <div className="card h-100 d-flex align-items-center justify-content-center"
+                   style={{ flex: "0 0 33.333%", minWidth: 0 }}>
+                <div className="w-100">
+                  <div className="card-header">Hospital Record</div>
+                  <div className="card-body d-flex align-items-center justify-content-center">
+                    <div className="text-muted">Coming soon</div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
+          {/* ---------- /Three horizontal columns ---------- */}
         </div>
       ) : (
-        <div className="row"><div className="col-48"><em>No data extracted yet.</em></div></div>
+        <div className="row">
+          <div className="col-48">
+            <em>No data extracted yet.</em>
+          </div>
+        </div>
       )}
     </div>
   );

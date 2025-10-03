@@ -1,13 +1,8 @@
 // src/components/.../results.component.jsx
-import React, { useMemo } from "react";
+import React, { useMemo, useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useGlobalContext } from "../../../Context/global.context";
 
-/**
- * This version reads ONLY from the patientSearch context.
- * The results list is scrollable, while header stays fixed.
- * Shows real name when not in private mode; shows "Patient ####" when private.
- */
 const ResultsPage = () => {
   const navigate = useNavigate();
   const {
@@ -15,7 +10,7 @@ const ResultsPage = () => {
     setVisibleBox,
     setActivePatient,
     setClientBox,
-    privateMode, // 👈 read private mode from context
+    privateMode,
   } = useGlobalContext();
 
   const {
@@ -26,7 +21,7 @@ const ResultsPage = () => {
     appointmentDate = "",
     results = [],
     didSearch = false,
-  } = patientSearch;
+  } = patientSearch || {};
 
   const title = useMemo(() => {
     switch (mode) {
@@ -46,21 +41,33 @@ const ResultsPage = () => {
   // Masked demo label: "Patient ####" using first 4 digits of healthNumber
   const demoPatientLabel = (healthNumber) => {
     const digits = String(healthNumber || "").replace(/\D/g, "");
-    const first4 = digits.slice(0, 4) || "XXXX";
+    const first4 = digits.slice(0, 4) || "XXX";
     return `Patient ${first4}`;
+  };
+
+  // 🔒 Mask the HCN if private: replace the 4 middle digits with XXXX (keep first 3 and last 3)
+  const maskHealthNumber = (hcn, doMask) => {
+    const digits = String(hcn || "").replace(/\D/g, "");
+    if (!doMask) return hcn || "—";
+    if (digits.length < 10) return hcn || "—";
+    const first3 = digits.slice(0, 3);
+    const last3 = digits.slice(7, 10); // indices 3..6 replaced by XXXX
+    return `${first3} XXX ${last3}`;
   };
 
   // Compute a readable real name from record
   const realPatientName = (p) => {
     const raw =
-      p?.clientName ||
-      p?.name ||
-      (p?.firstName && p?.lastName ? `${p.firstName} ${p.lastName}` : p?.lastFirstName || "");
+      (p && p.clientName) ||
+      (p && p.name) ||
+      ((p && p.firstName) && (p && p.lastName) ? `${p.firstName} ${p.lastName}` : (p && p.lastFirstName) || "");
     if (!raw) return "—";
     const s = String(raw).trim();
     if (s.includes(",")) {
-      const [last = "", first = ""] = s.split(",");
-      return `${first.trim()} ${last.trim()}`.trim();
+      const parts = s.split(",");
+      const last = (parts[0] || "").trim();
+      const first = (parts[1] || "").trim();
+      return `${first} ${last}`.trim();
     }
     return s;
   };
@@ -70,7 +77,7 @@ const ResultsPage = () => {
 
   const highlight = (text, term) => {
     if (!text || !term) return text || "—";
-    const i = text.toLowerCase().indexOf(term.toLowerCase());
+    const i = String(text).toLowerCase().indexOf(String(term).toLowerCase());
     if (i < 0) return text;
     return (
       <>
@@ -84,6 +91,7 @@ const ResultsPage = () => {
   const calculateAge = (dob) => {
     if (!dob) return "—";
     const birthDate = new Date(dob);
+    if (isNaN(birthDate.getTime())) return "—";
     const today = new Date();
     let age = today.getFullYear() - birthDate.getFullYear();
     const m = today.getMonth() - birthDate.getMonth();
@@ -91,7 +99,6 @@ const ResultsPage = () => {
     return age >= 0 ? age : "—";
   };
 
-  // results.component.jsx
   const editClient = async (activeClient) => {
     try {
       const res = await fetch("https://optimizingdyslipidemia.com/PHP/database.php", {
@@ -101,25 +108,21 @@ const ResultsPage = () => {
         cache: "no-store",
         body: JSON.stringify({
           script: "getPatientById",
-          patientID: Number(activeClient.id), // must be an integer per your PHP
+          patientID: Number(activeClient.id),
         }),
       });
 
-      // Be resilient to non-JSON responses
       const text = await res.text();
-      let data;
+      let data = {};
       try {
         data = JSON.parse(text);
-      } catch {
+      } catch (_) {
         data = {};
       }
 
-      const full = res.ok && data?.success && data?.patient ? data.patient : activeClient;
-
-      // Update context so displayPatient and PatientConditionDisplay react immediately
+      const full = res.ok && data && data.success && data.patient ? data.patient : activeClient;
       setActivePatient(full);
     } catch (err) {
-      // Network or parsing error – open with the row we already have
       setActivePatient(activeClient);
     } finally {
       setClientBox(true);
@@ -129,12 +132,46 @@ const ResultsPage = () => {
 
   const isPrivate = Boolean(privateMode);
 
+  const copyToClipboard = async (value) => {
+    const text = String(value || "").replace(/\s+/g, ""); // strip spaces
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (_) {
+      // Fallback for older browsers
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+    }
+  };
+
+  // --- minimal UI feedback state for "Copied" ---
+  const [copiedKey, setCopiedKey] = useState(null);
+  const copyTimerRef = useRef(null);
+
+  const handleCopyClick = (rowKey, value) => {
+    // Flip UI immediately, then copy, then auto-revert
+    setCopiedKey(rowKey);
+    if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current);
+    copyToClipboard(value).finally(() => {
+      copyTimerRef.current = window.setTimeout(() => setCopiedKey(null), 1200);
+    });
+  };
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current);
+    };
+  }, []);
+
   return (
     <div className="container-fluid d-flex flex-column" style={{ height: "100vh" }}>
       {/* Top bar */}
       <div className="d-flex align-items-center justify-content-between py-2">
         <h5 className="m-0">
-          {title} <span className="text-muted px-2 fs-7">[{results.length}] Records</span>
+          {title} <span className="text-muted px-2 fs-7">[{(results || []).length}] Records</span>
         </h5>
         <div className="d-flex gap-2">
           <button className="btn btn-sm btn-outline-primary" onClick={backToPatient}>
@@ -151,35 +188,62 @@ const ResultsPage = () => {
         {!results || results.length === 0 ? (
           <div className="text-muted">No results.</div>
         ) : (
-          results.map((p) => (
-            <div
-              key={p.id || p.healthNumber || `${p.clientName}-${p.dateOfBirth}`}
-              className="border-bottom py-2 d-flex align-items-center fs-7"
-            >
-              <div className="col-12 fw-bold">
-                {/* 👇 Name obeys privateMode */}
-                {isPrivate ? demoPatientLabel(p.healthNumber) : realPatientName(p)}
-              </div>
+          results.map((p) => {
+            // 🔒 Make rowKey a stable STRING to avoid type mismatches
+            const rowKey = String(
+              (p && (p.id ?? p.healthNumber)) ??
+              `${(p && p.clientName) || "Unknown"}-${(p && p.dateOfBirth) || "Unknown"}`
+            );
 
-              <div className="col-5">
-                {mode === "identity" ? highlight(p.healthNumber || "", query) : p.healthNumber || "—"}
-              </div>
-              {/* <div className="col-6">{p.city || "—"}</div> */}
-              <div className="col-3">{calculateAge(p.dateOfBirth)}</div>
-              <div className="col-4">{p.nextAppointment || "—"}</div>
-              <div className="flex-grow-1">{p.privateNote || "—"}</div>
+            const hcn = (p && p.healthNumber) || "";
+            const maskedHcn = maskHealthNumber(hcn, isPrivate);
+            const canCopy = !!hcn && hcn !== "-";
+            const isCopied = copiedKey === rowKey;
 
-              <div className="ms-auto flex-grow-1 d-flex justify-content-end">
-                <button
-                  className="btn btn-sm btn-info"
-                  style={{ width: 100, marginLeft: 8 }}
-                  onClick={() => editClient(p)}
-                >
-                  Select
-                </button>
+            return (
+              <div
+                key={rowKey}
+                className="border-bottom py-2 d-flex align-items-center fs-7"
+              >
+                <div className="col-12 fw-bold">
+                  {/* 👇 Name obeys privateMode */}
+                  {isPrivate ? demoPatientLabel(p.healthNumber) : realPatientName(p)}
+                </div>
+
+                <div className="col-5 d-flex align-items-center">
+                  <button
+                    type="button"
+                    className={`btn btn-sm col-40 ${isCopied ? "btn-success text-white" : "btn-outline-warning"}`}
+                    disabled={!canCopy}
+                    onClick={() => canCopy && handleCopyClick(rowKey, hcn)}
+                    aria-label="Copy health number"
+                    title={canCopy ? "Copy health number" : "No health number to copy"}
+                  >
+                    {/* 👇 Display masked number in private mode (and highlight if needed) */}
+                    {isCopied
+                      ? "Copied"
+                      : mode === "identity"
+                      ? highlight(maskedHcn || "—", query)
+                      : (maskedHcn || "—")}
+                  </button>
+                </div>
+
+                <div className="col-3">{calculateAge(p.dateOfBirth)}</div>
+                <div className="col-4">{p.nextAppointment || "—"}</div>
+                <div className="flex-grow-1">{p.privateNote || "—"}</div>
+
+                <div className="ms-auto flex-grow-1 d-flex justify-content-end">
+                  <button
+                    className="btn btn-sm btn-info"
+                    style={{ width: 100, marginLeft: 8 }}
+                    onClick={() => editClient(p)}
+                  >
+                    Select
+                  </button>
+                </div>
               </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
     </div>
