@@ -51,17 +51,17 @@ const SideBar = () => {
               Patient
             </button>
             <button
-              className={`btn my-1 w-100 fs-7 ${visibleBox !== "pdfViewer" ? "btn-light" : "btn-warning"}`}
-              onClick={() => setVisibleBox("pdfViewer")}
+              className={`btn my-1 w-100 fs-7 ${visibleBox !== "medCheck" ? "btn-light" : "btn-warning"}`}
+              onClick={() => setVisibleBox("medsCheck")}
             >
-              All PDF's
+              Meds Check
             </button>
-             <button
+             {/* <button
               className={`btn my-1 w-100 fs-7 ${visibleBox !== "uploadPDF" ? "btn-light" : "btn-warning"}`}
               onClick={() => setVisibleBox("uploadPDF")}
             >
               Upload PDF
-            </button>
+            </button> */}
             <button
               className={`btn my-1 w-100 fs-7 ${visibleBox !== "viewHistory" ? "btn-light" : "btn-warning"}`}
               onClick={() => setVisibleBox("viewHistory")}

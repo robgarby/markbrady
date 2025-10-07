@@ -10,6 +10,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc =
 export default function ReadHospitalConditions({
   onHospitalParsed,  // () => void
   onHospitalReset,   // () => void
+  onHospitalSaved,   // () => void   // <-- NEW: notify parent when save succeeds
 }) {
   const ENDPOINT = "https://optimizingdyslipidemia.com/PHP/special.php";
   const [err, setErr] = useState("");
@@ -61,46 +62,74 @@ export default function ReadHospitalConditions({
     return bullets;
   };
 
-  // Ontario HCN (with/without Version Code)
-  // Replace existing extractOntarioHCN with this:
+  // Ontario HCN (with/without Version Code) — robust to "Health Number", "OHIP/RAMQ", etc.
   const extractOntarioHCN = (t) => {
-    // Normalize spaces/hyphens and ignore case
-    const norm = String(t || "")
-      .replace(/\u00A0/g, " ")
-      .replace(/[ \t]+/g, " ")
+    // ---- normalize text ----
+    const toAsciiDigits = (s) =>
+      s.replace(/[０-９]/g, (d) => String.fromCharCode(d.charCodeAt(0) - 0xFF10 + 0x30));
+
+    const norm = toAsciiDigits(String(t || ""))
+      .replace(/\u00A0/g, " ")    // NBSP -> space
+      .replace(/[ \t]+/g, " ")     // collapse spaces
+      .replace(/[\r\n]+/g, " ")    // single line
       .trim();
 
-    // Try patterns in order of specificity
-    const patterns = [
-      // 1) Exact phrase WITH version code (e.g., "... WITH VERSION CODE 9231677098BX")
-      /ontario\s+health\s+card\s+number\s+with\s+version\s+code\s*[:#-]?\s*([A-Za-z]?\s*[\d\s-]{9,}\s*[A-Za-z]{2})/i,
+    if (!norm) return "";
 
-      // 2) Exact phrase WITHOUT version code (just 10 digits, possibly spaced)
-      /ontario\s+health\s+card\s+number\s*[:#-]?\s*([A-Za-z]?\s*[\d\s-]{10,})/i,
+    // Helper: extract the first 10-digit sequence from a snippet (allows spaces/hyphens and optional letters)
+    const pickTenDigits = (snippet) => {
+      // capture a chunk with digits/spaces/hyphens and optional trailing letters
+      const m = snippet.match(/([A-Za-z]?\s*[\d\s-]{10,}\s*[A-Za-z]{0,2})/);
+      if (!m) return "";
+      // strip everything but digits, then take the first 10 digits
+      const digits = m[1].replace(/\D+/g, "");
+      if (digits.length < 10) return "";
+      const ten = digits.slice(0, 10);
+      return `${ten.slice(0, 4)} ${ten.slice(4, 7)} ${ten.slice(7, 10)}`;
+    };
 
-      // 3) Fallback labels (HCN, OHIP, Health Number, Health Card Number)
-      /\b(?:HCN|OHIP|Health\s*Number|Health\s*Card(?:\s*Number)?)\b\s*[:#-]?\s*([A-Za-z]?\s*[\d\s-]{10,}(?:[A-Za-z]{2})?)/i,
-    ];
+    // 1) Look near likely labels first
+    const labelRx = /\b(?:OHIP(?:\s*\/\s*RAMQ)?|HCN|Health\s*Number|Health\s*Card(?:\s*Number)?)\b[:#]?\s*/ig;
+    let best = "";
 
-    let raw = "";
-    for (const rx of patterns) {
-      const m = norm.match(rx);
-      if (m && m[1]) { raw = m[1]; break; }
+    for (let m; (m = labelRx.exec(norm));) {
+      // take a window right after the label — PDF text often separates value with odd spacing
+      const start = m.index + m[0].length;
+      const slice = norm.slice(start, start + 160); // ~160 chars window
+      const maybe = pickTenDigits(slice);
+      if (maybe) {
+        best = maybe;
+        break; // first good hit near a label wins
+      }
     }
-    if (!raw) return ""; // nothing found
 
-    // Strip spaces/hyphens, then separate digits from any trailing letters
-    const compact = raw.replace(/[ -]/g, "");
-    const digits = compact.replace(/\D+/g, ""); // all digits in the token
+    if (best) return best;
 
-    // If token ends with two letters (version), we still only want the *first* 10 digits
-    if (digits.length < 10) return "";
-    const ten = digits.slice(0, 10);
+    // 2) Fallback: find all 10+ digit chunks in the whole doc
+    const candidates = [];
+    const chunkRx = /([A-Za-z]?\s*[\d\s-]{10,}\s*[A-Za-z]{0,2})/g;
+    for (let m; (m = chunkRx.exec(norm));) {
+      const digits = m[1].replace(/\D+/g, "");
+      if (digits.length >= 10) {
+        const ten = `${digits.slice(0, 4)} ${digits.slice(4, 7)} ${digits.slice(7, 10)}`;
+        candidates.push({ idx: m.index, ten });
+      }
+    }
+    if (candidates.length === 0) return "";
 
-    // Format #### ### ###
-    return `${ten.slice(0, 4)} ${ten.slice(4, 7)} ${ten.slice(7, 10)}`;
+    // If multiples, prefer the one closest to any label occurrence
+    const labelPositions = [];
+    for (let m; (m = labelRx.exec(norm));) labelPositions.push(m.index);
+    if (labelPositions.length) {
+      candidates.sort((a, b) => {
+        const da = Math.min(...labelPositions.map((p) => Math.abs(a.idx - p)));
+        const db = Math.min(...labelPositions.map((p) => Math.abs(b.idx - p)));
+        return da - db;
+      });
+    }
+
+    return candidates[0].ten || "";
   };
-
 
   const extractName = (t) => {
     let first = "";
@@ -216,18 +245,18 @@ export default function ReadHospitalConditions({
         }
       }
     }
-    const sendMeds =  medsArrayNumbers.join(',');
+    const sendMeds = medsArrayNumbers.join(',');
     // Loop through conditionData and push matching condition ids to condArrayCodes
     const condArrayCodes = [];
     if (Array.isArray(conditionData) && Array.isArray(matchedConditions)) {
       for (const found of matchedConditions) {
-      const foundName = (found.name).toLowerCase(); // name to find in conditionData
-      const match = conditionData.find(
-        (cond) => (cond.conditionName || cond.name || "").toLowerCase() === foundName
-      );
-      if (match) {
-        condArrayCodes.push(match.conditionCode);
-      }
+        const foundName = (found.name).toLowerCase(); // name to find in conditionData
+        const match = conditionData.find(
+          (cond) => (cond.conditionName || cond.name || "").toLowerCase() === foundName
+        );
+        if (match) {
+          condArrayCodes.push(match.conditionCode);
+        }
       }
     }
     const sendConds = condArrayCodes.join(',');
@@ -235,7 +264,7 @@ export default function ReadHospitalConditions({
       const res = await fetch(ENDPOINT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           script: 'postMeds',
           healthNumber: hcn,
           conditionCodes: sendConds,
@@ -244,7 +273,10 @@ export default function ReadHospitalConditions({
       });
       const data = await res.json();
       if (data.success) {
-        onHospitalReset();
+        // Preserve existing behavior
+        if (typeof onHospitalReset === "function") onHospitalReset();
+        // NEW: inform parent so it can show the "safe to remove file" modal
+        if (typeof onHospitalSaved === "function") onHospitalSaved();
       }
     } catch (e) {
       console.error(e);

@@ -11,6 +11,7 @@ import LabRangeSearch from '../PatientSearch/criteriaSearch.component';
 import ResultsPage from '../PatientSearch/results.component';
 import PatientHistory from '../History/displayPatientHistory.component';
 import UploadThree from '../../UploadLab/uploadThree.component';
+import DemoPdfPage from '../MedCheck/medCheck.component';
 
 const DisplayBox = () => {
   const { visibleBox } = useGlobalContext();
@@ -30,6 +31,7 @@ const DisplayBox = () => {
       {visibleBox === 'CriteriaSearch' && <LabRangeSearch />}
       {visibleBox === 'searchResults' && <ResultsPage />}
       {visibleBox === 'viewHistory' && <PatientHistory />}
+      {visibleBox === 'medsCheck' && <DemoPdfPage />}
     </div>
   );
 };
