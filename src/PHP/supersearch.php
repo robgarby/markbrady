@@ -4,12 +4,13 @@ header("Access-Control-Allow-Headers: Content-Type");
 header("Content-Type: application/json");
 
 $servername = "localhost";
-$username = "markbrady_markbrady";
-$password = "NoahandK++";
-$dbname = "markbrady_optimize";
+$db_username = "gdmt_gdmt";
+$db_password = "fiksoz-xYhwej-kevna9";
+$dbname = "gdmt_gdmt";
+
 
 // Create connection
-$conn = new mysqli($servername, $username, $password, $dbname);
+$conn = new mysqli($servername, $db_username, $db_password, $dbname);
 $conn->query("SET SESSION sql_mode = ''");
 
 
@@ -17,6 +18,12 @@ $input = file_get_contents('php://input');
 
 // Decode JSON
 $data = json_decode($input, true);
+
+
+
+
+$patientTable =  $data['patientDB'] ?? 'Patient';
+$historyTable =  $data['historyDB'] ?? 'Patient_History';
 
 
 if (($data['script'] ?? '') === 'superSearch') {
@@ -50,7 +57,7 @@ if (($data['script'] ?? '') === 'superSearch') {
         : [];
     // ─── Labs are REQUIRED: build lab where; if none -> return [] ────────
     // Whitelist: logical -> column
-// init
+    // init
 
     $patientPool = $patientPool ?? [];
     $hasSearch = $hasSearch ?? false;
@@ -58,7 +65,8 @@ if (($data['script'] ?? '') === 'superSearch') {
     // define BEFORE use
     function patientPoolSearch_Labs($conn, $labWheres, $labTypes, $labParams)
     {
-        $sql = "SELECT * FROM `Patient` WHERE " . implode(' AND ', $labWheres);
+        global $patientTable; // Use global to access dynamic table name
+        $sql = "SELECT * FROM `$patientTable` WHERE " . implode(' AND ', $labWheres);
         $stmt = $conn->prepare($sql);
         if (!$stmt)
             return [];
@@ -129,7 +137,7 @@ if (($data['script'] ?? '') === 'superSearch') {
                     $vals[] = $c;
                 }
 
-                $sql = "SELECT * FROM `Patient` WHERE " . implode(' AND ', $where);
+                $sql = "SELECT * FROM `$patientTable` WHERE " . implode(' AND ', $where);
                 $stmt = $conn->prepare($sql);
                 if ($stmt) {
                     if ($types !== '') {
@@ -192,7 +200,7 @@ if (($data['script'] ?? '') === 'superSearch') {
                 $vals[] = (string) $mid;
             }
 
-            $sql = "SELECT * FROM `Patient` WHERE " . implode(" {$betweenClauses} ", $where);
+            $sql = "SELECT * FROM `$patientTable` WHERE " . implode(" {$betweenClauses} ", $where);
             $stmt = $conn->prepare($sql);
             if ($stmt) {
                 if ($types !== '') {
@@ -276,7 +284,7 @@ if (($data['script'] ?? '') === 'superSearch') {
             $glue = ($excludeMode === 'ALL') ? ' AND ' : ' OR ';
             $negCondition = 'NOT (' . implode($glue, $parts) . ')';
 
-            $sql = "SELECT * FROM `Patient` WHERE $negCondition";
+            $sql = "SELECT * FROM `$patientTable` WHERE $negCondition";
             $stmt = $conn->prepare($sql);
             if ($stmt) {
                 if ($types !== '') {
@@ -338,7 +346,7 @@ if (($data['script'] ?? '') === 'superSearch') {
             }));
         } else {
             // Query database for patients with matching nextAppointment
-            $sql = "SELECT * FROM `Patient` WHERE `nextAppointment` = ?";
+            $sql = "SELECT * FROM `$patientTable` WHERE `nextAppointment` = ?";
             $stmt = $conn->prepare($sql);
             if ($stmt) {
                 $stmt->bind_param('s', $appointmentDate);
@@ -358,9 +366,115 @@ if (($data['script'] ?? '') === 'superSearch') {
         }
     }
 
-    // Final return (labs were required; pool may be empty after filters)
-    echo json_encode(array_values($patientPool), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-    exit;
+   
+    $findRec = [];
+$sql = "SELECT * FROM `medDataSearch` WHERE `isActive` = 'Y'";
+$result = $conn->query($sql);
+if ($result) {
+    while ($row = $result->fetch_assoc()) {
+        $findRec[] = $row;
+    }
+}
+
+$medCount = 0;
+
+foreach ($patientPool as $i => &$patient) {
+    // Parse once per patient
+    $patientMeds = array_filter(
+        array_map('intval', explode(',', $patient['medsData'] ?? '')),
+        fn($v) => $v > 0
+    );
+
+    // Normalize existing recommendedMed -> array
+    $recommendedMedArr = array_filter(
+        array_map('trim', explode(',', $patient['recommendedMed'] ?? '')),
+        'strlen'
+    );
+    $recommendedSet = array_flip($recommendedMedArr); // for O(1) dup checks
+
+    foreach ($findRec as $rec) {
+        $displayName = trim($rec['displayName'] ?? '');
+        if ($displayName === '') {
+            continue; // nothing to add
+        }
+
+        // medsToFind: patient must have >=1 from EACH group (AND across groups, OR within group)
+        if (!empty($rec['medsToFind'])) {
+            // Expecting medsToFind as a string like: "[30,40,41],[28,39,52]"
+            // Parse into array of arrays
+            $groups = [];
+            preg_match_all('/\[(.*?)\]/', $rec['medsToFind'], $matches);
+            foreach ($matches[1] as $groupStr) {
+            $group = array_filter(array_map('intval', explode(',', $groupStr)), fn($v) => $v > 0);
+            if ($group) {
+                $groups[] = $group;
+            }
+            }
+            // For each group, patient must have at least one med from that group
+            $hasAllGroups = true;
+            foreach ($groups as $group) {
+            if (!array_intersect($group, $patientMeds)) {
+                $hasAllGroups = false;
+                break;
+            }
+            }
+            if (!$hasAllGroups) {
+            continue 2; // next patient
+            }
+        }
+
+        // notMedsFind: patient must have none of these
+        if (!empty($rec['notMedsFind'])) {
+            $notMedsFind = array_filter(array_map('intval', explode(',', $rec['notMedsFind'])), fn($v)=>$v>0);
+            if (array_intersect($notMedsFind, $patientMeds)) {
+                continue 2; // next patient
+            }
+        }
+        if (!empty($rec['conditionFind'])) {
+            $conditionsToFind = array_filter(array_map('trim', explode(',', $rec['conditionFind'])), 'strlen');
+            $patientConditions = array_filter(array_map('trim', explode(',', $patient['conditionData'] ?? '')), 'strlen');
+            $conditionLookup = array_flip($patientConditions);
+            // Require ALL conditionsToFind to be present in patientConditions
+            foreach ($conditionsToFind as $cond) {
+            if (!isset($conditionLookup[$cond])) {
+                continue 2; // next patient
+            }
+            }
+        }
+
+        // Check lab values for patient
+        if (
+            (isset($patient['potassium']) && floatval($patient['potassium']) >= 5) 
+            // ||
+            // (isset($patient['albuminCreatinineRatio']) && floatval($patient['albuminCreatinineRatio']) <= 25)
+        ) {
+            continue 2; // next patient
+        }
+
+        $medCount++;
+
+        // Add displayName if not already present
+        if (!isset($recommendedSet[$displayName])) {
+            $recommendedSet[$displayName] = true;
+        }
+    }
+
+    // Commit normalized CSV (de-duped, trimmed)
+    if ($recommendedSet) {
+        $patient['recommendedMed'] = implode(',', array_keys($recommendedSet));
+        $stmt = $conn->prepare("UPDATE `$patientTable` SET `recommendedMed` = ? WHERE `id` = ?");
+        if ($stmt) {
+            $stmt->bind_param('si', $patient['recommendedMed'], $patient['id']);
+            $stmt->execute();
+            $stmt->close();
+        }
+    }
+}
+unset($patient);
+
+// Final return
+echo json_encode(array_values($patientPool), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+exit;
 }
 
 /**

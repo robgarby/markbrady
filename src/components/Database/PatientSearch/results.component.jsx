@@ -2,9 +2,31 @@
 import React, { useMemo, useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useGlobalContext } from "../../../Context/global.context";
+import { getUserFromToken } from '../../../Context/functions';
 
 const ResultsPage = () => {
   const navigate = useNavigate();
+
+  const [user, setUser] = React.useState(null);
+  const [hoveredKey, setHoveredKey] = useState(null);
+
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      const userData = await getUserFromToken();
+      return userData;
+    };
+    fetchUser().then((userT) => {
+      if (userT && userT.dayOfWeek) {
+        setUser(userT);
+      }
+      if (!userT) {
+        // If no user is found, redirect to sign-in page
+        navigate('/signin');
+        return;
+      }
+    });
+  }, []);
   const {
     patientSearch,
     setVisibleBox,
@@ -101,7 +123,7 @@ const ResultsPage = () => {
 
   const editClient = async (activeClient) => {
     try {
-      const res = await fetch("https://optimizingdyslipidemia.com/PHP/database.php", {
+      const res = await fetch("https://gdmt.ca/PHP/database.php", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         keepalive: true,
@@ -109,6 +131,7 @@ const ResultsPage = () => {
         body: JSON.stringify({
           script: "getPatientById",
           patientID: Number(activeClient.id),
+          patientDB: user?.patientTable || "Patient", historyDB: user?.historyTable || "Patient_History"
         }),
       });
 
@@ -203,7 +226,13 @@ const ResultsPage = () => {
             return (
               <div
                 key={rowKey}
-                className="border-bottom py-2 d-flex align-items-center fs-7"
+                className="border-bottom py-2 d-flex align-items-center fs-7 results-row"
+                onMouseEnter={() => setHoveredKey(rowKey)}
+                onMouseLeave={() => setHoveredKey(null)}
+                style={{
+                  backgroundColor: hoveredKey === rowKey ? "#dfe9f0ff" : undefined,
+                  transition: "background-color 120ms ease"
+                }}
               >
                 <div className="col-12 fw-bold">
                   {/* 👇 Name obeys privateMode */}
@@ -223,13 +252,16 @@ const ResultsPage = () => {
                     {isCopied
                       ? "Copied"
                       : mode === "identity"
-                      ? highlight(maskedHcn || "—", query)
-                      : (maskedHcn || "—")}
+                        ? highlight(maskedHcn || "—", query)
+                        : (maskedHcn || "—")}
                   </button>
                 </div>
 
                 <div className="col-3">{calculateAge(p.dateOfBirth)}</div>
-                <div className="col-4">{p.nextAppointment || "—"}</div>
+                <div className="col-4">
+                  {(p.nextAppointment === "0000-00-00" || !p.nextAppointment) ? "—" : p.nextAppointment}
+                </div>
+                <div className="col-6">{p.recommendedMed}</div>
                 <div className="flex-grow-1">{p.privateNote || "—"}</div>
 
                 <div className="ms-auto flex-grow-1 d-flex justify-content-end">

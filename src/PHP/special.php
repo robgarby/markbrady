@@ -4,12 +4,12 @@ header("Access-Control-Allow-Headers: Content-Type");
 header("Content-Type: application/json");
 
 $servername = "localhost";
-$username = "markbrady_markbrady";
-$password = "NoahandK++";
-$dbname = "markbrady_optimize";
+$db_username = "gdmt_gdmt";
+$db_password = "fiksoz-xYhwej-kevna9";
+$dbname = "gdmt_gdmt";
 
 // Create connection
-$conn = new mysqli($servername, $username, $password, $dbname);
+$conn = new mysqli($servername, $db_username, $db_password, $dbname);
 $conn->query("SET SESSION sql_mode = ''");
 
 
@@ -19,8 +19,13 @@ $input = file_get_contents('php://input');
 $data = json_decode($input, true);
 ;
 
-// print_r($data); // Debugging: Output the received data
+$patientTable =  $data['patientDB'] ?? 'Patient';
+$historyTable =  $data['historyDB'] ?? 'Patient_History';
+
+// print_r($data);
 // exit;
+
+
 if (!isset($data['script'])) {
     echo json_encode(['error' => 'No script specified.']);
     exit;
@@ -48,7 +53,7 @@ if ($data['script'] === 'insertMedicationCategory') {
 if ($data['script'] === 'updateClientMeds') {
     $patientId = $data['patientId'];
     $clientMeds = $data['clientMeds'];
-    $stmt = $conn->prepare("UPDATE Patient SET medsData = ? WHERE id = ?");
+    $stmt = $conn->prepare("UPDATE `$patientTable` SET medsData = ? WHERE id = ?");
     $stmt->bind_param("si", $clientMeds, $patientId);
     $stmt->execute();
     $stmt->close();
@@ -57,7 +62,7 @@ if ($data['script'] === 'updateClientMeds') {
 if ($data['script'] === 'updateRecommendations') {
     $patientId = $data['patientID'];
     $recommendations = $data['recommendations'];
-    $stmt = $conn->prepare("UPDATE Patient SET recommendations = ? WHERE id = ?");
+    $stmt = $conn->prepare("UPDATE `$patientTable` SET recommendations = ? WHERE id = ?");
     $stmt->bind_param("si", $recommendations, $patientId);
 
     if ($stmt->execute()) {
@@ -72,14 +77,12 @@ if ($data['script'] === 'updateRecommendations') {
 }
 
 if ($data['script'] === 'getPatientById') {
-    header('Content-Type: application/json; charset=utf-8');
+    // header('Content-Type: application/json; charset=utf-8');
     $patientID = $data['patientID'] ?? null;
 
-
-
-
     // 1) Fetch patient by ID
-    $stmt = $conn->prepare("SELECT * FROM Patient WHERE id = ?");
+
+    $stmt = $conn->prepare("SELECT * FROM `$patientTable` WHERE id = ?");
     $stmt->bind_param("i", $patientID);
     $stmt->execute();
     $result = $stmt->get_result();
@@ -95,7 +98,7 @@ if ($data['script'] === 'getPatientById') {
     if (!empty($healthNumber)) {
         $stmt2 = $conn->prepare("
             SELECT *
-            FROM Patient_History
+            FROM `$historyTable`
             WHERE healthNumber = ?
             ORDER BY orderDate DESC
             LIMIT 3
@@ -289,7 +292,7 @@ if ($data['script'] === 'updateClientMedIds') {
     $patientId = $data['patientId'] ?? null;
     $medIds = $data['medIds'] ?? null;
     if ($patientId !== null && $medIds !== null) {
-        $stmt = $conn->prepare("UPDATE Patient SET medsData = ? WHERE id = ?");
+        $stmt = $conn->prepare("UPDATE `$patientTable` SET medsData = ? WHERE id = ?");
         $stmt->bind_param("si", $medIds, $patientId);
         $stmt->execute();
         $stmt->close();
@@ -305,7 +308,7 @@ if ($data['script'] === 'getHistory') {
 
     if ($patientID !== null) {
         if ($healthNumber) {
-            $stmt2 = $conn->prepare("SELECT * FROM Patient_History WHERE healthNumber = ? ORDER BY orderDate DESC limit 5");
+            $stmt2 = $conn->prepare("SELECT * FROM `$historyTable` WHERE healthNumber = ? ORDER BY orderDate DESC limit 5");
             $stmt2->bind_param("s", $healthNumber);
             $stmt2->execute();
             $res2 = $stmt2->get_result();
@@ -356,7 +359,7 @@ if ($data['script'] === 'saveHistoryValues') {
                     'albuminCreatinineRatio'
                 ];
                 if (in_array($field, $allowedFields)) {
-                    $stmt = $conn->prepare("UPDATE Patient_History SET $field = ? WHERE ID = ?");
+                    $stmt = $conn->prepare("UPDATE `$historyTable` SET $field = ? WHERE ID = ?");
                     $stmt->bind_param("di", $newValue, $historyId);
                     $stmt->execute();
                     $stmt->close();
@@ -412,7 +415,7 @@ if ($data['script'] === 'medicationSearchByIds') {
                 $conditions[] = "FIND_IN_SET($medId, medsData)";
             }
             $whereClause = implode(' OR ', $conditions);
-            $sql = "SELECT * FROM Patient WHERE $whereClause";
+            $sql = "SELECT * FROM `$patientTable` WHERE $whereClause";
             $result = $conn->query($sql);
             if ($result) {
                 while ($row = $result->fetch_assoc()) {
@@ -433,7 +436,7 @@ if ($data['script'] === 'notOnMedicationByCategoryIds') {
     $ids = $data['ids'] ?? [];
     if (!is_array($ids) || count($ids) === 0) {
         // No categories provided — nothing to exclude; return all patients
-        $result = $conn->query("SELECT * FROM Patient");
+        $result = $conn->query("SELECT * FROM `$patientTable`");
         $rows = [];
         if ($result) {
             while ($r = $result->fetch_assoc())
@@ -446,7 +449,7 @@ if ($data['script'] === 'notOnMedicationByCategoryIds') {
     // Normalize IDs to integers to be safe
     $catIds = array_values(array_filter(array_map('intval', $ids), fn($v) => $v > 0));
     if (count($catIds) === 0) {
-        $result = $conn->query("SELECT * FROM Patient");
+        $result = $conn->query("SELECT * FROM `$patientTable`");
         $rows = [];
         if ($result) {
             while ($r = $result->fetch_assoc())
@@ -493,7 +496,7 @@ if ($data['script'] === 'notOnMedicationByCategoryIds') {
     //    Include anyone with NULL/empty medsData, OR those who do NOT match any of the med IDs.
     if (empty($searchIDS)) {
         // No meds found for the chosen categories => nothing to exclude -> everyone qualifies
-        $sql = "SELECT * FROM Patient";
+        $sql = "SELECT * FROM `$patientTable`";
     } else {
         // Build OR of FIND_IN_SET over a NULL-safe medsData
         // COALESCE(medsData,'') ensures NULL behaves like empty (no matches)
@@ -507,7 +510,7 @@ if ($data['script'] === 'notOnMedicationByCategoryIds') {
         // Anyone with medsData NULL/'' OR NOT (any match) is considered NOT on those medications
         $sql = "
             SELECT *
-            FROM Patient
+            FROM `$patientTable`
             WHERE (medsData IS NULL OR medsData = '')
                OR NOT ($whereOR)
         ";
@@ -530,7 +533,7 @@ if ($data['script'] === 'getStatus') {
     $exists = false;
 
     if ($healthNumber) {
-        $stmt = $conn->prepare("SELECT COUNT(*) as cnt FROM Patient WHERE healthNumber = ?");
+        $stmt = $conn->prepare("SELECT COUNT(*) as cnt FROM `$patientTable` WHERE healthNumber = ?");
         $stmt->bind_param("s", $healthNumber);
         $stmt->execute();
         $stmt->bind_result($count);
@@ -551,7 +554,7 @@ if ($data['script'] === 'postMeds') {
 
     if ($healthNumber !== null) {
         // Fetch current conditionData for this patient
-        $stmt = $conn->prepare("SELECT conditionData,medsData FROM Patient WHERE healthNumber = ?");
+        $stmt = $conn->prepare("SELECT conditionData,medsData FROM `$patientTable` WHERE healthNumber = ?");
         $stmt->bind_param("s", $healthNumber);
         $stmt->execute();
         $stmt->bind_result($existingConditionData, $existingMedData);
@@ -576,7 +579,7 @@ if ($data['script'] === 'postMeds') {
     }
 
     if ($healthNumber !== null) {
-        $stmt = $conn->prepare("UPDATE Patient SET conditionData = ?, medsData = ? WHERE healthNumber = ?");
+        $stmt = $conn->prepare("UPDATE `$patientTable` SET conditionData = ?, medsData = ? WHERE healthNumber = ?");
         $stmt->bind_param("sss", $conditionCodes, $medicationIDs, $healthNumber);
         $success = $stmt->execute();
         $stmt->close();
@@ -587,6 +590,21 @@ if ($data['script'] === 'postMeds') {
     }
     exit;
 }
+
+    if ($data['script'] === 'updatePatientRecommendations') {
+        $patientId = $data['patientID'] ?? null;
+        $recommendations = $data['recommendations'] ?? null;
+        if ($patientId !== null && $recommendations !== null) {
+            $stmt = $conn->prepare("UPDATE `$patientTable` SET recommendations = ? WHERE id = ?");
+            $stmt->bind_param("si", $recommendations, $patientId);
+            $success = $stmt->execute();
+            $stmt->close();
+            echo json_encode(['success' => $success]);
+        } else {
+            echo json_encode(['success' => false, 'error' => 'Missing patientID or recommendations']);
+        }
+        exit;
+    }
 // === In special.php ===
 
 

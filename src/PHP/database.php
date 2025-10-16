@@ -4,12 +4,12 @@ header("Access-Control-Allow-Headers: Content-Type");
 header("Content-Type: application/json");
 
 $servername = "localhost";
-$username = "markbrady_markbrady";
-$password = "NoahandK++";
-$dbname = "markbrady_optimize";
+$db_username = "gdmt_gdmt";
+$db_password = "fiksoz-xYhwej-kevna9";
+$dbname = "gdmt_gdmt";
 
 // Create connection
-$conn = new mysqli($servername, $username, $password, $dbname);
+$conn = new mysqli($servername, $db_username, $db_password, $dbname);
 $conn->query("SET SESSION sql_mode = ''");
 
 
@@ -17,33 +17,36 @@ $input = file_get_contents('php://input');
 
 // Decode JSON
 $data = json_decode($input, true);
-;
+
+
+$patientTable =  $data['patientDB'] ?? 'Patient';
+$historyTable =  $data['historyDB'] ?? 'Patient_History';
 
 // print_r($data); // Debugging: Output the received data
 // exit;
 
-function insertNewClient($nextAppointment, $data, $conn)
+function insertNewClient($nextAppointment, $data, $conn, $patientTable, $historyTable)
 {
      $patient = $data['patient'];
      // Extract patient fields
-     $name = $patient['name'];
+     $name = $conn->real_escape_string($patient['name']);
      $healthNumber = $patient['healthNumber'];
      $sex = $patient['sex'];
      $dateOfBirth = date('Y-m-d', strtotime($patient['dateOfBirth']));
-     $address = $patient['address'];
-     $street = $patient['street'];
-     $city = $patient['city'];
-     $province = $patient['province'];
+     $address = $conn->real_escape_string($patient['address']);
+     $street = $conn->real_escape_string($patient['street']);
+     $city = $conn->real_escape_string($patient['city']);
+     $province = $conn->real_escape_string($patient['province']);
      $postalCode = $patient['postalCode'];
      $telephone = $patient['telephone'];
-     $fullAddress = $patient['fullAddress'];
-     $clientName = $name;
+     $fullAddress = $conn->real_escape_string($patient['fullAddress']);
+     $clientName = $conn->real_escape_string($name);
      $clientStatus = 'new';
-     $providerName = $patient['providerName'];
+     $providerName = $conn->real_escape_string($patient['providerName']);
      $providerNumber = $patient['providerNumber'];
      $orderDate = date('Y-m-d', strtotime($patient['orderDate']));
      $labResults = $patient['labResults'];
-     $privateNote = $patient['privateNote'] ?? '';
+     $privateNote = isset($patient['privateNote']) ? $conn->real_escape_string($patient['privateNote']) : '';
 
      // Helper function
      $getVal = function ($arr, $key) {
@@ -51,7 +54,7 @@ function insertNewClient($nextAppointment, $data, $conn)
      };
 
      // Create INSERT query with full field list
-     $sql = "INSERT INTO Patient (
+     $sql = "INSERT INTO `$patientTable` (
           clientName, clientStatus, healthNumber, sex, dateOfBirth, nextAppointment,privateNote,
           `address`, `street`, `city`, `province`, `postalCode`, `fullAddress`, `telephone`,
           `providerName`, `providerNumber`, `orderDate`,
@@ -174,7 +177,7 @@ function insertNewClient($nextAppointment, $data, $conn)
      $insert = $conn->query($testSql);
 
      // History logging
-     $historySql = "INSERT INTO Patient_History (
+     $historySql = "INSERT INTO `$historyTable` (
           clientName, clientStatus, healthNumber, sex, dateOfBirth, nextAppointment,
           `address`, `street`, `city`, `province`, `postalCode`, `fullAddress`, `telephone`,
           providerName, providerNumber, orderDate,
@@ -227,7 +230,7 @@ function insertNewClient($nextAppointment, $data, $conn)
           hemoglobinA1C, hemoglobinA1CDate,
           urineAlbumin,urineAlbuminDate,
           albuminCreatinineRatio,albuminCreatinineRatioDate
-     FROM Patient WHERE healthNumber = '$healthNumber'";
+     FROM `$patientTable` WHERE healthNumber = '$healthNumber'";
 
      if ($insert) {
           $historyInsert = $conn->query($historySql);
@@ -244,26 +247,26 @@ function insertNewClient($nextAppointment, $data, $conn)
      exit;
 }
 
-function mergeData($key, $value, $orderDate, $conn, $healthNumber)
-{
-     $a = "SELECT $key, {$key}Date FROM Patient WHERE healthNumber = '$healthNumber'";
-     $aa = $conn->query($a);
-     if ($aa && $row = $aa->fetch_assoc()) {
-          $existingDate = $row["{$key}Date"];
-          if ($existingDate >= $orderDate) {
-               // If the existing date is more recent or the same, do not update
-               return;
-          } else {
-               if ($value !== '' && $value !== null) {
-                    $sql = "UPDATE Patient SET $key = $value, {$key}Date = '$orderDate' WHERE healthNumber = '$healthNumber'";
-                    echo $sql;
-                    // $conn->query($sql) or die ($sql);
-               }
-          }
-     }
-}
+// function insertNewClient($key, $value, $orderDate, $conn, $healthNumber,$patientTable,$historyTable)
+// {
+//      $a = "SELECT $key, {$key}Date FROM `$patientTable` WHERE healthNumber = '$healthNumber'";
+//      $aa = $conn->query($a);
+//      if ($aa && $row = $aa->fetch_assoc()) {
+//           $existingDate = $row["{$key}Date"];
+//           if ($existingDate >= $orderDate) {
+//                // If the existing date is more recent or the same, do not update
+//                return;
+//           } else {
+//                if ($value !== '' && $value !== null) {
+//                     $sql = "UPDATE `$patientTable` SET $key = $value, {$key}Date = '$orderDate' WHERE healthNumber = '$healthNumber'";
+//                     echo $sql;
+//                     // $conn->query($sql) or die ($sql);
+//                }
+//           }
+//      }
+// }
 
-function insertToHistory($nextAppointment, $conn, $data): bool
+function insertToHistory($nextAppointment, $conn, $data, $patientTable, $historyTable): bool
 {
      $patient = $data['patient'];
 
@@ -295,7 +298,7 @@ function insertToHistory($nextAppointment, $conn, $data): bool
 
 
      // SQL Insert
-     $sql = "INSERT INTO Patient_History (
+     $sql = "INSERT INTO `$historyTable` (
         clientName, clientStatus, healthNumber, sex, dateOfBirth, nextAppointment,privateNote,
         `address`, `street`, `city`, `province`, `postalCode`, `fullAddress`, `telephone`,
         providerName, providerNumber, orderDate,
@@ -426,7 +429,7 @@ function insertToHistory($nextAppointment, $conn, $data): bool
      }
 }
 
-function updateClient($nextAppointment, $data, $conn)
+function updateClient($nextAppointment, $data, $conn, $patientTable, $historyTable)
 {
      $patient = $data['patient'];
      $healthNumber = $patient['healthNumber'];
@@ -437,7 +440,7 @@ function updateClient($nextAppointment, $data, $conn)
      $returnValue = insertToHistory($nextAppointment, $conn, $data);
 
      // Load current patient row (may be null if not created yet)
-     $cc = $conn->query("SELECT * FROM Patient WHERE healthNumber = '" . $conn->real_escape_string($healthNumber) . "'");
+     $cc = $conn->query("SELECT * FROM `$patientTable` WHERE healthNumber = '" . $conn->real_escape_string($healthNumber) . "'");
      $client = $cc ? $cc->fetch_assoc() : null;
 
      // Build SET clause safely
@@ -467,12 +470,12 @@ function updateClient($nextAppointment, $data, $conn)
      }
 
      if (!empty($sets)) {
-          $sql = "UPDATE Patient SET " . implode(', ', $sets) . ", nextAppointment = '$nextAppointment' WHERE healthNumber = '$healthNumber'";
+          $sql = "UPDATE `$patientTable` SET " . implode(', ', $sets) . ", nextAppointment = '$nextAppointment' WHERE healthNumber = '$healthNumber'";
           $stmt = $conn->query($sql);
           if ($conn->query($sql)) {
                echo json_encode(['status' => 'updated']);
           } else {
-               $sql = "UPDATE Patient SET nextAppointment = '$nextAppointment' WHERE healthNumber = '$healthNumber'";
+               $sql = "UPDATE `$patientTable` SET nextAppointment = '$nextAppointment' WHERE healthNumber = '$healthNumber'";
                $stmt = $conn->query($sql);
                echo json_encode(['status' => 'updated']);
           }
@@ -488,7 +491,7 @@ if ($data['script'] === 'updatePatientNote') {
      $patientNote = $data['patientNote'];
 
      // Prepare and execute query to update patient note
-     $stmt = $conn->prepare("UPDATE Patient SET patientNote = ? WHERE healthNumber = ?");
+     $stmt = $conn->prepare("UPDATE `$patientTable` SET patientNote = ? WHERE healthNumber = ?");
      $stmt->bind_param("ss", $patientNote, $healthNumber);
      $stmt->execute();
 
@@ -504,13 +507,13 @@ if ($data['script'] === 'updatePatientNote') {
 if ($data['script'] === 'saveTheDataButton') {
      if ($data['patientStatus'] === 'new') {
           $nextAppointment = $data['nextAppointment'] ?? '1970-01-01';
-          insertNewClient($nextAppointment, $data, $conn);
+          insertNewClient($nextAppointment, $data, $conn, $patientTable, $historyTable);
      }
 }
 
 if ($data['script'] === 'updatePatient') {
      $nextAppointment = $data['nextAppointment'] ?? '1970-01-02';
-     updateClient($nextAppointment, $data, $conn);
+     updateClient($nextAppointment, $data, $conn, $patientTable, $historyTable);
 }
 
 if ($data['script'] === 'patientNoteSearch') {
@@ -519,7 +522,7 @@ if ($data['script'] === 'patientNoteSearch') {
      $noteTerm = '%' . $noteTerm . '%';
 
      // Prepare and execute query to search for patient notes containing the noteTerm
-     $stmt = $conn->prepare("SELECT * FROM Patient WHERE patientNote LIKE ?");
+     $stmt = $conn->prepare("SELECT * FROM `$patientTable` WHERE patientNote LIKE ?");
      $stmt->bind_param("s", $noteTerm);
      $stmt->execute();
      $result = $stmt->get_result();
@@ -540,7 +543,7 @@ if ($data['script'] === 'getStatus') {
      $healthNumber = $data['healthNumber'];
 
      // Prepare and execute query to check if healthNumber exists in Patient table
-     $stmt = $conn->prepare("SELECT 1 FROM Patient WHERE healthNumber = ?");
+     $stmt = $conn->prepare("SELECT 1 FROM `$patientTable` WHERE healthNumber = ?");
      $stmt->bind_param("s", $healthNumber);
      $stmt->execute();
      $stmt->store_result();
@@ -549,7 +552,7 @@ if ($data['script'] === 'getStatus') {
           $labDate = isset($data['labdate']) ? $data['labdate'] : null;
           if ($labDate) {
                $healthNumberNoSpaces = str_replace(' ', '', $healthNumber);
-               $stmt2 = $conn->prepare("SELECT 1 FROM patientFiles WHERE healthNumber = ? AND labDate = ?");
+               $stmt2 = $conn->prepare("SELECT 1 FROM `patientFiles` WHERE healthNumber = ? AND labDate = ?");
                $stmt2->bind_param("ss", $healthNumberNoSpaces, $labDate);
                $stmt2->execute();
                $stmt2->store_result();
@@ -576,7 +579,7 @@ if ($data['script'] === 'patientSearch') {
      $searchTerm = '%' . $searchTerm . '%';
 
      // Prepare and execute query to search for healthNumber or clientName
-     $stmt = $conn->prepare("SELECT * FROM Patient WHERE healthNumber LIKE ? OR clientName LIKE ?");
+     $stmt = $conn->prepare("SELECT * FROM `$patientTable` WHERE healthNumber LIKE ? OR clientName LIKE ?");
      $stmt->bind_param("ss", $searchTerm, $searchTerm);
      $stmt->execute();
      $result = $stmt->get_result();
@@ -613,7 +616,7 @@ if ($data['script'] === 'updateLabs') {
 
      $setString = implode(", ", $setClauses);
      $healthNumberEscaped = mysqli_real_escape_string($conn, $healthNumber);
-     $sql = "UPDATE Patient SET $setString WHERE healthNumber = '$healthNumberEscaped'";
+     $sql = "UPDATE `$patientTable` SET $setString WHERE healthNumber = '$healthNumberEscaped'";
 
      if (mysqli_query($conn, $sql)) {
           echo json_encode(['success' => true]);
@@ -719,7 +722,7 @@ if ($data['script'] === 'providerSearch') {
 
      $dateCol = 'nextAppointment'; // or 'nextAppointment' if that's your column
 
-     $sql = "SELECT * FROM Patient WHERE 1=1";
+     $sql = "SELECT * FROM `$patientTable` WHERE 1=1";
      $params = [];
      $types = "";
 
@@ -803,7 +806,7 @@ if ($data['script'] === 'privateNoteSearch') {
      //    Default = "all" → AND all tokens; "any" → OR tokens
      $glue = ($mode === 'any') ? ' OR ' : ' AND ';
 
-     $sql = "SELECT * FROM Patient WHERE ";
+     $sql = "SELECT * FROM `$patientTable` WHERE ";
      $whereParts = [];
      $params = [];
      $types = '';
@@ -877,7 +880,7 @@ if ($data['script'] === 'updateAppointment') {
      }
 
      // prepared statement
-     $stmt = $conn->prepare("UPDATE Patient SET nextAppointment = ? WHERE id = ?");
+     $stmt = $conn->prepare("UPDATE `$patientTable` SET nextAppointment = ? WHERE id = ?");
      if (!$stmt) {
           http_response_code(500);
           echo json_encode(['success' => false, 'error' => 'Prepare failed', 'details' => $conn->error]);
@@ -910,7 +913,7 @@ if ($data['script'] === 'updatePrivateNote') {
 
 
      // prepared statement
-     $stmt = $conn->prepare("UPDATE Patient SET privateNote = ? WHERE id = ?");
+     $stmt = $conn->prepare("UPDATE `$patientTable` SET privateNote = ? WHERE id = ?");
      if (!$stmt) {
           http_response_code(500);
           echo json_encode(['success' => false, 'error' => 'Prepare failed', 'details' => $conn->error]);
@@ -1014,7 +1017,7 @@ if ($data['script'] === 'labRangeSearch') {
      $orderBy = "id";       // change if your PK/ordering column is different
      $orderDir = "DESC";
 
-     $sql = "SELECT * FROM `Patient`" . $where . " ORDER BY `$orderBy` $orderDir LIMIT ? OFFSET ?";
+     $sql = "SELECT * FROM `$patientTable`" . $where . " ORDER BY `$orderBy` $orderDir LIMIT ? OFFSET ?";
 
      // Prepare
      $stmt = $conn->prepare($sql);
@@ -1049,26 +1052,6 @@ if ($data['script'] === 'labRangeSearch') {
 
 }
 
-if ($data['script'] === 'getConditionData') {
-     $sql = "SELECT * FROM patient_conditions ORDER BY conditionName ASC";
-     $result = $conn->query($sql);
-
-     if ($result) {
-          $conditions = [];
-          while ($row = $result->fetch_assoc()) {
-               $conditions[] = $row;
-          }
-          echo json_encode($conditions);
-     } else {
-          http_response_code(500);
-          echo json_encode([
-               'success' => false,
-               'error' => 'Query failed',
-               'details' => $conn->error
-          ]);
-     }
-}
-
 if ($data['script'] === 'updatePatientConditions') {
      $patientID = $data['patientID'] ?? null;
      $conditionCodes = $data['conditionCodes'] ?? null;
@@ -1079,7 +1062,7 @@ if ($data['script'] === 'updatePatientConditions') {
           exit;
      }
 
-     $stmt = "UPDATE Patient SET conditionData = '{$conditionCodes}' WHERE id = '{$patientID}'";
+     $stmt = "UPDATE `$patientTable` SET conditionData = '{$conditionCodes}' WHERE id = '{$patientID}'";
      $go = $conn->query($stmt) or die($stmt);
 }
 
@@ -1091,8 +1074,8 @@ if ($data['script'] === 'getPatientById') {
           echo json_encode(['success' => false, 'error' => 'Missing patient ID']);
           exit;
      }
-
-     $stmt = $conn->prepare("SELECT * FROM Patient WHERE id = ?");
+  
+     $stmt = $conn->prepare("SELECT * FROM `$patientTable` WHERE id = ?");
      if (!$stmt) {
           http_response_code(500);
           echo json_encode(['success' => false, 'error' => 'Prepare failed', 'details' => $conn->error]);
@@ -1153,7 +1136,7 @@ if ($data['script'] === 'conditionSearch') {
                $code = trim($code);
                if ($code === '') continue;
                // Use FIND_IN_SET for comma-separated values, or LIKE if needed
-               $stmt = $conn->prepare("SELECT * FROM Patient WHERE FIND_IN_SET(?, conditionData)");
+               $stmt = $conn->prepare("SELECT * FROM `$patientTable` WHERE FIND_IN_SET(?, conditionData)");
                $stmt->bind_param('s', $code);
                $stmt->execute();
                $result = $stmt->get_result();
@@ -1206,7 +1189,7 @@ if ($data['script'] === 'updatePaymentMethod') {
           exit;
      }
 
-     $stmt = $conn->prepare("UPDATE Patient SET paymentMethod = ? WHERE id = ?");
+     $stmt = $conn->prepare("UPDATE `$patientTable` SET paymentMethod = ? WHERE id = ?");
      if (!$stmt) {
           http_response_code(500);
           echo json_encode(['success' => false, 'error' => 'Prepare failed', 'details' => $conn->error]);

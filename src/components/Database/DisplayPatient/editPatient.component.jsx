@@ -1,9 +1,31 @@
 // src/components/Patient/editPatient.component.jsx
-import React, { useState } from 'react';
+import React, { useState,useEffect } from 'react';
 import { useGlobalContext } from '../../../Context/global.context';
+import { getUserFromToken } from '../../../Context/functions';
 
 const LabResultsEditor = () => {
   const { activePatient, setActivePatient, setVisibleBox, privateMode } = useGlobalContext();
+
+  const [user, setUser] = React.useState(null);
+  const [patientDB, setPatientDB] = useState("");
+  const [historyDB, setHistoryDB] = useState("");
+  const dbReady = Boolean(patientDB && historyDB);
+
+  useEffect(() => {
+      const fetchUser = async () => {
+        const userData = await getUserFromToken();
+        return userData;
+      };
+      fetchUser().then((userT) => {
+        if (userT) {
+          setUser(userT);
+          setPatientDB(userT.patientTable);
+          setHistoryDB(userT.historyTable);
+          console.log('User data:', userT);
+        }
+      });
+    }, []);
+
 
   const [labData, setLabData] = useState(() => ({
     cholesterol: activePatient?.cholesterol || '',
@@ -105,10 +127,16 @@ const LabResultsEditor = () => {
 
   const handleSave = async () => {
     try {
-      const response = await fetch('https://optimizingdyslipidemia.com/PHP/database.php', {
+      const response = await fetch('https://gdmt.ca/PHP/database.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ hcn: activePatient.healthNumber, labs: labData, script: 'updateLabs' }),
+        body: JSON.stringify({ 
+          hcn: activePatient.healthNumber,
+          labs: labData, 
+          script: 'updateLabs',
+          patientDB: patientDB, 
+          historyDB: historyDB
+         }),
       });
       const data = await response.json();
       if (data.success) {

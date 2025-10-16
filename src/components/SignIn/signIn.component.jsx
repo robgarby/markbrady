@@ -1,21 +1,58 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import './signin.style.scss';
-import logo from '../../assets/markbrady.png';
+// signIn.component.jsx
+import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import "./signin.style.scss";
+import logo from "../../assets/markbrady.png";
 
-const SignIn = () => {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+const PRIMARY_API = "https://www.gdmt.ca/PHP/abc.php";
+
+export default function SignIn() {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const navigate = useNavigate();
 
-  const handleSignIn = (e) => {
+  // ✅ use the React context properly
+
+
+  // Parse JSON even if server prints warnings before/after it
+  const safeParseJSON = (raw) => {
+    try {
+      return JSON.parse(raw);
+    } catch {
+      const s = raw.indexOf("{");
+      const e = raw.lastIndexOf("}");
+      if (s !== -1 && e !== -1 && e > s) {
+        try { return JSON.parse(raw.slice(s, e + 1)); } catch { /* noop */ }
+      }
+      return null;
+    }
+  };
+
+  const handleSignIn = async (e) => {
     e.preventDefault();
-    if (username === 'MBrady' && password === 'MAKN2025++') {
-     localStorage.setItem('creds', 'true');
-      navigate('/dashboard');
-    } else {
-     localStorage.clear();
-      alert('Invalid username or password');
+    try {
+      // ✅ form-encoded body = what PHP expects for $_POST
+      const res = await fetch(PRIMARY_API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ script: "login", username, password })
+      });
+
+      const data = await res.json();
+      if (data.success && data.jwt) {
+        localStorage.setItem("gdmtToken", data.jwt);
+        navigate("/dashboard");
+        return;
+      }
+
+      // Not success
+      console.warn("Login failed payload:", data);
+      localStorage.clear();
+      alert("Invalid username or password");
+    } catch (err) {
+      console.error("Sign-in error:", err);
+      localStorage.clear();
+      alert("Error signing in. Please try again.");
     }
   };
 
@@ -25,7 +62,7 @@ const SignIn = () => {
         <div className="col-48 col-md-24 col-lg-16 bg-white p-4 shadow rounded">
           <form onSubmit={handleSignIn}>
             <div className="text-center mb-4">
-              <img className="logo" src={logo} alt="Logo" style={{ maxWidth: '300px' }} />
+              <img className="logo" src={logo} alt="Logo" style={{ maxWidth: "300px" }} />
               <h2 className="mt-3">Sign In</h2>
             </div>
 
@@ -54,15 +91,11 @@ const SignIn = () => {
             </div>
 
             <div className="d-grid">
-              <button type="submit" className="btn btn-primary">
-                Sign In
-              </button>
+              <button type="submit" className="btn btn-primary">Sign In</button>
             </div>
           </form>
         </div>
       </div>
     </div>
   );
-};
-
-export default SignIn;
+}

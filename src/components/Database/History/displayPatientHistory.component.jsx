@@ -1,8 +1,9 @@
 // src/components/Patient/displayPatientHistory.component.jsx
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { useGlobalContext } from "../../../Context/global.context";
+import { getUserFromToken } from '../../../Context/functions';
 
-const CAT_ENDPOINT = "https://optimizingdyslipidemia.com/PHP/special.php";
+const CAT_ENDPOINT = "https://gdmt.ca/PHP/special.php";
 
 // Lab catalog: [Label, valueField, dateField]
 const LABS = [
@@ -76,14 +77,34 @@ const DisplayPatientHistory = () => {
   const isPrivate = Boolean(privateMode);
 
   // Central loader you can call from anywhere
-  const reloadHistory = useCallback(
-    async (patientID, hcn) => {
-      const id = patientID ?? activePatient?.id;
-      const healthNumber = hcn ?? activePatient?.healthNumber;
-      if (!id) {
-        setHistoryArray([]);
-        return;
+
+
+  const [user, setUser] = React.useState(null);
+  const [patientDB, setPatientDB] = useState("");
+  const [historyDB, setHistoryDB] = useState("");
+  const dbReady = Boolean(patientDB && historyDB);
+  const [reloadTick, setReloadTick] = useState(0);
+
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      const userData = await getUserFromToken();
+      return userData;
+    };
+
+    fetchUser().then((userT) => {
+      if (userT && userT.dayOfWeek) {
+        setUser(userT);
+        console.log('User data:', userT);
+        setPatientDB(userT.patientTable);
+        setHistoryDB(userT.historyTable);
+        console.log('User data:', userT);
       }
+    });
+  }, []);
+
+  useEffect(() => {
+    const fetchHistory = async () => {
       setLoading(true);
       try {
         const res = await fetch(CAT_ENDPOINT, {
@@ -91,15 +112,17 @@ const DisplayPatientHistory = () => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             script: "getHistory",
-            patientID: id,
-            hcn: healthNumber,
+            patientID: activePatient?.id,
+            hcn: activePatient?.healthNumber,
+            patientDB: patientDB,
+            historyDB: historyDB
           }),
         });
         const text = await res.text();
         let data = null;
         try {
           data = JSON.parse(text);
-        } catch {}
+        } catch { }
         const payload = Array.isArray(data) ? data : [];
         setHistoryArray(payload);
       } catch {
@@ -107,14 +130,15 @@ const DisplayPatientHistory = () => {
       } finally {
         setLoading(false);
       }
-    },
-    [activePatient?.id, activePatient?.healthNumber]
-  );
+    };
 
-  // Load on first mount / whenever patient changes
-  useEffect(() => {
-    reloadHistory();
-  }, [reloadHistory, activePatient?.id, activePatient?.healthNumber]);
+    if (activePatient?.id && dbReady) {
+      fetchHistory();
+    }
+  }, [activePatient?.id, dbReady, patientDB, historyDB, reloadTick]);
+
+
+
 
   // 1) valueCounts: how many entries have a VALUE (for the (N) badge)
   // 2) rowCounts: how many rows “exist” for that lab (enables Show History even if all values blank)
@@ -199,10 +223,12 @@ const DisplayPatientHistory = () => {
         body: JSON.stringify({
           script: "saveHistoryValues",
           payload,
+          patientDB: patientDB,
+          historyDB: historyDB
         }),
       });
       // Refresh the grid/counters with latest server data
-      await reloadHistory();
+      setReloadTick(t => t + 1);
       closeModal();
     } catch {
       // optional: toast error
@@ -251,22 +277,20 @@ const DisplayPatientHistory = () => {
               <div className="fw-semibold">{label}</div>
               <button
                 type="button"
-                className={`btn btn-sm ${
-                  valueCounts[valueField] > 0
-                    ? "btn-outline-primary fw-bold"
-                    : "btn-outline-secondary"
-                }`}
+                className={`btn btn-sm ${valueCounts[valueField] > 0
+                  ? "btn-outline-primary fw-bold"
+                  : "btn-outline-secondary"
+                  }`}
                 style={{ width: "200px" }}
                 onClick={() => openHistory(label, valueField, dateField)}
                 disabled={rowCounts[valueField] === 0}
                 title={
                   valueCounts[valueField]
-                    ? `Show ${valueCounts[valueField]} entr${
-                        valueCounts[valueField] === 1 ? "y" : "ies"
-                      }`
+                    ? `Show ${valueCounts[valueField]} entr${valueCounts[valueField] === 1 ? "y" : "ies"
+                    }`
                     : rowCounts[valueField] > 0
-                    ? "All entries are blank — click to edit"
-                    : "No history"
+                      ? "All entries are blank — click to edit"
+                      : "No history"
                 }
               >
                 Show History

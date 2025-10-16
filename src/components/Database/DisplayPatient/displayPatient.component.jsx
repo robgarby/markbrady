@@ -2,10 +2,36 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useGlobalContext } from '../../../Context/global.context';
 import PatientMedsBox from "./patientMedsBox.component.jsx";
-import PatientConditionDisplay from "./Patient/patientConditionDisplay.componentl.jsx";
 import { useNavigate } from 'react-router-dom';
+import { getUserFromToken } from '../../../Context/functions';
 
 const PatientDetails = () => {
+
+  const [user, setUser] = React.useState(null);
+  const [patientDB, setPatientDB] = useState("");
+  const [historyDB, setHistoryDB] = useState("");
+  const dbReady = Boolean(patientDB && historyDB);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      const userData = await getUserFromToken();
+      return userData;
+    };
+    fetchUser().then((userT) => {
+      if (userT) {
+        setUser(userT);
+        setPatientDB(userT.patientTable);
+        setHistoryDB(userT.historyTable);
+      }
+      if (!userT) {
+        // If no user is found, redirect to sign-in page
+        navigate('/signin');
+        return;
+      }
+    });
+  }, []);
+
   const gc = useGlobalContext();
   const {
     activePatient,
@@ -16,7 +42,7 @@ const PatientDetails = () => {
     updateMedsArray,
     privateMode,
   } = gc || {};
-  const navigate = useNavigate();
+
 
   const [patient, setPatient] = useState(activePatient || {});
   const [showDetails, setShowDetails] = useState(false);
@@ -25,6 +51,7 @@ const PatientDetails = () => {
   const [privateNoteChanged, setPrivateNoteChanged] = useState(false);
   const [privateNote, setPrivateNote] = useState(activePatient?.privateNote || '');
   const [privateMsg, setPrivateMsg] = useState('');
+  const [medButtons, setMedButtons] = useState([]);
 
   // NEW: Demo-mode modal state
   const [showDemoModal, setShowDemoModal] = useState(false);
@@ -42,6 +69,32 @@ const PatientDetails = () => {
     const first4 = digits.slice(0, 4) || "XXXX";
     return `Patient ${first4}`;
   };
+
+  const medsFetchedRef = useRef(false);
+  useEffect(() => {
+    if (
+      !medsFetchedRef.current &&
+      Array.isArray(medsArray) &&
+      medsArray.length === 0 &&
+      typeof updateMedsArray === 'function'
+    ) {
+      medsFetchedRef.current = true;
+      fetch('https://gdmt.ca/PHP/noDB.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          script: 'getMeds',
+         }),
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          if (Array.isArray(data)) updateMedsArray(data);
+          else medsFetchedRef.current = false; // allow retry
+        })
+        .catch(() => { medsFetchedRef.current = false; });
+    }
+  }, [medsArray?.length, updateMedsArray]);
+
 
   // Real display name (non-private)
   const realPatientName = (p) => {
@@ -66,12 +119,12 @@ const PatientDetails = () => {
     const digits = String(hcn || "").replace(/\D/g, "");
     if (!digits) return hcn || "—";
     const first3 = digits.slice(0, 3);
-    const last4  = digits.slice(-4);
+    const last4 = digits.slice(-4);
     return `${first3} XXX ${last4}`;
   };
 
   const displayName = isPrivate ? demoPatientLabel(patient.healthNumber) : realPatientName(patient);
-  const displayHCN  = isPrivate ? maskHealthNumber3(patient.healthNumber) : (patient.healthNumber || "—");
+  const displayHCN = isPrivate ? maskHealthNumber3(patient.healthNumber) : (patient.healthNumber || "—");
 
   // ===== Meds helpers carried over (kept minimal for context) =====
   const parseMeds = (str) => {
@@ -98,7 +151,7 @@ const PatientDetails = () => {
       typeof updateConditions === 'function'
     ) {
       conditionsFetchedRef.current = true;
-      fetch('https://optimizingdyslipidemia.com/PHP/database.php', {
+      fetch('https://gdmt.ca/PHP/noDB.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ script: 'getConditionData' }),
@@ -117,12 +170,20 @@ const PatientDetails = () => {
 
   const lastLoadedIdRef = useRef(null);
   useEffect(() => {
+    // console.error('PatientDetails useEffect triggered for activePatient.id:', activePatient?.id, 'dbReady:', dbReady, 'patientDB:', patientDB, 'historyDB:', historyDB);
+    if (!dbReady) return; // wait until DB names are set
     const id = activePatient?.id;
+    setMedButtons(
+      String(activePatient?.recommendedMed ?? "")
+        .split(",")
+        .map(s => s.trim())
+        .filter(Boolean)
+    );
 
     if (!id) {
       setPatient(activePatient || {});
       setSelectedCodes(parseCodes(activePatient?.conditionData ?? ''));
-      setMedList(parseMeds(activePatient?.medsData ?? activePatient?.medications ?? ''));
+      setMedButtons((activePatient?.recommendedMed || '').split(',').map(s => s.trim()).filter(Boolean));
       lastLoadedIdRef.current = null;
       return;
     }
@@ -133,12 +194,12 @@ const PatientDetails = () => {
       setMedList(parseMeds(activePatient?.medsData ?? activePatient?.medications ?? ''));
       return;
     }
-
+    return;
     let aborted = false;
-    fetch('https://optimizingdyslipidemia.com/PHP/database.php', {
+    fetch('https://gdmt.ca/PHP/database.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ script: 'getPatientById', patientID: id }),
+      body: JSON.stringify({ script: 'getPatientById', patientID: id, patientDB: patientDB || "Patient", historyDB: historyDB || "Patient_History" }),
     })
       .then((resp) => resp.json())
       .then((data) => {
@@ -163,7 +224,7 @@ const PatientDetails = () => {
       });
 
     return () => { aborted = true; };
-  }, [activePatient?.id]);
+  }, [activePatient?.id,dbReady, patientDB, historyDB]);
 
   if (!patient) return <div className="text-muted">No patient selected.</div>;
 
@@ -191,13 +252,15 @@ const PatientDetails = () => {
     setSaving(true);
     setMsg('');
     try {
-      const resp = await fetch('https://optimizingdyslipidemia.com/PHP/database.php', {
+      const resp = await fetch('https://gdmt.ca/PHP/database.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           script: 'updatePatientNote',
           healthNumber: patient.healthNumber,
           patientNote: patient.patientNote,
+          patientDB: patientDB || "Patient",
+          historyDB: historyDB || "Patient_History"
         }),
       });
       const text = await resp.text();
@@ -217,11 +280,11 @@ const PatientDetails = () => {
     if (typeof setActivePatient === 'function') setActivePatient(updatedPatient);
     setSaving(true); setPrivateMsg('');
     try {
-      const resp = await fetch('https://optimizingdyslipidemia.com/PHP/database.php', {
+      const resp = await fetch('https://gdmt.ca/PHP/database.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         keepalive: true,
-        body: JSON.stringify({ script: 'updatePrivateNote', patientID: patient.id, privateNote }),
+        body: JSON.stringify({ script: 'updatePrivateNote', patientID: patient.id, privateNote, patientDB: patientDB || "Patient", historyDB: historyDB || "Patient_History" }),
       });
       let data; try { data = await resp.json(); } catch { data = {}; }
       if (resp.ok) { setPrivateMsg('Private Note Saved'); setPrivateNoteChanged(false); }
@@ -240,11 +303,11 @@ const PatientDetails = () => {
       return next;
     });
     if (!patient?.id) return;
-    fetch('https://optimizingdyslipidemia.com/PHP/database.php', {
+    fetch('https://gdmt.ca/PHP/database.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       keepalive: true,
-      body: JSON.stringify({ script: 'updateAppointment', patientID: patient.id, appointmentDate: iso }),
+      body: JSON.stringify({ script: 'updateAppointment', patientID: patient.id, appointmentDate: iso, patientDB: patientDB || "Patient", historyDB: historyDB || "Patient_History" }),
     }).catch(() => { });
   };
 
@@ -263,7 +326,7 @@ const PatientDetails = () => {
       return next;
     });
     if (!patient?.id) return;
-    fetch('https://optimizingdyslipidemia.com/PHP/database.php', {
+    fetch('https://gdmt.ca/PHP/database.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       keepalive: true,
@@ -271,8 +334,40 @@ const PatientDetails = () => {
         script: 'updatePaymentMethod',
         patientID: patient.id,
         paymentMethod: method,
+        patientDB: user?.patientTable || "Patient",
+        historyDB: user?.historyTable || "Patient_History"
       }),
     }).catch(() => { });
+  };
+
+  const handleDemoAccept = () => {
+    // TODO: replace with your real action (e.g., add recommendation, print, etc.)
+    setShowDemoModal(false);
+    const recommendationText = [
+      "Finerenone Recommendations:",
+      "This Patient is (T2D) and (eGFR ≥25) and (ACR ≥3) and (on ACEi/ARB at target/tolerated) and (K+ ≤5.0):",
+      "RECOMMEND finerenone (start 10–20 mg based on eGFR/K+), especially if albuminuria persists despite SGLT2i.",
+      "Else: NOT INDICATED or CONSIDER after optimizing ACEi/ARB ± SGLT2i and correcting K+.",
+      "MONITORING:",
+      "Check K+ and eGFR at 4 weeks, then q4 months; hold/titrate per K+; continue ACEi/ARB and SGLT2i where possible."
+    ].join('\n\n');
+    const updatedPatient = { ...activePatient, recommendations: recommendationText };
+    if (typeof setActivePatient === 'function') setActivePatient(updatedPatient);
+    // Update database
+    if (activePatient?.id) {
+      fetch('https://gdmt.ca/PHP/special.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        keepalive: true,
+        body: JSON.stringify({
+          script: 'updatePatientRecommendations',
+          patientID: activePatient.id,
+          recommendations: recommendationText,
+          patientDB: user?.patientTable || "Patient",
+          historyDB: user?.historyTable || "Patient_History"
+        }),
+      }).catch(() => { });
+    }
   };
 
   // ===== UI =====
@@ -438,13 +533,11 @@ const PatientDetails = () => {
               }}
             >
               <span className="me-2" role="img" aria-label="Info">ℹ️</span>
-              <button type="button" className="btn btn-sm btn-light">Omega 3</button>
-              <button type="button" className="btn btn-sm btn-light">SGLT2i</button>
-              <button type="button" className="btn btn-sm btn-light">nsMRA</button>
-              <button type="button" className="btn btn-sm btn-light">GLP1a/GIP</button>
-              <button type="button" className="btn btn-sm btn-light">PCSK9i</button>
-              {/* You can add more buttons here; any of them will open the modal */}
-              {/* <button type="button" className="btn btn-sm btn-light">Another Action</button> */}
+              {medButtons.map((med, idx) => (
+                <button key={idx} className="btn btn-outline-primary me-2">
+                  {med}
+                </button>
+              ))}
             </div>
 
             {/* Demo Mode Modal */}
@@ -452,23 +545,26 @@ const PatientDetails = () => {
               <div
                 className="modal fade show"
                 tabIndex="-1"
+                aria-modal="true"
+                role="dialog"
+                aria-labelledby="demoModalTitle"
                 style={{
                   display: "block",
                   background: "rgba(0,0,0,0.4)",
                   position: "fixed",
                   zIndex: 1050,
-                  left: 0,
-                  top: 0,
-                  width: "100vw",
-                  height: "100vh",
+                  inset: 0, // shorthand for top/right/bottom/left
                 }}
-                aria-modal="true"
-                role="dialog"
               >
-                <div className="modal-dialog modal-dialog-centered" style={{ maxWidth: 420 }}>
+                <div
+                  className="modal-dialog modal-dialog-centered"
+                  style={{ maxWidth: "720px", width: "92vw" }} // wider + responsive
+                >
                   <div className="modal-content">
                     <div className="modal-header">
-                      <h5 className="modal-title">Demonstration Mode</h5>
+                      <h5 id="demoModalTitle" className="modal-title">
+                        Add Medication Finerenone to Recommendation
+                      </h5>
                       <button
                         type="button"
                         className="btn-close"
@@ -476,14 +572,32 @@ const PatientDetails = () => {
                         onClick={() => setShowDemoModal(false)}
                       />
                     </div>
+
                     <div className="modal-body">
-                      <p className="mb-0">
-                        This is <strong className='text-danger'>Demonstration Mode</strong>. When in Use Mode, This will print a patient referral letter for the Medication in question that can be faxed, emailed or printed and given to the provider
-                      </p>
+                      <div className="mb-0">
+                        <strong className="text-danger">Finerenone Recommendations</strong>
+                        <p className='mb-1'>This Patient is (T2D) and (eGFR ≥25) and (ACR ≥3) and (on ACEi/ARB at target/tolerated) and (K+ ≤5.0):</p>
+                        <p className='mb-1'>RECOMMEND finerenone (start 10–20 mg based on eGFR/K+), especially if albuminuria persists despite SGLT2i.</p>
+                        <p className='mb-1'>Else: NOT INDICATED or CONSIDER after optimizing ACEi/ARB ± SGLT2i and correcting K+.</p>
+                        <p>MONITORING:
+                          Check K+ and eGFR at 4 weeks, then q4 months; hold/titrate per K+; continue ACEi/ARB and SGLT2i where possible.</p>
+                      </div>
                     </div>
+
                     <div className="modal-footer">
-                      <button className="btn btn-primary" onClick={() => setShowDemoModal(false)}>
-                        OK
+                      <button
+                        type="button"
+                        className="btn btn-outline-secondary"
+                        onClick={() => setShowDemoModal(false)}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-success"
+                        onClick={handleDemoAccept}
+                      >
+                        Accept
                       </button>
                     </div>
                   </div>
@@ -507,7 +621,6 @@ const PatientDetails = () => {
                 <button className="btn btn-success text-white" disabled={saving} onClick={saveDoctorNote}>
                   {saving ? 'Saving…' : 'Save Doctor Note'}
                 </button>
-                <small className="text-muted ms-3">{msg}</small>
                 <small className="text-muted ms-auto">{(patient.patientNote || '').length}/3000</small>
               </div>
             </div>

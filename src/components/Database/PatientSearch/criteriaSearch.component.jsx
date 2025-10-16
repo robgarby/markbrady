@@ -1,6 +1,8 @@
 // src/components/Labs/criteriaSearch.component.jsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { use, useEffect, useMemo, useState } from "react";
 import { useGlobalContext } from "../../../Context/global.context";
+import { getUserFromToken } from '../../../Context/functions';
+import { useNavigate } from 'react-router-dom';
 
 // ───────────────────────── constants / helpers ─────────────────────────
 const LAB_FIELDS = [
@@ -28,7 +30,7 @@ const LAB_FIELDS = [
   ["albuminCreatinineRatio", "Alb/Cr Ratio"],
 ];
 
-const CAT_ENDPOINT = "https://optimizingdyslipidemia.com/PHP/special.php";
+const CAT_ENDPOINT = "https://gdmt.ca/PHP/special.php";
 const GET_SCRIPT = "getMedsCategory";
 
 const LS_KEYS = {
@@ -67,6 +69,27 @@ const CriteriaSearch = ({ onResults }) => {
     medsCategory,
     updateMedsCategory,
   } = useGlobalContext();
+
+  const [user, setUser] = React.useState(null);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      const userData = await getUserFromToken();
+      return userData;
+    };
+    fetchUser().then((userT) => {
+      console.log({userT});
+      if (userT) {
+        setUser(userT);
+      }
+      if (!userT) {
+        // If no user is found, redirect to sign-in page
+        navigate('/signin');
+        return;
+      }
+    });
+  }, []);
 
   // ─────────────── PERSISTED UI STATE ───────────────
   const [appointmentDate, setAppointmentDate] = useState(() => {
@@ -133,7 +156,7 @@ const CriteriaSearch = ({ onResults }) => {
           });
           const text = await res.text();
           let data = null;
-          try { data = JSON.parse(text); } catch {}
+          try { data = JSON.parse(text); } catch { }
           if (typeof updateMedsCategory === "function") updateMedsCategory(data);
         } catch (e) { console.error(e); }
       })();
@@ -147,11 +170,11 @@ const CriteriaSearch = ({ onResults }) => {
       typeof updateConditions === "function"
         ? updateConditions
         : typeof updateConditionData === "function"
-        ? updateConditionData
-        : null;
+          ? updateConditionData
+          : null;
     if (!needsLoad || !setConditions) return;
 
-    fetch("https://optimizingdyslipidemia.com/PHP/database.php", {
+    fetch("https://gdmt.ca/PHP/noDB.php", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ script: "getConditionData" }),
@@ -161,7 +184,7 @@ const CriteriaSearch = ({ onResults }) => {
         if (Array.isArray(data?.conditions)) setConditions(data.conditions);
         else if (Array.isArray(data)) setConditions(data);
       })
-      .catch(() => {});
+      .catch(() => { });
   }, [conditionData, updateConditions, updateConditionData]);
 
   const allConditions = useMemo(() => {
@@ -234,47 +257,48 @@ const CriteriaSearch = ({ onResults }) => {
     setCondErr("");
   };
 
-  const handleConditionSearch = async () => {
-    const items = displayConds;
-    if (!items.length) { setCondErr("Add at least one condition."); return; }
-    const codes = items.map((x) => x.code).filter(Boolean);
-    const labels = items.map((x) => x.name).filter(Boolean);
+  // const handleConditionSearch = async () => {
+  //   const items = displayConds;
+  //   if (!items.length) { setCondErr("Add at least one condition."); return; }
+  //   const codes = items.map((x) => x.code).filter(Boolean);
+  //   const labels = items.map((x) => x.name).filter(Boolean);
 
-    setCondLoading(true); setCondErr("");
-    try {
-      const res = await fetch("https://optimizingdyslipidemia.com/PHP/database.php", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ script: "conditionSearch", codes, labels }),
-      });
-      const text = await res.text();
-      let data; try { data = JSON.parse(text); } catch { data = []; }
+  //   setCondLoading(true); setCondErr("");
+  //   try {
+  //     const res = await fetch("https://optimizingdyslipidemia.com/PHP/database.php", {
+  //       method: "POST",
+  //       headers: { "Content-Type": "application/json" },
+  //       body: JSON.stringify({ script: "conditionSearch", codes, labels }),
+  //     });
+  //     const text = await res.text();
+  //     let data; try { data = JSON.parse(text); } catch { data = []; }
 
-      onResults?.(data);
-      updatePatientSearch?.({
-        ...(patientSearch || {}),
-        didSearch: true,
-        mode: "condition",
-        conditionCodes: codes,
-        results: Array.isArray(data) ? data : [],
-      });
-      setVisibleBox?.("searchResults");
-    } catch (e) {
-      setCondErr("Condition search failed. Check console.");
-      updatePatientSearch?.({
-        ...(patientSearch || {}),
-        didSearch: true,
-        mode: "condition",
-        conditionCodes: [],
-        results: [],
-      });
-      setVisibleBox?.("searchResults");
-    } finally {
-      setCondLoading(false);
-    }
-  };
+  //     onResults?.(data);
+  //     updatePatientSearch?.({
+  //       ...(patientSearch || {}),
+  //       didSearch: true,
+  //       mode: "condition",
+  //       conditionCodes: codes,
+  //       results: Array.isArray(data) ? data : [],
+  //     });
+  //     setVisibleBox?.("searchResults");
+  //   } catch (e) {
+  //     setCondErr("Condition search failed. Check console.");
+  //     updatePatientSearch?.({
+  //       ...(patientSearch || {}),
+  //       didSearch: true,
+  //       mode: "condition",
+  //       conditionCodes: [],
+  //       results: [],
+  //     });
+  //     setVisibleBox?.("searchResults");
+  //   } finally {
+  //     setCondLoading(false);
+  //   }
+  // };
 
   // Labs
+  
   const addLab = (field) => {
     const key = String(field || "");
     if (!key || labs.some((r) => r.field === key)) return;
@@ -288,53 +312,54 @@ const CriteriaSearch = ({ onResults }) => {
   const removeLab = (idx) => setLabs((prev) => prev.filter((_, i) => i !== idx));
   const clearLabs = () => { setLabSelect(""); setLabs([]); setLabErr(""); };
 
-  const handleLabSearch = async () => {
-    const labsWithDefaults = labs.map((r) => ({
-      ...r,
-      gt: String(r.gt).trim() === "" ? -1 : r.gt,
-      lt: String(r.lt).trim() === "" ? 10000 : r.lt,
-    }));
-    const invalid = labsWithDefaults.find((r) => r.gt === -1 && r.lt === 10000);
-    if (invalid) { setLabErr("Each lab needs at least one value."); return; }
+  // const handleLabSearch = async () => {
+  //   const labsWithDefaults = labs.map((r) => ({
+  //     ...r,
+  //     gt: String(r.gt).trim() === "" ? -1 : r.gt,
+  //     lt: String(r.lt).trim() === "" ? 10000 : r.lt,
+  //   }));
+  //   const invalid = labsWithDefaults.find((r) => r.gt === -1 && r.lt === 10000);
+  //   if (invalid) { setLabErr("Each lab needs at least one value."); return; }
 
-    const filters = {};
-    for (const r of labsWithDefaults) filters[r.field] = { gt: parseFloat(r.gt), lt: parseFloat(r.lt) };
+  //   const filters = {};
+  //   for (const r of labsWithDefaults) filters[r.field] = { gt: parseFloat(r.gt), lt: parseFloat(r.lt) };
 
-    setLabLoading(true); setLabErr("");
-    try {
-      const res = await fetch("https://optimizingdyslipidemia.com/PHP/database.php", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ script: "labRangeSearch", filters }),
-      });
-      const text = await res.text();
-      let data; try { data = JSON.parse(text); } catch { data = []; }
+  //   setLabLoading(true); setLabErr("");
+  //   try {
+  //     const res = await fetch("https://optimizingdyslipidemia.com/PHP/database.php", {
+  //       method: "POST",
+  //       headers: { "Content-Type": "application/json" },
+  //       body: JSON.stringify({ script: "labRangeSearch", filters }),
+  //     });
+  //     const text = await res.text();
+  //     let data; try { data = JSON.parse(text); } catch { data = []; }
 
-      onResults?.(data);
-      updatePatientSearch?.({
-        ...(patientSearch || {}),
-        didSearch: true,
-        mode: "labs",
-        labFilters: filters,
-        results: Array.isArray(data) ? data : [],
-      });
-      setVisibleBox?.("searchResults");
-    } catch (e) {
-      setLabErr("Lab search failed. Check console.");
-      updatePatientSearch?.({
-        ...(patientSearch || {}),
-        didSearch: true,
-        mode: "labs",
-        labFilters: {},
-        results: [],
-      });
-      setVisibleBox?.("searchResults");
-    } finally {
-      setLabLoading(false);
-    }
-  };
+  //     onResults?.(data);
+  //     updatePatientSearch?.({
+  //       ...(patientSearch || {}),
+  //       didSearch: true,
+  //       mode: "labs",
+  //       labFilters: filters,
+  //       results: Array.isArray(data) ? data : [],
+  //     });
+  //     setVisibleBox?.("searchResults");
+  //   } catch (e) {
+  //     setLabErr("Lab search failed. Check console.");
+  //     updatePatientSearch?.({
+  //       ...(patientSearch || {}),
+  //       didSearch: true,
+  //       mode: "labs",
+  //       labFilters: {},
+  //       results: [],
+  //     });
+  //     setVisibleBox?.("searchResults");
+  //   } finally {
+  //     setLabLoading(false);
+  //   }
+  // };
 
   // Med Category (ON)
+
   const addMed = (val) => {
     const selectedMed = Array.isArray(medsCategory)
       ? medsCategory.find((m) => String(m.ID ?? m.id ?? "") === String(val))
@@ -349,40 +374,40 @@ const CriteriaSearch = ({ onResults }) => {
   };
   const clearMeds = () => { setCatSearchArray([]); setMedSelect(""); setMeds([]); setMedErr(""); };
 
-  const handleMedSearch = async () => {
-    if (!catSearchArray.length) { setMedErr("Add at least one medication."); return; }
-    const ids = catSearchArray.map((m) => m.ID);
-    setMedLoading(true); setMedErr("");
-    try {
-      const res = await fetch("https://optimizingdyslipidemia.com/PHP/special.php", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ script: "medicationSearchByIds", ids }),
-      });
-      const text = await res.text();
-      let data; try { data = JSON.parse(text); } catch { data = []; }
+  // const handleMedSearch = async () => {
+  //   if (!catSearchArray.length) { setMedErr("Add at least one medication."); return; }
+  //   const ids = catSearchArray.map((m) => m.ID);
+  //   setMedLoading(true); setMedErr("");
+  //   try {
+  //     const res = await fetch("https://optimizingdyslipidemia.com/PHP/special.php", {
+  //       method: "POST",
+  //       headers: { "Content-Type": "application/json" },
+  //       body: JSON.stringify({ script: "medicationSearchByIds", ids }),
+  //     });
+  //     const text = await res.text();
+  //     let data; try { data = JSON.parse(text); } catch { data = []; }
 
-      onResults?.(data);
-      updatePatientSearch?.({
-        ...(patientSearch || {}),
-        didSearch: true,
-        mode: "medications",
-        meds: ids,
-        results: Array.isArray(data) ? data : [],
-      });
-      setVisibleBox?.("searchResults");
-    } catch (e) {
-      setMedErr("Medication search failed. Check console.");
-      updatePatientSearch?.({
-        ...(patientSearch || {}),
-        didSearch: true,
-        mode: "medications",
-        meds: [],
-        results: [],
-      });
-      setVisibleBox?.("searchResults");
-    } finally { setMedLoading(false); }
-  };
+  //     onResults?.(data);
+  //     updatePatientSearch?.({
+  //       ...(patientSearch || {}),
+  //       didSearch: true,
+  //       mode: "medications",
+  //       meds: ids,
+  //       results: Array.isArray(data) ? data : [],
+  //     });
+  //     setVisibleBox?.("searchResults");
+  //   } catch (e) {
+  //     setMedErr("Medication search failed. Check console.");
+  //     updatePatientSearch?.({
+  //       ...(patientSearch || {}),
+  //       didSearch: true,
+  //       mode: "medications",
+  //       meds: [],
+  //       results: [],
+  //     });
+  //     setVisibleBox?.("searchResults");
+  //   } finally { setMedLoading(false); }
+  // };
 
   // Not-on Med Category (OFF)
   const addNonMed = (val) => {
@@ -397,40 +422,40 @@ const CriteriaSearch = ({ onResults }) => {
   };
   const clearNonMeds = () => { setNonMedCatSearchArray([]); setNonMedSelect(""); setNonMedErr(""); };
 
-  const handleNonMedSearch = async () => {
-    if (!nonMedCatSearchArray.length) { setNonMedErr("Add at least one medication category to exclude."); return; }
-    const ids = nonMedCatSearchArray.map((m) => m.ID);
-    setNonMedLoading(true); setNonMedErr("");
-    try {
-      const res = await fetch("https://optimizingdyslipidemia.com/PHP/special.php", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ script: "notOnMedicationByCategoryIds", ids }),
-      });
-      const text = await res.text();
-      let data; try { data = JSON.parse(text); } catch { data = []; }
+  // const handleNonMedSearch = async () => {
+  //   if (!nonMedCatSearchArray.length) { setNonMedErr("Add at least one medication category to exclude."); return; }
+  //   const ids = nonMedCatSearchArray.map((m) => m.ID);
+  //   setNonMedLoading(true); setNonMedErr("");
+  //   try {
+  //     const res = await fetch("https://optimizingdyslipidemia.com/PHP/special.php", {
+  //       method: "POST",
+  //       headers: { "Content-Type": "application/json" },
+  //       body: JSON.stringify({ script: "notOnMedicationByCategoryIds", ids }),
+  //     });
+  //     const text = await res.text();
+  //     let data; try { data = JSON.parse(text); } catch { data = []; }
 
-      onResults?.(data);
-      updatePatientSearch?.({
-        ...(patientSearch || {}),
-        didSearch: true,
-        mode: "not-on-meds",
-        nonMedCats: ids,
-        results: Array.isArray(data) ? data : [],
-      });
-      setVisibleBox?.("searchResults");
-    } catch (e) {
-      setNonMedErr("Not-on-medication search failed. Check console.");
-      updatePatientSearch?.({
-        ...(patientSearch || {}),
-        didSearch: true,
-        mode: "not-on-meds",
-        nonMedCats: [],
-        results: [],
-      });
-      setVisibleBox?.("searchResults");
-    } finally { setNonMedLoading(false); }
-  };
+  //     onResults?.(data);
+  //     updatePatientSearch?.({
+  //       ...(patientSearch || {}),
+  //       didSearch: true,
+  //       mode: "not-on-meds",
+  //       nonMedCats: ids,
+  //       results: Array.isArray(data) ? data : [],
+  //     });
+  //     setVisibleBox?.("searchResults");
+  //   } catch (e) {
+  //     setNonMedErr("Not-on-medication search failed. Check console.");
+  //     updatePatientSearch?.({
+  //       ...(patientSearch || {}),
+  //       didSearch: true,
+  //       mode: "not-on-meds",
+  //       nonMedCats: [],
+  //       results: [],
+  //     });
+  //     setVisibleBox?.("searchResults");
+  //   } finally { setNonMedLoading(false); }
+  // };
 
   // ─────────────── SUPER SEARCH ───────────────
   const [superLoading, setSuperLoading] = useState(false);
@@ -450,7 +475,7 @@ const CriteriaSearch = ({ onResults }) => {
 
     setSuperLoading(true);
     try {
-      const res = await fetch("https://optimizingdyslipidemia.com/PHP/supersearch.php", {
+      const res = await fetch("https://gdmt.ca/PHP/supersearch.php", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -459,7 +484,9 @@ const CriteriaSearch = ({ onResults }) => {
           conditionCodes,
           appointmentDate,
           medCategoryIds,        // ✅ on-meds
-          nonMedCategoryIds,     // ✅ not-on-meds
+          nonMedCategoryIds,
+          patientDB: user?.patientTable || "Patient",
+          historyDB: user?.historyTable || "Patient_History"
         }),
       });
       const text = await res.text();
@@ -670,10 +697,10 @@ const CriteriaSearch = ({ onResults }) => {
                   <option value="">— Choose a medication category —</option>
                   {Array.isArray(medsCategory) && medsCategory.length > 0
                     ? medsCategory.map((m) => {
-                        const id = String(m?.ID ?? m?.id ?? "");
-                        const label = String(m?.medication_cat);
-                        return <option key={id} value={id}>{label}</option>;
-                      })
+                      const id = String(m?.ID ?? m?.id ?? "");
+                      const label = String(m?.medication_cat);
+                      return <option key={id} value={id}>{label}</option>;
+                    })
                     : null}
                 </select>
               </div>
@@ -718,10 +745,10 @@ const CriteriaSearch = ({ onResults }) => {
                   <option value="">— Choose a medication category —</option>
                   {Array.isArray(medsCategory) && medsCategory.length > 0
                     ? medsCategory.map((m) => {
-                        const id = String(m?.ID ?? m?.id ?? "");
-                        const label = String(m?.medication_cat);
-                        return <option key={id} value={id}>{label}</option>;
-                      })
+                      const id = String(m?.ID ?? m?.id ?? "");
+                      const label = String(m?.medication_cat);
+                      return <option key={id} value={id}>{label}</option>;
+                    })
                     : null}
                 </select>
               </div>

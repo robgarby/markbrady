@@ -1,6 +1,8 @@
 // src/components/Patient/displayPrintView.component.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useGlobalContext } from "../../../Context/global.context";
+import { getUserFromToken } from '../../../Context/functions';
+import { useNavigate } from 'react-router-dom';
 
 // ---------- helpers ----------
 const norm = (s) => (s ?? "").toString().trim();
@@ -22,10 +24,10 @@ const parseLegacyMeds = (str) => {
 };
 
 // ID-based helpers (mirrors PatientMeds)
-const readMasterId   = (m) => String(m?.ID ?? m?.id ?? "");
+const readMasterId = (m) => String(m?.ID ?? m?.id ?? "");
 const readMasterName = (m) => String(m?.medication_name ?? m?.medication ?? m?.name ?? "");
 const readMasterDose = (m) => String(m?.medication_dose ?? m?.defaultDose ?? m?.dose ?? "");
-const readMasterCat  = (m) => String(m?.medication_cat ?? m?.category ?? "");
+const readMasterCat = (m) => String(m?.medication_cat ?? m?.category ?? "");
 const parseIdCSV = (str) => (str || "").split(",").map((t) => t.trim()).filter(Boolean);
 
 // Parse condition codes CSV -> array of UPPER codes
@@ -41,8 +43,8 @@ const buildConditionMap = (conditionData) => {
   const list = Array.isArray(conditionData)
     ? conditionData
     : conditionData && typeof conditionData === "object"
-    ? Object.values(conditionData)
-    : [];
+      ? Object.values(conditionData)
+      : [];
   const map = new Map();
   for (const c of list) {
     const label = c?.conditionName ?? c?.name ?? String(c ?? "");
@@ -93,76 +95,129 @@ const maskHealthNumber3 = (hcn) => {
   const digits = String(hcn || "").replace(/\D/g, "");
   if (!digits) return hcn || "—";
   const first3 = digits.slice(0, 3);
-  const last4  = digits.slice(-4);
+  const last4 = digits.slice(-4);
   return `${first3} XXX ${last4}`;
 };
 
 const PrintLabView = () => {
-  const { activePatient, setActivePatient, setVisibleBox, conditionData, privateMode, medsArray } = useGlobalContext();
+
+  const [user, setUser] = React.useState(null);
+  const [patientDB, setPatientDB] = useState(null);
+  const [historyDB, setHistoryDB] = useState(null);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    console.log(user);
+  }, [user]);
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      const userData = await getUserFromToken();
+      return userData;
+    };
+    fetchUser().then((userT) => {
+      if (userT) {
+        console.log('User data:', userT);
+        setUser(userT);
+        setPatientDB(userT.patientTable);
+        setHistoryDB(userT.historyTable);
+      }
+      if (!userT) {
+        // If no user is found, redirect to sign-in page
+        navigate('/signin');
+        return;
+      }
+    });
+  }, []);
+
+  const { activePatient, setActivePatient, setVisibleBox, conditionData, privateMode, medsArray, updateMedsArray } = useGlobalContext();
   const [fresh, setFresh] = useState(activePatient || {});
   const [loading, setLoading] = useState(false);
   const [history, setHistory] = useState([]);
 
   // Refresh latest patient on mount / when ID changes; also set a short history snapshot
   useEffect(() => {
-    const id = activePatient?.id ? Number(activePatient.id) : null;
-    const hcn = activePatient?.healthNumber
-      ? String(activePatient.healthNumber).replace(/\s+/g, " ").trim()
-      : null;
+  // 🚫 Don’t run until we know who the user is (so tables are correct)
+  if (!user) {
+    setFresh(activePatient || {});
+    setHistory([]);
+    return;
+  }
 
-    if (!id) {
-      setFresh(activePatient || {});
-      setHistory([]);
-      return;
-    }
+  const id = activePatient?.id ? Number(activePatient.id) : null;
+  const hcn = activePatient?.healthNumber
+    ? String(activePatient.healthNumber).replace(/\s+/g, " ").trim()
+    : null;
 
-    let cancelled = false;
+  if (!id) {
+    setFresh(activePatient || {});
+    setHistory([]);
+    return;
+  }
 
-    (async () => {
-      setLoading(true);
-      try {
-        const res = await fetch("https://optimizingdyslipidemia.com/PHP/special.php", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          keepalive: true,
-          cache: "no-store",
-          body: JSON.stringify({
-            script: "getPatientById",
-            patientID: id,
-            healthNumber: hcn,
-          }),
-        });
-
-        const text = await res.text();
-        let data = null;
-        try { data = JSON.parse(text); } catch (e) {}
-
-        const latest = res.ok && data && data.patient ? data.patient : activePatient;
-
-        let last3 = Array.isArray(data?.history) ? data.history.slice(0, 3) : [];
-        last3 = last3.sort((a, b) => {
-          const da = new Date(a?.orderDate || 0).getTime();
-          const db = new Date(b?.orderDate || 0).getTime();
-          return db - da;
-        });
-
-        if (!cancelled) {
-          setFresh(latest || {});
-          setActivePatient?.(latest || {});
-          setHistory(last3);
+  // Pull meds master list (only if empty) with the CORRECT tables
+  if (Array.isArray(medsArray) && medsArray.length === 0) {
+    fetch("https://gdmt.ca/PHP/noDB.php", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      keepalive: true,
+      cache: "no-store",
+      body: JSON.stringify({ script: "getMeds" }),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data?.meds)) {
+          updateMedsArray?.(data.meds);
         }
-      } catch (e) {
-        if (!cancelled) {
-          setFresh(activePatient || {});
-          setHistory([]);
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
+      })
+      .catch(() => {});
+  }
+
+  let cancelled = false;
+
+  (async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("https://gdmt.ca/PHP/special.php", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        keepalive: true,
+        cache: "no-store",
+        body: JSON.stringify({
+          script: "getPatientById",
+          patientID: id,
+          healthNumber: hcn,
+          patientDB : patientDB || 'Patient',
+          historyDB : historyDB || 'Patient_History'
+        }),
+      });
+
+      const text = await res.text();
+      let data = null;
+      try { data = JSON.parse(text); } catch {}
+      console.log('Fetched patient data:', data);
+      const latest = res.ok && data && data.patient ? data.patient : activePatient;
+      const last3 = Array.isArray(data?.history) ? data.history.slice(0, 3) : [];
+
+      if (!cancelled) {
+        setFresh(latest || {});
+        setActivePatient?.(latest || {});
+        setHistory(last3);
       }
-    })();
+    } catch {
+      if (!cancelled) {
+        setFresh(activePatient || {});
+        setHistory([]);
+      }
+    } finally {
+      if (!cancelled) setLoading(false);
+    }
+  })();
 
-    return () => { cancelled = true; };
-  }, [activePatient?.id]);
+  return () => { cancelled = true; };
+  // 👇 Re-run when patient changes OR when the user’s table names change
+}, [activePatient?.id, patientDB, historyDB, user]);
+
 
   // Derived display data
   const patientName =
@@ -271,7 +326,6 @@ const PrintLabView = () => {
         </div>
       </div>
 
-      {/* Lab Results */}
       <div className="mb-2 mt-2">
         <div className="mb-2 h4" style={{ borderBottom: "2px solid" }}>Lab Results</div>
         {(!history || history.length === 0) ? (
@@ -290,9 +344,15 @@ const PrintLabView = () => {
               <div key={key} className="col-48 border-bottom py-1">
                 <div className="row g-1 align-items-baseline">
                   <div className="col-12 fw-bold text-truncate" title={label}>{label}</div>
-                  <div className="col-12 text-center fw-semibold">{printVal(cols[0][key])}</div>
-                  <div className="col-12 text-center fw-semibold">{printVal(cols[1][key])}</div>
-                  <div className="col-12 text-center fw-semibold">{printVal(cols[2][key])}</div>
+                  <div className="col-12 text-center fw-semibold">
+                    {cols[0][key] === 0.00 || cols[0][key] === "0.00" ? "-" : printVal(cols[0][key])}
+                  </div>
+                  <div className="col-12 text-center fw-semibold">
+                    {cols[1][key] === 0.00 || cols[1][key] === "0.00" ? "-" : printVal(cols[1][key])}
+                  </div>
+                  <div className="col-12 text-center fw-semibold">
+                    {cols[2][key] === 0.00 || cols[2][key] === "0.00" ? "-" : printVal(cols[2][key])}
+                  </div>
                 </div>
               </div>
             ))}

@@ -4,11 +4,29 @@ import "./sidebar.styles.scss";
 import { jwtDecode } from "jwt-decode";
 import { useGlobalContext } from "../../../Context/global.context";
 import { useNavigate } from "react-router-dom";
+import { getUserFromToken } from '../../../Context/functions';
 
 const SideBar = () => {
   const { setVisibleBox, visibleBox, clientBox, setClientBox } = useGlobalContext();
   const navigate = useNavigate();
 
+  const [user, setUser] = React.useState(null);
+  const [dayofweek, setDayofweek] = React.useState(null);
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      const userData = await getUserFromToken();
+      return userData;
+    };
+    fetchUser().then((userT) => {
+      if (userT && userT.dayOfWeek) {
+        setUser(userT);
+        setDayofweek(userT.dayOfWeek);
+      }
+    });
+  }, []);
+
+  
   // ⬇️ Hide the entire sidebar when showing the print view
   if (visibleBox === "printView") {
     return null;
@@ -16,8 +34,10 @@ const SideBar = () => {
 
   const logout = () => {
     localStorage.removeItem("creds");
-    window.location.href = "/signin";
+    window.location.href = "#/signin";
   };
+
+
 
 
   return (
@@ -56,7 +76,7 @@ const SideBar = () => {
             >
               Meds Check
             </button>
-             {/* <button
+            {/* <button
               className={`btn my-1 w-100 fs-7 ${visibleBox !== "uploadPDF" ? "btn-light" : "btn-warning"}`}
               onClick={() => setVisibleBox("uploadPDF")}
             >
@@ -68,12 +88,14 @@ const SideBar = () => {
             >
               View History
             </button>
-            <button
-              className={`btn my-1 w-100 fs-7 ${visibleBox !== "EditLab" ? "btn-light" : "btn-warning"}`}
-              onClick={() => setVisibleBox("EditLab")}
-            >
-              Edit Labs
-            </button>
+            {dayofweek && dayofweek === 1 && (
+              <button
+                className={`btn my-1 w-100 fs-7 ${visibleBox !== "EditLab" ? "btn-light" : "btn-warning"}`}
+                onClick={() => setVisibleBox("EditLab")}
+              >
+                Edit Labs
+              </button>
+            )}
             <button
               className={`btn my-1 w-100 fs-7 ${visibleBox !== "referClient" ? "btn-light" : "btn-warning"}`}
               onClick={() => setVisibleBox("printView")}
@@ -86,18 +108,22 @@ const SideBar = () => {
           <button className="btn btn-light my-1 w-100" onClick={() => navigate("/dashboard")}>
             Dashboard
           </button>
-          <button
+          {dayofweek && dayofweek === 1 && (
+            <button
               className={`btn my-1 w-100 ${visibleBox !== "referClient" ? "btn-light" : "btn-warning"}`}
               onClick={() => navigate("/admin")}
             >
               Admin Panel
             </button>
-             <button
+          )}
+          {dayofweek && dayofweek === 1 && (
+            <button
               className={`btn my-1 w-100 ${visibleBox !== "referClient" ? "btn-light" : "btn-warning"}`}
               onClick={() => navigate("/upload")}
             >
               New Lab
             </button>
+          )}
           <button className="btn btn-secondary text-white mt-5 w-100" onClick={logout}>
             Logout
           </button>

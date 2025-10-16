@@ -1,10 +1,28 @@
 // src/components/DisplayPatient/Patient/patientConditionDisplay.componentl.jsx
 import React, { useMemo, useState, useEffect } from "react";
 import { useGlobalContext } from "../../../../Context/global.context";
+import { getUserFromToken } from '../../../../Context/functions';
 
-const PatientConditionDisplay = ({}) => {
+const PatientConditionDisplay = ({ }) => {
   const gc = useGlobalContext();
   const { conditionData, activePatient, setActivePatient } = gc || {};
+
+  const [user, setUser] = React.useState(null);
+  const [patientDB, setPatientDB] = useState(null);
+  const [historyDB, setHistoryDB] = useState(null);
+  useEffect(() => {
+    const fetchUser = async () => {
+      const userData = await getUserFromToken();
+      return userData;
+    };
+    fetchUser().then((userT) => {
+      if (userT) {
+        setUser(userT);
+        setPatientDB(userT.patientTable);
+        setHistoryDB(userT.historyTable);
+      }
+    });
+  }, []);
 
   // Normalize condition list (array or object map)
   const list = useMemo(() => {
@@ -46,7 +64,7 @@ const PatientConditionDisplay = ({}) => {
 
     // Fire-and-forget to backend (same script/shape as your original)
     try {
-      fetch("https://optimizingdyslipidemia.com/PHP/database.php", {
+      fetch("https://gdmt.ca/PHP/database.php", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         keepalive: true,
@@ -54,9 +72,11 @@ const PatientConditionDisplay = ({}) => {
           script: "updatePatientConditions",
           patientID: activePatient.id,
           conditionCodes: csv,
+          patientDB: patientDB || "Patient",
+          historyDB: historyDB || "Patient_History"
         }),
-      }).catch(() => {});
-    } catch (_) {}
+      }).catch(() => { });
+    } catch (_) { }
   };
 
   // Toggle handler: update local set, then persist

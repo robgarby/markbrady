@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useGlobalContext } from '../../../Context/global.context';
+import { getUserFromToken } from '../../../Context/functions';
+import { useNavigate } from 'react-router-dom';
 
 const PatientSearch = () => {
   const {
@@ -19,6 +21,26 @@ const PatientSearch = () => {
   } = patientSearch;
 
   const [loading, setLoading] = useState(false);
+
+  const [user, setUser] = React.useState(null);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      const userData = await getUserFromToken();
+      return userData;
+    };
+    fetchUser().then((userT) => {
+      if (userT && userT.dayOfWeek) {
+        setUser(userT);
+      }
+      if (!userT) {
+        // If no user is found, redirect to sign-in page
+        navigate('/signin');
+        return;
+      }
+    });
+  }, []);
 
   // Focus handlers: clear other lines so user knows which search is active
   const focusIdentity = () => {
@@ -41,10 +63,10 @@ const PatientSearch = () => {
     setLoading(true);
     updatePatientSearch({ didSearch: true, mode: 'identity' });
     try {
-      const res = await fetch("https://optimizingdyslipidemia.com/PHP/database.php", {
+      const res = await fetch("https://gdmt.ca/PHP/database.php", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ script: "patientSearch", searchTerm: value }),
+        body: JSON.stringify({ script: "patientSearch", searchTerm: value, patientDB: user?.patientTable || "Patient", historyDB: user?.historyTable || "Patient_History" }),
       });
       const data = await res.json().catch(() => []);
       updatePatientSearch({ results: Array.isArray(data) ? data : [] });
@@ -64,10 +86,10 @@ const PatientSearch = () => {
     setLoading(true);
     updatePatientSearch({ didSearch: true, mode: 'notes' });
     try {
-      const res = await fetch("https://optimizingdyslipidemia.com/PHP/database.php", {
+      const res = await fetch("https://gdmt.ca/PHP/database.php", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ script: "patientNoteSearch", noteTerm: value }),
+        body: JSON.stringify({ script: "patientNoteSearch", noteTerm: value, patientDB: user?.patientTable || "Patient", historyDB: user?.historyTable || "Patient_History" }),
       });
       const data = await res.json().catch(() => []);
       updatePatientSearch({ results: Array.isArray(data) ? data : [] });
@@ -87,11 +109,11 @@ const PatientSearch = () => {
     setLoading(true);
     updatePatientSearch({ didSearch: true, mode: 'privateNotes' });
     try {
-      const res = await fetch("https://optimizingdyslipidemia.com/PHP/database.php", {
+      const res = await fetch("https://gdmt.ca/PHP/database.php", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         // If your API expects a different script name or field, adjust here:
-        body: JSON.stringify({ script: "privateNoteSearch", privateNote: value }),
+        body: JSON.stringify({ script: "privateNoteSearch", privateNote: value, patientDB: user?.patientTable || "Patient", historyDB: user?.historyTable || "Patient_History" }),
       });
       const data = await res.json().catch(() => []);
       updatePatientSearch({ results: Array.isArray(data) ? data : [] });
@@ -112,13 +134,15 @@ const PatientSearch = () => {
     setLoading(true);
     updatePatientSearch({ didSearch: true, mode: 'provider' });
     try {
-      const res = await fetch("https://optimizingdyslipidemia.com/PHP/database.php", {
+      const res = await fetch("https://gdmt.ca/PHP/database.php", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           script: "providerSearch",
           providerTerm,
           appointmentDate: appt,
+          patientDB: user?.patientTable || "Patient",
+          historyDB: user?.historyTable || "Patient_History"
         }),
       });
       const data = await res.json().catch(() => []);

@@ -1,6 +1,7 @@
 // src/components/Patient/patientRecs.component.jsx
 import React, { useEffect, useRef, useState } from "react";
 import { useGlobalContext } from "../../../../Context/global.context";
+import { getUserFromToken } from '../../../../Context/functions';
 
 const PatientRecs = () => {
   const gc = useGlobalContext();
@@ -19,6 +20,23 @@ const PatientRecs = () => {
     setStatus(null); // reset any old badges when switching patients
   }, [activePatient?.id]);
 
+  const [user, setUser] = React.useState(null);
+  const [patientDB, setPatientDB] = useState(null);
+  const [historyDB, setHistoryDB] = useState(null);
+  useEffect(() => {
+    const fetchUser = async () => {
+      const userData = await getUserFromToken();
+      return userData;
+    };
+    fetchUser().then((userT) => {
+      if (userT) {
+        setUser(userT);
+        setPatientDB(userT.patientTable);
+        setHistoryDB(userT.historyTable);
+      }
+    });
+  }, []);
+
   const canSave =
     !saving &&
     (activePatient?.id ?? null) &&
@@ -30,7 +48,7 @@ const PatientRecs = () => {
     setStatus(null);
 
     try {
-      const res = await fetch("https://optimizingdyslipidemia.com/PHP/special.php", {
+      const res = await fetch("https://gdmt.ca/PHP/special.php", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         keepalive: true,
@@ -38,11 +56,13 @@ const PatientRecs = () => {
           script: "updateRecommendations",
           patientID: activePatient.id,
           recommendations: text,
+          patientDB: patientDB, 
+          historyDB: historyDB
         }),
       });
 
       let data = null;
-      try { data = await res.json(); } catch {}
+      try { data = await res.json(); } catch { }
 
       if (res.ok && data && data.success) {
         setActivePatient?.({ ...(activePatient || {}), recommendations: text });

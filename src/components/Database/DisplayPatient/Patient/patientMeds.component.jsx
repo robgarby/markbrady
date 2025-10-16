@@ -1,6 +1,7 @@
 // src/components/Patient/patientMeds.component.jsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useGlobalContext } from "../../../../Context/global.context";
+import { getUserFromToken } from '../../../../Context/functions';
 
 // ---------- Helpers (ID-based) ----------
 const norm = (s) => (s || "").trim().replace(/\s+/g, " ").toLowerCase();
@@ -47,6 +48,23 @@ const PatientMeds = () => {
   const [medIds, setMedIds] = useState(() => parseIdCSV(activePatient?.medsData));
   const lastIdRef = useRef(activePatient?.id ?? null);
 
+  const [user, setUser] = React.useState(null);
+  const [patientDB, setPatientDB] = useState(null);
+  const [historyDB, setHistoryDB] = useState(null);
+  useEffect(() => {
+    const fetchUser = async () => {
+      const userData = await getUserFromToken();
+      return userData;
+    };
+    fetchUser().then((userT) => {
+      if (userT) {
+        setUser(userT);
+        setPatientDB(userT.patientTable);
+        setHistoryDB(userT.historyTable);
+      }
+    });
+  }, []);
+
   useEffect(() => {
     const id = activePatient?.id ?? null;
     if (id !== lastIdRef.current) {
@@ -63,7 +81,7 @@ const PatientMeds = () => {
     if (!need || !updateMedsArray) return;
 
     loadedRef.current = true;
-    fetch("https://optimizingdyslipidemia.com/PHP/database.php", {
+    fetch("https://gdmt.ca/PHP/noDB.php", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ script: "getMeds" }), // should return [{ID, medication_name, medication_cat, medication_dose}, ...]
@@ -112,7 +130,7 @@ const PatientMeds = () => {
 
   const saveClientMedIdsToDB = (patientId, idsCSV) => {
     if (!patientId) return;
-    fetch("https://optimizingdyslipidemia.com/PHP/special.php", {
+    fetch("https://gdmt.ca/PHP/special.php", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       keepalive: true,
@@ -120,6 +138,8 @@ const PatientMeds = () => {
         script: "updateClientMedIds", // <-- update your PHP to expect ID CSV now
         patientId,
         medIds: idsCSV,
+        patientDB: patientDB,
+        historyDB: historyDB
       }),
     }).catch(() => { });
   };
@@ -155,7 +175,7 @@ const PatientMeds = () => {
     const nextMedData = serializeIdCSV(nextMedIds);
 
     // Send to DB (fire and forget)
-    fetch("https://optimizingdyslipidemia.com/PHP/special.php", {
+    fetch("https://gdmt.ca/PHP/special.php", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       keepalive: true,
@@ -163,6 +183,8 @@ const PatientMeds = () => {
         script: "updateClientMedIds",
         patientId,
         medIds: nextMedData,
+        patientDB: patientDB,
+        historyDB: historyDB
       }),
     }).catch(() => { });
 
@@ -182,7 +204,7 @@ const PatientMeds = () => {
     if (!name.trim()) return;
     setIsSaving(true);
     try {
-      const res = await fetch("https://optimizingdyslipidemia.com/PHP/special.php", {
+      const res = await fetch("https://gdmt.ca/PHP/special.php", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -190,6 +212,8 @@ const PatientMeds = () => {
           medication_name: name,
           medication_cat: category,
           medication_dose: dose,
+          patientDB: patientDB,
+          historyDB: historyDB
         }),
       });
       const text = await res.text();
@@ -244,7 +268,7 @@ const PatientMeds = () => {
     }
 
     // 4) Fire-and-forget to backend
-    fetch("https://optimizingdyslipidemia.com/PHP/special.php", {
+    fetch("https://gdmt.ca/PHP/special.php", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       keepalive: true,
@@ -252,6 +276,8 @@ const PatientMeds = () => {
         script: "updateClientMedIds",   // backend expects CSV of IDs now
         patientId,
         medIds: nextMedData,
+        patientDB: patientDB,
+        historyDB: historyDB
       }),
     }).catch(() => { });
   };
