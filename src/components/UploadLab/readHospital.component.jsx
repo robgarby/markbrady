@@ -12,7 +12,7 @@ export default function ReadHospitalConditions({
   onHospitalReset,   // () => void
   onHospitalSaved,   // () => void   // <-- NEW: notify parent when save succeeds
 }) {
-  const ENDPOINT = "https://optimizingdyslipidemia.com/PHP/special.php";
+  const ENDPOINT = "https://gdmt.ca/PHP/special.php";
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
   const [bulletData, setBulletData] = useState([]);
@@ -299,7 +299,7 @@ export default function ReadHospitalConditions({
       let isInDatabase = false;
       if (h) {
         try {
-          const res = await fetch("https://optimizingdyslipidemia.com/PHP/special.php", {
+          const res = await fetch("https://gdmt.ca/PHP/special.php", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({

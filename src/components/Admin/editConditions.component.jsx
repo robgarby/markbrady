@@ -55,7 +55,7 @@ const ConditionAdminPanel = () => {
     if (fetchedRef.current) return;
     if (!Array.isArray(conditionData) || conditionData.length === 0) {
       fetchedRef.current = true;
-      fetch("https://optimizingdyslipidemia.com/PHP/database.php", {
+      fetch("https://gdmt.ca/PHP/database.php", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ script: "getConditionData" }),
@@ -133,7 +133,7 @@ const ConditionAdminPanel = () => {
       updateConditions(updated);
     }
     // persist
-    fetch("https://optimizingdyslipidemia.com/PHP/special.php", {
+    fetch("https://gdmt.ca/PHP/special.php", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       keepalive: true,
@@ -146,7 +146,7 @@ const ConditionAdminPanel = () => {
     const rowToRemove = rows.find((r) => r.ID === ID);
     if (!window.confirm(`Remove "${rowToRemove?.conditionName || ID}"?`)) return;
 
-    fetch("https://optimizingdyslipidemia.com/PHP/special.php", {
+    fetch("https://gdmt.ca/PHP/special.php", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ script: "removeConditionByID", ID }),
@@ -194,7 +194,7 @@ const ConditionAdminPanel = () => {
     setSaving(true);
     setMsg("");
     try {
-      const resp = await fetch("https://optimizingdyslipidemia.com/PHP/special.php", {
+      const resp = await fetch("https://gdmt.ca/PHP/special.php", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         keepalive: true,

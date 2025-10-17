@@ -48,7 +48,7 @@ const PatientConditionsBox = ({ patient, setPatient }) => {
 
       // Persist (fire-and-forget)
       try {
-        fetch('https://optimizingdyslipidemia.com/PHP/database.php', {
+        fetch('https://gdmt.ca/PHP/database.php', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           keepalive: true,
@@ -82,7 +82,7 @@ const PatientConditionsBox = ({ patient, setPatient }) => {
       typeof updateConditions === 'function'
     ) {
       conditionsFetchedRef.current = true;
-      fetch('https://optimizingdyslipidemia.com/PHP/database.php', {
+      fetch('https://gdmt.ca/PHP/database.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ script: 'getConditionData' }),

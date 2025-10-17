@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useGlobalContext } from "../../Context/global.context";
 
 // --- Adjust these to your actual endpoints/script names ---
-const CAT_ENDPOINT  = "https://optimizingdyslipidemia.com/PHP/special.php";
+const CAT_ENDPOINT  = "https://gdmt.ca/PHP/special.php";
 const GET_SCRIPT    = "getMedsCategory";          // returns {cats:[{ID, medication_cat}, ...]} or an array
 const ADD_SCRIPT    = "addMedsCategory";          // expects { medication_cat }
 const UPDATE_SCRIPT = "updateMedsCategory";       // expects { ID, oldCategory, newCategory, propagate:true }

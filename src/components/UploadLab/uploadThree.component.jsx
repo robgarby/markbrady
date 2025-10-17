@@ -40,7 +40,7 @@ export default function UploadThree() {
 
     (async () => {
       try {
-        const resp = await fetch("https://optimizingdyslipidemia.com/PHP/special.php", {
+        const resp = await fetch("https://gdmt.ca/PHP/special.php", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ script: "loadConditionData" }),
@@ -70,7 +70,7 @@ export default function UploadThree() {
 
     (async () => {
       try {
-        const resp = await fetch("https://optimizingdyslipidemia.com/PHP/database.php", {
+        const resp = await fetch("https://gdmt.ca/PHP/database.php", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ script: "getMeds" }),

@@ -35,7 +35,7 @@ const ViewPatientPDF = () => {
   useEffect(() => {
     const fetchLabReports = async () => {
       try {
-        const response = await fetch("https://optimizingdyslipidemia.com/PHP/database.php", {
+        const response = await fetch("https://gdmt.ca/PHP/database.php", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -54,7 +54,7 @@ const ViewPatientPDF = () => {
 
     const fetchPatientReports = async () => {
       try {
-        const response = await fetch("https://optimizingdyslipidemia.com/PHP/database.php", {
+        const response = await fetch("https://gdmt.ca/PHP/database.php", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

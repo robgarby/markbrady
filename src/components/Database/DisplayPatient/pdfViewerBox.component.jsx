@@ -23,7 +23,7 @@ const PdfViewer = ({ fileUrl }) => {
         return <div style={{ padding: '1rem', color: 'red' }}>PDF URL not provided.</div>;
     }
 
-    const fullUrl = 'https://optimizingdyslipidemia.com/PHP/uploads/' + fileUrl;
+    const fullUrl = 'https://gdmt.ca/PHP/uploads/' + fileUrl;
 
     return (
         <div className="text-center">

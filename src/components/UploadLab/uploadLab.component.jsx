@@ -82,7 +82,7 @@ const UploadLab = () => {
 
       setMsg("Checking client status…");
       try {
-        const response = await fetch("https://optimizingdyslipidemia.com/PHP/database.php", {
+        const response = await fetch("https://gdmt.ca/PHP/database.php", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -122,14 +122,14 @@ const UploadLab = () => {
         if (patient.orderDate) formData.append("orderDate", patient.orderDate);
 
         const response = await fetch(
-          "https://optimizingdyslipidemia.com/PHP/uploadClientPDF.php",
+          "https://gdmt.ca/PHP/uploadClientPDF.php",
           { method: "POST", body: formData }
         );
         const result = await response.json();
 
         if (result?.success === "Yes") {
           setMsg("Updating Database");
-          const db = await fetch("https://optimizingdyslipidemia.com/PHP/database.php", {
+          const db = await fetch("https://gdmt.ca/PHP/database.php", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -162,14 +162,14 @@ const UploadLab = () => {
       if (patient.orderDate) formData.append("orderDate", patient.orderDate);
 
       const response = await fetch(
-        "https://optimizingdyslipidemia.com/PHP/uploadClientPDF.php",
+        "https://gdmt.ca/PHP/uploadClientPDF.php",
         { method: "POST", body: formData }
       );
       const result = await response.json();
 
       if (result?.success === "Yes") {
         setMsg("Updating Database");
-        const db = await fetch("https://optimizingdyslipidemia.com/PHP/database.php", {
+        const db = await fetch("https://gdmt.ca/PHP/database.php", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

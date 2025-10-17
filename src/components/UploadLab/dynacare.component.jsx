@@ -56,7 +56,7 @@ export default function Dynacare({ onParsed, onBindSave }) {
       if (meta && meta.orderDate) meta.orderDate = toYMD(meta.orderDate);
 
       setMsg("Checking client status…");
-      const res = await fetch("https://optimizingdyslipidemia.com/PHP/database.php", {
+      const res = await fetch("https://gdmt.ca/PHP/database.php", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -104,7 +104,7 @@ export default function Dynacare({ onParsed, onBindSave }) {
       if (patient.orderDate) formData.append("orderDate", patient.orderDate);
 
       const uploadResp = await fetch(
-        "https://optimizingdyslipidemia.com/PHP/uploadClientPDF.php",
+        "https://gdmt.ca/PHP/uploadClientPDF.php",
         { method: "POST", body: formData }
       );
       const uploadJson = await uploadResp.json().catch(() => ({}));
@@ -117,7 +117,7 @@ export default function Dynacare({ onParsed, onBindSave }) {
           ? { script: "saveTheDataButton", nextAppointment, patient, patientStatus }
           : { script: "updatePatient", nextAppointment, patient };
 
-      const dbResp = await fetch("https://optimizingdyslipidemia.com/PHP/database.php", {
+      const dbResp = await fetch("https://gdmt.ca/PHP/database.php", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(endpointBody),

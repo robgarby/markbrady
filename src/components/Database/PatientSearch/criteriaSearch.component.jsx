@@ -265,7 +265,7 @@ const CriteriaSearch = ({ onResults }) => {
 
   //   setCondLoading(true); setCondErr("");
   //   try {
-  //     const res = await fetch("https://optimizingdyslipidemia.com/PHP/database.php", {
+  //     const res = await fetch("https://gdmt.ca/PHP/database.php", {
   //       method: "POST",
   //       headers: { "Content-Type": "application/json" },
   //       body: JSON.stringify({ script: "conditionSearch", codes, labels }),
@@ -326,7 +326,7 @@ const CriteriaSearch = ({ onResults }) => {
 
   //   setLabLoading(true); setLabErr("");
   //   try {
-  //     const res = await fetch("https://optimizingdyslipidemia.com/PHP/database.php", {
+  //     const res = await fetch("https://gdmt.ca/PHP/database.php", {
   //       method: "POST",
   //       headers: { "Content-Type": "application/json" },
   //       body: JSON.stringify({ script: "labRangeSearch", filters }),
@@ -379,7 +379,7 @@ const CriteriaSearch = ({ onResults }) => {
   //   const ids = catSearchArray.map((m) => m.ID);
   //   setMedLoading(true); setMedErr("");
   //   try {
-  //     const res = await fetch("https://optimizingdyslipidemia.com/PHP/special.php", {
+  //     const res = await fetch("https://gdmt.ca/PHP/special.php", {
   //       method: "POST",
   //       headers: { "Content-Type": "application/json" },
   //       body: JSON.stringify({ script: "medicationSearchByIds", ids }),
@@ -427,7 +427,7 @@ const CriteriaSearch = ({ onResults }) => {
   //   const ids = nonMedCatSearchArray.map((m) => m.ID);
   //   setNonMedLoading(true); setNonMedErr("");
   //   try {
-  //     const res = await fetch("https://optimizingdyslipidemia.com/PHP/special.php", {
+  //     const res = await fetch("https://gdmt.ca/PHP/special.php", {
   //       method: "POST",
   //       headers: { "Content-Type": "application/json" },
   //       body: JSON.stringify({ script: "notOnMedicationByCategoryIds", ids }),

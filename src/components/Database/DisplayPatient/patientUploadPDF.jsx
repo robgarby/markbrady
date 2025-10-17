@@ -54,7 +54,7 @@ const PatientFilesUpload = () => {
     formData.append('note', 'NOT A LAB REPORT');
 
     try {
-      const response = await fetch('https://optimizingdyslipidemia.com/PHP/uploadPDF.php', {
+      const response = await fetch('https://gdmt.ca/PHP/uploadPDF.php', {
         method: 'POST',
         body: formData,
       });

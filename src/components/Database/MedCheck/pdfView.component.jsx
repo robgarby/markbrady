@@ -11,13 +11,13 @@ pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/$
  * Props:
  * - fileUrl: string   -> relative path/filename (e.g., "abc.pdf"). Will be prefixed by uploadsBase.
  * - src: string       -> full URL to a PDF. If provided, takes precedence over fileUrl.
- * - uploadsBase: string -> prefix used with fileUrl (default: "https://optimizingdyslipidemia.com/PHP/uploads/")
+ * - uploadsBase: string -> prefix used with fileUrl (default: "https://gdmt.ca/PHP/uploads/")
  * - initialScale: number -> starting zoom (default 1.2)
  */
 export default function PdfViewerBox({
   fileUrl,
   src,
-  uploadsBase = "https://optimizingdyslipidemia.com/PHP/uploads/",
+  uploadsBase = "https://gdmt.ca/PHP/uploads/",
   initialScale = 1.2,
 }) {
   const [numPages, setNumPages] = useState(null);

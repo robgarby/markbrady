@@ -2,14 +2,14 @@
 import React, { useEffect, useRef, useState, useMemo } from "react";
 import { useGlobalContext } from "../../Context/global.context";
 
-const CAT_ENDPOINT = "https://optimizingdyslipidemia.com/PHP/special.php";
+const CAT_ENDPOINT = "https://gdmt.ca/PHP/special.php";
 const CAT_SCRIPT = "getMedsCategory";
 
-const MEDS_ENDPOINT = "https://optimizingdyslipidemia.com/PHP/database.php";
+const MEDS_ENDPOINT = "https://gdmt.ca/PHP/database.php";
 const MEDS_SCRIPT = "getMeds";
 
 // Endpoint for saving + propagating
-const UPDATE_ENDPOINT = "https://optimizingdyslipidemia.com/PHP/database.php";
+const UPDATE_ENDPOINT = "https://gdmt.ca/PHP/database.php";
 const UPDATE_SCRIPT = "updateMedicationAndPropagate";
 
 const MedsAdminPanel = () => {
