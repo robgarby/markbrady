@@ -137,86 +137,86 @@ const PrintLabView = () => {
 
   // Refresh latest patient on mount / when ID changes; also set a short history snapshot
   useEffect(() => {
-  // 🚫 Don’t run until we know who the user is (so tables are correct)
-  if (!user) {
-    setFresh(activePatient || {});
-    setHistory([]);
-    return;
-  }
+    // 🚫 Don’t run until we know who the user is (so tables are correct)
+    if (!user) {
+      setFresh(activePatient || {});
+      setHistory([]);
+      return;
+    }
 
-  const id = activePatient?.id ? Number(activePatient.id) : null;
-  const hcn = activePatient?.healthNumber
-    ? String(activePatient.healthNumber).replace(/\s+/g, " ").trim()
-    : null;
+    const id = activePatient?.id ? Number(activePatient.id) : null;
+    const hcn = activePatient?.healthNumber
+      ? String(activePatient.healthNumber).replace(/\s+/g, " ").trim()
+      : null;
 
-  if (!id) {
-    setFresh(activePatient || {});
-    setHistory([]);
-    return;
-  }
+    if (!id) {
+      setFresh(activePatient || {});
+      setHistory([]);
+      return;
+    }
 
-  // Pull meds master list (only if empty) with the CORRECT tables
-  if (Array.isArray(medsArray) && medsArray.length === 0) {
-    fetch("https://gdmt.ca/PHP/noDB.php", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      keepalive: true,
-      cache: "no-store",
-      body: JSON.stringify({ script: "getMeds" }),
-    })
-      .then((res) => res.json())
-      .then((data) => {
-        if (Array.isArray(data?.meds)) {
-          updateMedsArray?.(data.meds);
-        }
-      })
-      .catch(() => {});
-  }
-
-  let cancelled = false;
-
-  (async () => {
-    setLoading(true);
-    try {
-      const res = await fetch("https://gdmt.ca/PHP/special.php", {
+    // Pull meds master list (only if empty) with the CORRECT tables
+    if (Array.isArray(medsArray) && medsArray.length === 0) {
+      fetch("https://gdmt.ca/PHP/noDB.php", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         keepalive: true,
         cache: "no-store",
-        body: JSON.stringify({
-          script: "getPatientById",
-          patientID: id,
-          healthNumber: hcn,
-          patientDB : patientDB || 'Patient',
-          historyDB : historyDB || 'Patient_History'
-        }),
-      });
-
-      const text = await res.text();
-      let data = null;
-      try { data = JSON.parse(text); } catch {}
-      console.log('Fetched patient data:', data);
-      const latest = res.ok && data && data.patient ? data.patient : activePatient;
-      const last3 = Array.isArray(data?.history) ? data.history.slice(0, 3) : [];
-
-      if (!cancelled) {
-        setFresh(latest || {});
-        setActivePatient?.(latest || {});
-        setHistory(last3);
-      }
-    } catch {
-      if (!cancelled) {
-        setFresh(activePatient || {});
-        setHistory([]);
-      }
-    } finally {
-      if (!cancelled) setLoading(false);
+        body: JSON.stringify({ script: "getMeds" }),
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (Array.isArray(data?.meds)) {
+            updateMedsArray?.(data.meds);
+          }
+        })
+        .catch(() => { });
     }
-  })();
 
-  return () => { cancelled = true; };
-  // 👇 Re-run when patient changes OR when the user’s table names change
-}, [activePatient?.id, patientDB, historyDB, user]);
+    let cancelled = false;
+
+    (async () => {
+      setLoading(true);
+      try {
+        const res = await fetch("https://gdmt.ca/PHP/special.php", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          keepalive: true,
+          cache: "no-store",
+          body: JSON.stringify({
+            script: "getPatientById",
+            patientID: id,
+            healthNumber: hcn,
+            patientDB: patientDB || 'Patient',
+            historyDB: historyDB || 'Patient_History'
+          }),
+        });
+
+        const text = await res.text();
+        let data = null;
+        try { data = JSON.parse(text); } catch { }
+        console.log('Fetched patient data:', data);
+        const latest = res.ok && data && data.patient ? data.patient : activePatient;
+        const last3 = Array.isArray(data?.history) ? data.history.slice(0, 3) : [];
+
+        if (!cancelled) {
+          setFresh(latest || {});
+          setActivePatient?.(latest || {});
+          setHistory(last3);
+        }
+      } catch {
+        if (!cancelled) {
+          setFresh(activePatient || {});
+          setHistory([]);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+    // 👇 Re-run when patient changes OR when the user’s table names change
+  }, [activePatient?.id, patientDB, historyDB, user]);
 
 
   // Derived display data
@@ -418,6 +418,84 @@ const PrintLabView = () => {
             ? fresh.recommendations
             : <em>No recommendations yet.</em>}
         </div>
+      </div>
+
+      {/* Vaccinations */}
+      <div>
+        <table border={1} cellPadding={6} cellSpacing={0} style={{ borderCollapse: "collapse", width: "100%", fontFamily: "Arial, sans-serif" }}>
+          <caption style={{ captionSide: "top", fontWeight: "bold", padding: "8px 0" }}>
+            VACCINE STATUS REVIEW — Recommended for ASCVD, CKD, HF, and Diabetes Patients
+          </caption>
+          <thead style={{ background: "#f2f2f2" }}>
+            <tr>
+              <th style={{ textAlign: "left" }}>Vaccine</th>
+              <th style={{ textAlign: "left" }}>Indicated For</th>
+              <th style={{ textAlign: "left" }}>Patient Status</th>
+              <th style={{ textAlign: "left" }}>Notes / Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr className="border-bottom border-2">
+              <td>COVID-19 (Comirnaty&reg;)</td>
+              <td>Age ≥18; all with ASCVD, CKD, diabetes</td>
+              <td>
+                <label><input type="checkbox" /> Up to date</label><br />
+                <label><input type="checkbox" /> Not reviewed</label><br />
+                <label><input type="checkbox" /> Needs update</label>
+              </td>
+              <td>Booster recommended annually or per NACI</td>
+            </tr>
+            <tr className="border-bottom border-2">
+              <td>Pneumococcal (Prevnar 20&reg;)</td>
+              <td>Age ≥65 or high-risk adults (CKD, diabetes)</td>
+              <td>
+                <label><input type="checkbox" /> Received</label><br />
+                <label><input type="checkbox" /> Not reviewed</label><br />
+                <label><input type="checkbox" /> Needs update</label>
+              </td>
+              <td>Consider if not given in past 5 years</td>
+            </tr>
+            <tr className="border-bottom border-2">
+              <td>Influenza (seasonal)</td>
+              <td>All adults, especially with comorbidities</td>
+              <td>
+                <label><input type="checkbox" /> Received this year</label><br />
+                <label><input type="checkbox" /> Needs update</label>
+              </td>
+              <td>Strongly recommended annually</td>
+            </tr>
+            <tr className="border-bottom border-2">
+              <td>RSV (Abrysvo&reg;)</td>
+              <td>Age ≥60 or CKD, HF, diabetes (if available)</td>
+              <td>
+                <label><input type="checkbox" /> Received</label><br />
+                <label><input type="checkbox" /> Not reviewed</label><br />
+                <label><input type="checkbox" /> N/A</label>
+              </td>
+              <td>Evaluate per NACI and patient risk</td>
+            </tr>
+            <tr className="border-bottom border-2">
+              <td>Shingles (Shingrix&reg;)</td>
+              <td>Age ≥50, or younger with immunosuppression</td>
+              <td>
+                <label><input type="checkbox" /> Dose 1</label><br />
+                <label><input type="checkbox" /> Dose 2</label><br />
+                <label><input type="checkbox" /> Not reviewed</label>
+              </td>
+              <td>Reduces VZV-related complications</td>
+            </tr>
+            <tr className="border-bottom border-2">
+              <td>Hepatitis B</td>
+              <td>Diabetes, CKD, immunosuppressed</td>
+              <td>
+                <label><input type="checkbox" /> Complete</label><br />
+                <label><input type="checkbox" /> Partial</label><br />
+                <label><input type="checkbox" /> Not reviewed</label>
+              </td>
+              <td>Confirm serology or vaccinate</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
   );

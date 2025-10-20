@@ -6,9 +6,9 @@ import logo from '../../assets/markbrady.png';
 import { getUserFromToken } from '../../Context/functions';
 
 // Read values forwarded from package.json via env (see package.json scripts)
-const version = process.env.REACT_APP_VERSION ?? 'Version 3.0.6';  // updated 9:00 am Oct 16
-const builtAt = process.env.REACT_APP_BUILT_AT ?? 'Oct 17th, 4:00 AM';
-const fixNote = process.env.REACT_APP_FIX_NOTE ?? 'All Working now on GDMT.ca';
+const version = process.env.REACT_APP_VERSION ?? 'Version 3.0.7';  // updated 9:00 am Oct 16
+const builtAt = process.env.REACT_APP_BUILT_AT ?? 'Oct 20th, 4:00 AM';
+const fixNote = process.env.REACT_APP_FIX_NOTE ?? 'Vaccine Recommendations Added to Doctors Form';
 
 const DashBoard = () => {
   const navigate = useNavigate();
