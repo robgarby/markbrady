@@ -142,33 +142,33 @@ if ($data['script'] === 'getMedsCategory') {
 }
 
 if ($data['script'] === 'getMeds') {
-     // Adjust column names if your table uses different casing/labels.
-     $sql = "
+    // Adjust column names if your table uses different casing/labels.
+    $sql = "
         SELECT * FROM medications ORDER BY medication ASC
     ";
 
-     $result = $conn->query($sql);
+    $result = $conn->query($sql);
 
-     if ($result) {
-          $meds = [];
-          while ($row = $result->fetch_assoc()) {
-               $meds[] = $row;
-          }
+    if ($result) {
+        $meds = [];
+        while ($row = $result->fetch_assoc()) {
+            $meds[] = $row;
+        }
 
-          echo json_encode([
-               'success' => true,
-               'meds' => $meds
-          ], JSON_UNESCAPED_UNICODE);
+        echo json_encode([
+            'success' => true,
+            'meds' => $meds
+        ], JSON_UNESCAPED_UNICODE);
 
-     } else {
-          http_response_code(500);
-          echo json_encode([
-               'success' => false,
-               'error' => 'Query failed',
-               'details' => $conn->error
-          ]);
-     }
-     exit;
+    } else {
+        http_response_code(500);
+        echo json_encode([
+            'success' => false,
+            'error' => 'Query failed',
+            'details' => $conn->error
+        ]);
+    }
+    exit;
 }
 
 if ($data['script'] === 'addMedication') {
@@ -314,23 +314,38 @@ if ($data['script'] === 'saveHistoryValues') {
 }
 
 if ($data['script'] === 'getConditionData') {
-     $sql = "SELECT * FROM patient_conditions ORDER BY conditionName ASC";
-     $result = $conn->query($sql);
+    $sql = "SELECT * FROM patient_conditions ORDER BY conditionName ASC";
+    $result = $conn->query($sql);
 
-     if ($result) {
-          $conditions = [];
-          while ($row = $result->fetch_assoc()) {
-               $conditions[] = $row;
-          }
-          echo json_encode($conditions);
-     } else {
-          http_response_code(500);
-          echo json_encode([
-               'success' => false,
-               'error' => 'Query failed',
-               'details' => $conn->error
-          ]);
-     }
+    if ($result) {
+        $conditions = [];
+        while ($row = $result->fetch_assoc()) {
+            $conditions[] = $row;
+        }
+        echo json_encode($conditions);
+    } else {
+        http_response_code(500);
+        echo json_encode([
+            'success' => false,
+            'error' => 'Query failed',
+            'details' => $conn->error
+        ]);
+    }
+}
+
+if ($data['script'] === 'getProviderList') {
+    $providers = [];
+
+    $sql = "SELECT * FROM `gdmt_providers` ORDER BY providerName ASC";
+    $result = $conn->query($sql);
+    if ($result && $result->num_rows > 0) {
+        while ($row = $result->fetch_assoc()) {
+            $providers[] = $row;
+        }
+    }
+
+    echo json_encode($providers, JSON_UNESCAPED_UNICODE);
+    exit;
 }
 
 // === In special.php ===

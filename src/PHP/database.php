@@ -487,22 +487,85 @@ function updateClient($nextAppointment, $data, $conn, $patientTable, $historyTab
 }
 
 if ($data['script'] === 'updatePatientNote') {
-     $healthNumber = $data['healthNumber'];
-     $patientNote = $data['patientNote'];
+    $healthNumber = $data['healthNumber'] ?? null;
+    $patientNote  = $data['patientNote']  ?? null; // can be null to clear
 
-     // Prepare and execute query to update patient note
-     $stmt = $conn->prepare("UPDATE `$patientTable` SET patientNote = ? WHERE healthNumber = ?");
-     $stmt->bind_param("ss", $patientNote, $healthNumber);
-     $stmt->execute();
+    if (!$healthNumber) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'error' => 'Missing healthNumber']);
+        exit;
+    }
 
-     if ($stmt->affected_rows > 0) {
-          echo json_encode(['status' => 'updated']);
-     } else {
-          echo json_encode(['error' => 'Update failed: ' . $conn->error]);
-     }
+    $stmt = $conn->prepare("UPDATE `$patientTable` SET patientNote = ? WHERE healthNumber = ?");
+    if (!$stmt) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Prepare failed', 'details' => $conn->error]);
+        exit;
+    }
 
-     $stmt->close();
+    // both are strings (patientNote may be null → use 's' and let driver send NULL)
+    $stmt->bind_param('ss', $patientNote, $healthNumber);
+
+    if ($stmt->execute()) {
+        http_response_code(200);
+        echo json_encode(['success' => true, 'affected_rows' => $stmt->affected_rows]);
+        $stmt->close();
+        $conn->close();
+        exit;
+    } else {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Query failed', 'details' => $stmt->error]);
+        $stmt->close();
+        $conn->close();
+        exit;
+    }
 }
+
+if ($data['script'] === 'saveAddress') {
+    $patientID   = $data['patientID']    ?? null;
+    $fullAddress = $data['fullAddress']  ?? null;
+    $street      = $data['street']       ?? null;
+    $city        = $data['city']         ?? null;
+    $province    = $data['province']     ?? null;
+    $postalCode  = $data['postalCode']   ?? null;
+    $telephone   = $data['telephone']    ?? null;
+
+    if (!$patientID) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'error' => 'Missing patient ID']);
+        exit;
+    }
+
+    // prepared statement: update address/contact fields
+    $sql = "UPDATE `$patientTable`
+            SET fullAddress = ?, street = ?, city = ?, province = ?, postalCode = ?, telephone = ?
+            WHERE id = ?";
+
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Prepare failed', 'details' => $conn->error]);
+        exit;
+    }
+
+    // bind: 6 strings + 1 int
+    $stmt->bind_param('ssssssi', $fullAddress, $street, $city, $province, $postalCode, $telephone, $patientID);
+
+    if ($stmt->execute()) {
+        http_response_code(200);
+        echo json_encode(['success' => true, 'affected_rows' => $stmt->affected_rows]);
+        $stmt->close();
+        $conn->close();
+        exit;
+    } else {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Query failed', 'details' => $stmt->error]);
+        $stmt->close();
+        $conn->close();
+        exit;
+    }
+}
+
 
 if ($data['script'] === 'saveTheDataButton') {
      if ($data['patientStatus'] === 'new') {
@@ -899,7 +962,10 @@ if ($data['script'] === 'updateAppointment') {
      }
 }
 
+
 if ($data['script'] === 'updatePrivateNote') {
+
+
      $patientID = $data['patientID'] ?? null;
      $privateNote = $data['privateNote'] ?? null; // can be null to clear
 
@@ -909,8 +975,6 @@ if ($data['script'] === 'updatePrivateNote') {
           exit;
      }
 
-     // normalize/validate date if provided
-
 
      // prepared statement
      $stmt = $conn->prepare("UPDATE `$patientTable` SET privateNote = ? WHERE id = ?");
@@ -919,15 +983,21 @@ if ($data['script'] === 'updatePrivateNote') {
           echo json_encode(['success' => false, 'error' => 'Prepare failed', 'details' => $conn->error]);
           exit;
      }
-     // 's' for DATE string or null, 'i' for id
+     // 's' for string (or null), 'i' for id
      $stmt->bind_param('si', $privateNote, $patientID);
 
      if ($stmt->execute()) {
-          http_response_code(204); // no content
+          // Return a JSON response so caller receives confirmation (instead of 204 no-content)
+          http_response_code(200);
+          echo json_encode(['success' => true, 'affected_rows' => $stmt->affected_rows]);
+          $stmt->close();
+          $conn->close();
           exit;
      } else {
           http_response_code(500);
           echo json_encode(['success' => false, 'error' => 'Query failed', 'details' => $stmt->error]);
+          $stmt->close();
+          $conn->close();
           exit;
      }
 }
@@ -1205,4 +1275,34 @@ if ($data['script'] === 'updatePaymentMethod') {
           echo json_encode(['success' => false, 'error' => 'Query failed', 'details' => $stmt->error]);
           exit;
      }
+}
+
+if ($data['script'] === 'getMarkBrady') {
+     $patientID = 2;
+
+     if (!$patientID) {
+          http_response_code(400);
+          echo json_encode(['success' => false, 'error' => 'Missing patient ID']);
+          exit;
+     }
+  
+     $stmt = $conn->prepare("SELECT * FROM `$patientTable` WHERE id = ?");
+     if (!$stmt) {
+          http_response_code(500);
+          echo json_encode(['success' => false, 'error' => 'Prepare failed', 'details' => $conn->error]);
+          exit;
+     }
+     $stmt->bind_param('i', $patientID);
+
+     if ($stmt->execute()) {
+          $result = $stmt->get_result();
+          $patient = $result->fetch_assoc();
+          echo json_encode(['success' => true, 'patient' => $patient]);
+     } else {
+          http_response_code(500);
+          echo json_encode(['success' => false, 'error' => 'Query failed', 'details' => $stmt->error]);
+     }
+     $stmt->close();
+     $conn->close();
+     exit;
 }

@@ -285,17 +285,17 @@ const PatientMeds = () => {
 
   // -------- UI --------
   return (
-    <div className="d-flex flex-column" style={{ position: "relative" }}>
+    <div className="d-flex flex-column fs-7" style={{ position: "relative" }}>
       {/* Top box */}
       <div className="border rounded p-2 mb-2 position-relative">
         <div className="row g-2 align-items-end">
           {/* Name selector (typeahead-ish) */}
-          <div className="col-24">
+          <div className="col-18">
             <label className="form-label mb-1">Medication</label>
             <input
               ref={nameRef}
               type="text"
-              className="form-control"
+              className="form-control fs-7"
               value={nameQ}
               onChange={(e) => setNameQ(e.target.value)}
               placeholder="Type to search master meds…"
@@ -313,16 +313,16 @@ const PatientMeds = () => {
             <>
               <div className="col-12">
                 <label className="form-label mb-1">Category</label>
-                <input className="form-control" value={readMasterCat(pickedExisting) || "No Category"} readOnly />
+                <input className="form-control fs-7" value={readMasterCat(pickedExisting) || "No Category"} readOnly />
               </div>
               <div className="col-6">
                 <label className="form-label mb-1">Dose</label>
-                <input className="form-control" value={readMasterDose(pickedExisting) || "No dose"} readOnly />
+                <input className="form-control fs-7" value={readMasterDose(pickedExisting) || "No dose"} readOnly />
               </div>
-              <div className="col-6 d-flex align-items-end">
+              <div className="flex-grow-1 d-flex align-items-end">
                 <button
                   type="button"
-                  className="btn btn-outline-primary w-100"
+                  className="btn btn-outline-primary w-100 fs-7"
                   onClick={() => addExisting(pickedExisting)}
                 >
                   Add
@@ -333,34 +333,34 @@ const PatientMeds = () => {
             // Otherwise, allow creating a new master med, then add by its new ID
             <>
               <div className="col-12">
-                <label className="form-label mb-1">Category (new)</label>
+                <label className="form-label mb-1">Category</label>
                 <input
                   type="text"
-                  className="form-control"
+                  className="form-control fs-7"
                   value={catQ}
                   onChange={(e) => setCatQ(e.target.value)}
                   placeholder="e.g., Statin"
                 />
               </div>
-              <div className="col-6">
-                <label className="form-label mb-1">Default Dose (new)</label>
+              <div className="col-8">
+                <label className="form-label mb-1">Dose</label>
                 <input
                   type="text"
-                  className="form-control"
+                  className="form-control fs-7"
                   value={doseQ}
                   onChange={(e) => setDoseQ(e.target.value)}
                   placeholder="e.g., 20 mg"
                 />
               </div>
-              <div className="col-6 d-flex align-items-end">
+              <div className="col-9">
                 <button
                   type="button"
-                  className="btn btn-outline-primary w-100"
+                  className="btn btn-outline-primary w-100 fs-7"
                   onClick={() => createAndAdd(nameQ.trim(), catQ.trim(), doseQ.trim())}
                   disabled={isSaving || !nameQ.trim()}
-                  title={isSaving ? "Saving…" : "Create & Add"}
+                  title={isSaving ? "Saving…" : "Create"}
                 >
-                  {isSaving ? "Saving…" : "Create & Add"}
+                  {isSaving ? "Saving…" : "Create"}
                 </button>
               </div>
             </>

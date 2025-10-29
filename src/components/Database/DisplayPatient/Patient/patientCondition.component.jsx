@@ -1,6 +1,6 @@
 // src/components/patient/patientConditionsBox.component.jsx
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useGlobalContext } from '../../../Context/global.context';
+import { useGlobalContext } from '../../../../Context/global.context';
 
 const PatientConditionsBox = ({ patient, setPatient }) => {
   const gc = useGlobalContext();
@@ -112,7 +112,7 @@ const PatientConditionsBox = ({ patient, setPatient }) => {
               const checked = !!code && selectedCodes.includes(code);
 
               return (
-                <div key={id} className="col-24 col-md-16 col-lg-12">
+                <div key={id} className="col-24 col-md-18 col-lg-16">
                   <div className="border rounded p-2 d-flex align-items-center">
                     <span
                       className="flex-grow-1 min-w-0 text-truncate me-2 small"

@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import PatientConditionDisplay from './Patient/patientConditionDisplay.componentl.jsx';
 import PatientMeds from './Patient/patientMeds.component.jsx';
-import PatientRecs from './Patient/patientRecs.component.jsx';
+// import PatientRecs from './patientRecs.component.jsx';
 
 
 const PatientMedsBox = ({ Patient }) => {
@@ -85,7 +85,7 @@ const PatientMedsBox = ({ Patient }) => {
         <div className="d-flex flex-column" style={{ flex: '1 1 0', minHeight: 0 }}>
           <div className="flex-grow-1" style={{ overflowY: 'auto', minHeight: 0 }}>
             <div className="border rounded p-3 h-100 w-100 d-flex align-items-center justify-content-center">
-              <PatientRecs />
+              {/* <PatientRecs /> */}
             </div>
 
           </div>

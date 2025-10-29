@@ -2,7 +2,10 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import "./signin.style.scss";
-import logo from "../../assets/markbrady.png";
+import logo from "../../assets/GDMT.svg";
+import { LoadMarkBrady, getMedicationData, getConditionData, getProviderList } from "../../Context/functions";
+import { navButtons } from "../../Context/variables";
+import { useGlobalContext } from "../../Context/global.context";
 
 const PRIMARY_API = "https://www.gdmt.ca/PHP/abc.php";
 
@@ -12,7 +15,7 @@ export default function SignIn() {
   const navigate = useNavigate();
 
   // ✅ use the React context properly
-
+  const { updateMedsArray, updateConditionData, setPatientProvider } = useGlobalContext();
 
   // Parse JSON even if server prints warnings before/after it
   const safeParseJSON = (raw) => {
@@ -40,17 +43,29 @@ export default function SignIn() {
 
       const data = await res.json();
       if (data.success && data.jwt) {
+        // set the localStorage items
         localStorage.setItem("gdmtToken", data.jwt);
+        const hasButtons = localStorage.getItem('gdmtButtons');
+        if (!hasButtons) {
+          localStorage.setItem('gdmtButtons', JSON.stringify([]));
+        }
+        // load the data required in Contexts
+        const medication = await getMedicationData();
+        updateMedsArray(medication);
+        const conditions = await getConditionData();
+        updateConditionData(conditions);
+        // Load an Activ Patint for Testing.
+        const providers = await getProviderList();
+       setPatientProvider(providers);
+        // const patientData = await LoadMarkBrady();
+        // setActivePatient(patientData);
         navigate("/dashboard");
         return;
       }
-
       // Not success
-      console.warn("Login failed payload:", data);
       localStorage.clear();
       alert("Invalid username or password");
     } catch (err) {
-      console.error("Sign-in error:", err);
       localStorage.clear();
       alert("Error signing in. Please try again.");
     }
@@ -62,8 +77,7 @@ export default function SignIn() {
         <div className="col-48 col-md-24 col-lg-16 bg-white p-4 shadow rounded">
           <form onSubmit={handleSignIn}>
             <div className="text-center mb-4">
-              <img className="logo" src={logo} alt="Logo" style={{ maxWidth: "300px" }} />
-              <h2 className="mt-3">Sign In</h2>
+              <img className="col-36" src={logo} alt="Logo" style={{ maxWidth: "500px" }} />
             </div>
 
             <div className="mb-3">

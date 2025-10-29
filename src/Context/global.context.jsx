@@ -35,9 +35,11 @@ const defaultPatientSearch = {
 
 export const GlobalContext = ({ children }) => {
   // --- Core UI ---
-  const [visibleBox, setVisibleBox] = useState(null);       // e.g., "searchResults", "meds", "conditions"
+  const [visibleBox, setVisibleBox] = useState("search");       // e.g., "searchResults", "meds", "conditions"
   const [activePatient, setActivePatient] = useState(null); // selected patient object or null
   const [clientBox, setClientBox] = useState(false);        // toggles client panel visibility
+  const [patientProvider, setPatientProvider] = useState(''); // Provider category for Patient - Field in Patient is providerSort
+  const [patientArray, setPatientArray] = useState([]);      // Array of found patients
 
   // --- Medications master data ---
   const [medsArray, setMedsArray] = useState([]); // [{ ID, medication, medication_cat, medication_dose }, ...]
@@ -70,8 +72,12 @@ export const GlobalContext = ({ children }) => {
 
   // --- Misc (persisted) ---
   const [privateMode, setPrivateMode] = usePersistentState("gc.privateMode", false);
+  
   const updatePrivateMode = (v) =>
     setPrivateMode(typeof v === "function" ? v(privateMode) : v);
+
+  const [selectedTopButtons, setSelectedTopButtons] = usePersistentState("gc.selectedTopButtons", []);
+
 
   return (
     <AppContext.Provider
@@ -83,10 +89,14 @@ export const GlobalContext = ({ children }) => {
         setActivePatient,
         clientBox,
         setClientBox,
+        patientArray,  // this is the list of all found patients
+        setPatientArray,
+        selectedTopButtons, // this is the navigation bar buttons as what is selected
+        setSelectedTopButtons,  // this set the navigation bar buttons as what is selected
 
         // Meds & categories
         medsArray,
-        updateMedsArray,
+        updateMedsArray, // Medicine array
         medsCategory,
         updateMedsCategory,
 
@@ -102,8 +112,11 @@ export const GlobalContext = ({ children }) => {
         clearPatientSearch,
 
         // Misc
-        privateMode,
+        privateMode,  // use to mask hcn and names
         updatePrivateMode,
+
+        patientProvider, // Category for Database - Field in Patient is providerSort
+        setPatientProvider, // set the Provider category - Field in Patient is providerSort
       }}
     >
       {children}

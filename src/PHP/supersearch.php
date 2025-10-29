@@ -25,6 +25,9 @@ $data = json_decode($input, true);
 $patientTable =  $data['patientDB'] ?? 'Patient';
 $historyTable =  $data['historyDB'] ?? 'Patient_History';
 
+$providerId = isset($data['providerId']) && $data['providerId'] !== '' ? (int)$data['providerId'] : null;
+
+
 
 if (($data['script'] ?? '') === 'superSearch') {
     header('Content-Type: application/json; charset=utf-8');
@@ -337,7 +340,6 @@ if (($data['script'] ?? '') === 'superSearch') {
     }
 
 
-
     if ($appointmentDate !== '-1') {
         if ($hasSearch && !empty($patientPool)) {
             // Filter in-memory pool
@@ -366,17 +368,50 @@ if (($data['script'] ?? '') === 'superSearch') {
         }
     }
 
+        // ─── Provider filter (exact match on Patient.providerId) ───────────────
+    if ($providerId !== null) {
+        if ($hasSearch && !empty($patientPool)) {
+            // In-memory filter
+            $patientPool = array_values(array_filter($patientPool, function ($patient) use ($providerId) {
+                return isset($patient['providerId']) && (int)$patient['providerId'] === (int)$providerId;
+            }));
+        } else {
+            // Query database for patients with matching providerId
+            $sql = "SELECT * FROM `$patientTable` WHERE `providerId` = ?";
+            $stmt = $conn->prepare($sql);
+            if ($stmt) {
+                $stmt->bind_param('i', $providerId);
+                if ($stmt->execute()) {
+                    $res = $stmt->get_result();
+                    $patientPool = [];
+                    while ($row = $res->fetch_assoc()) {
+                        if (!empty($row['healthNumber'])) {
+                            $patientPool[] = $row;
+                        }
+                    }
+                }
+                $stmt->close();
+            } else {
+                $patientPool = [];
+            }
+            $hasSearch = true;
+        }
+    }
+
+    
+
+
    
     $findRec = [];
-$sql = "SELECT * FROM `medDataSearch` WHERE `isActive` = 'Y'";
-$result = $conn->query($sql);
-if ($result) {
-    while ($row = $result->fetch_assoc()) {
-        $findRec[] = $row;
+    $sql = "SELECT * FROM `medDataSearch` WHERE `isActive` = 'Y'";
+    $result = $conn->query($sql);
+    if ($result) {
+        while ($row = $result->fetch_assoc()) {
+            $findRec[] = $row;
+        }
     }
-}
 
-$medCount = 0;
+    $medCount = 0;
 
 foreach ($patientPool as $i => &$patient) {
     // Parse once per patient

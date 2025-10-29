@@ -70,7 +70,7 @@ const PatientSearch = () => {
       });
       const data = await res.json().catch(() => []);
       updatePatientSearch({ results: Array.isArray(data) ? data : [] });
-      setVisibleBox?.('searchResults');
+      setVisibleBox?.('results');
     } catch (e) {
       console.error(e);
       updatePatientSearch({ results: [] });
@@ -93,7 +93,7 @@ const PatientSearch = () => {
       });
       const data = await res.json().catch(() => []);
       updatePatientSearch({ results: Array.isArray(data) ? data : [] });
-      setVisibleBox?.('searchResults');
+      setVisibleBox?.('results');
     } catch (e) {
       console.error(e);
       updatePatientSearch({ results: [] });
@@ -117,7 +117,7 @@ const PatientSearch = () => {
       });
       const data = await res.json().catch(() => []);
       updatePatientSearch({ results: Array.isArray(data) ? data : [] });
-      setVisibleBox?.('searchResults');
+      setVisibleBox?.('results');
     } catch (e) {
       console.error(e);
       updatePatientSearch({ results: [] });
@@ -147,7 +147,7 @@ const PatientSearch = () => {
       });
       const data = await res.json().catch(() => []);
       updatePatientSearch({ results: Array.isArray(data) ? data : [] });
-      setVisibleBox?.('searchResults');
+      setVisibleBox?.('results');
     } catch (e) {
       console.error(e);
       updatePatientSearch({ results: [] });

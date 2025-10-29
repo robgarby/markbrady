@@ -142,14 +142,14 @@ const ResultsPage = () => {
       } catch (_) {
         data = {};
       }
-
-      const full = res.ok && data && data.success && data.patient ? data.patient : activeClient;
+      const full = data.patient;
+      console.log("ResultsPage fetched patient data:", full);
       setActivePatient(full);
     } catch (err) {
-      setActivePatient(activeClient);
+      setActivePatient([]);
     } finally {
       setClientBox(true);
-      setVisibleBox("ClientDetails");
+      setVisibleBox(null);
     }
   };
 
@@ -231,10 +231,11 @@ const ResultsPage = () => {
                 onMouseLeave={() => setHoveredKey(null)}
                 style={{
                   backgroundColor: hoveredKey === rowKey ? "#dfe9f0ff" : undefined,
-                  transition: "background-color 120ms ease"
+                  transition: "background-color 120ms ease",
+                  cursor: "pointer",
                 }}
               >
-                <div className="col-12 fw-bold">
+                <div className="col-12 fw-bold" onClick={() => editClient(p)}>
                   {/* 👇 Name obeys privateMode */}
                   {isPrivate ? demoPatientLabel(p.healthNumber) : realPatientName(p)}
                 </div>
@@ -257,22 +258,12 @@ const ResultsPage = () => {
                   </button>
                 </div>
 
-                <div className="col-3">{calculateAge(p.dateOfBirth)}</div>
-                <div className="col-4">
+                <div className="col-3" onClick={() => editClient(p)} >{calculateAge(p.dateOfBirth)}</div>
+                <div className="col-4" onClick={() => editClient(p)}>
                   {(p.nextAppointment === "0000-00-00" || !p.nextAppointment) ? "—" : p.nextAppointment}
                 </div>
-                <div className="col-6">{p.recommendedMed}</div>
-                <div className="flex-grow-1">{p.privateNote || "—"}</div>
-
-                <div className="ms-auto flex-grow-1 d-flex justify-content-end">
-                  <button
-                    className="btn btn-sm btn-info"
-                    style={{ width: 100, marginLeft: 8 }}
-                    onClick={() => editClient(p)}
-                  >
-                    Select
-                  </button>
-                </div>
+                <div className="col-6" onClick={() => editClient(p)}>{p.recommendedMed}</div>
+                <div className="flex-grow-1" onClick={() => editClient(p)}>{p.privateNote || "—"}</div>
               </div>
             );
           })

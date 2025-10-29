@@ -68,6 +68,8 @@ const CriteriaSearch = ({ onResults }) => {
     medsArray,
     medsCategory,
     updateMedsCategory,
+    patientProvider,
+    setPatientArray
   } = useGlobalContext();
 
   const [user, setUser] = React.useState(null);
@@ -79,7 +81,7 @@ const CriteriaSearch = ({ onResults }) => {
       return userData;
     };
     fetchUser().then((userT) => {
-      console.log({userT});
+      console.log({ userT });
       if (userT) {
         setUser(userT);
       }
@@ -132,6 +134,9 @@ const CriteriaSearch = ({ onResults }) => {
   // Hydration guard
   const [hydrated, setHydrated] = useState(false);
   useEffect(() => setHydrated(true), []);
+
+  // Provider ID
+  const [providerId, setProviderID] = useState(null);
 
   // Persist
   useEffect(() => { if (hydrated) localStorage.setItem(LS_KEYS.conds, JSON.stringify(conditionSearchArray)); }, [conditionSearchArray, hydrated]);
@@ -257,48 +262,6 @@ const CriteriaSearch = ({ onResults }) => {
     setCondErr("");
   };
 
-  // const handleConditionSearch = async () => {
-  //   const items = displayConds;
-  //   if (!items.length) { setCondErr("Add at least one condition."); return; }
-  //   const codes = items.map((x) => x.code).filter(Boolean);
-  //   const labels = items.map((x) => x.name).filter(Boolean);
-
-  //   setCondLoading(true); setCondErr("");
-  //   try {
-  //     const res = await fetch("https://gdmt.ca/PHP/database.php", {
-  //       method: "POST",
-  //       headers: { "Content-Type": "application/json" },
-  //       body: JSON.stringify({ script: "conditionSearch", codes, labels }),
-  //     });
-  //     const text = await res.text();
-  //     let data; try { data = JSON.parse(text); } catch { data = []; }
-
-  //     onResults?.(data);
-  //     updatePatientSearch?.({
-  //       ...(patientSearch || {}),
-  //       didSearch: true,
-  //       mode: "condition",
-  //       conditionCodes: codes,
-  //       results: Array.isArray(data) ? data : [],
-  //     });
-  //     setVisibleBox?.("searchResults");
-  //   } catch (e) {
-  //     setCondErr("Condition search failed. Check console.");
-  //     updatePatientSearch?.({
-  //       ...(patientSearch || {}),
-  //       didSearch: true,
-  //       mode: "condition",
-  //       conditionCodes: [],
-  //       results: [],
-  //     });
-  //     setVisibleBox?.("searchResults");
-  //   } finally {
-  //     setCondLoading(false);
-  //   }
-  // };
-
-  // Labs
-  
   const addLab = (field) => {
     const key = String(field || "");
     if (!key || labs.some((r) => r.field === key)) return;
@@ -311,52 +274,6 @@ const CriteriaSearch = ({ onResults }) => {
 
   const removeLab = (idx) => setLabs((prev) => prev.filter((_, i) => i !== idx));
   const clearLabs = () => { setLabSelect(""); setLabs([]); setLabErr(""); };
-
-  // const handleLabSearch = async () => {
-  //   const labsWithDefaults = labs.map((r) => ({
-  //     ...r,
-  //     gt: String(r.gt).trim() === "" ? -1 : r.gt,
-  //     lt: String(r.lt).trim() === "" ? 10000 : r.lt,
-  //   }));
-  //   const invalid = labsWithDefaults.find((r) => r.gt === -1 && r.lt === 10000);
-  //   if (invalid) { setLabErr("Each lab needs at least one value."); return; }
-
-  //   const filters = {};
-  //   for (const r of labsWithDefaults) filters[r.field] = { gt: parseFloat(r.gt), lt: parseFloat(r.lt) };
-
-  //   setLabLoading(true); setLabErr("");
-  //   try {
-  //     const res = await fetch("https://gdmt.ca/PHP/database.php", {
-  //       method: "POST",
-  //       headers: { "Content-Type": "application/json" },
-  //       body: JSON.stringify({ script: "labRangeSearch", filters }),
-  //     });
-  //     const text = await res.text();
-  //     let data; try { data = JSON.parse(text); } catch { data = []; }
-
-  //     onResults?.(data);
-  //     updatePatientSearch?.({
-  //       ...(patientSearch || {}),
-  //       didSearch: true,
-  //       mode: "labs",
-  //       labFilters: filters,
-  //       results: Array.isArray(data) ? data : [],
-  //     });
-  //     setVisibleBox?.("searchResults");
-  //   } catch (e) {
-  //     setLabErr("Lab search failed. Check console.");
-  //     updatePatientSearch?.({
-  //       ...(patientSearch || {}),
-  //       didSearch: true,
-  //       mode: "labs",
-  //       labFilters: {},
-  //       results: [],
-  //     });
-  //     setVisibleBox?.("searchResults");
-  //   } finally {
-  //     setLabLoading(false);
-  //   }
-  // };
 
   // Med Category (ON)
 
@@ -374,40 +291,7 @@ const CriteriaSearch = ({ onResults }) => {
   };
   const clearMeds = () => { setCatSearchArray([]); setMedSelect(""); setMeds([]); setMedErr(""); };
 
-  // const handleMedSearch = async () => {
-  //   if (!catSearchArray.length) { setMedErr("Add at least one medication."); return; }
-  //   const ids = catSearchArray.map((m) => m.ID);
-  //   setMedLoading(true); setMedErr("");
-  //   try {
-  //     const res = await fetch("https://gdmt.ca/PHP/special.php", {
-  //       method: "POST",
-  //       headers: { "Content-Type": "application/json" },
-  //       body: JSON.stringify({ script: "medicationSearchByIds", ids }),
-  //     });
-  //     const text = await res.text();
-  //     let data; try { data = JSON.parse(text); } catch { data = []; }
 
-  //     onResults?.(data);
-  //     updatePatientSearch?.({
-  //       ...(patientSearch || {}),
-  //       didSearch: true,
-  //       mode: "medications",
-  //       meds: ids,
-  //       results: Array.isArray(data) ? data : [],
-  //     });
-  //     setVisibleBox?.("searchResults");
-  //   } catch (e) {
-  //     setMedErr("Medication search failed. Check console.");
-  //     updatePatientSearch?.({
-  //       ...(patientSearch || {}),
-  //       didSearch: true,
-  //       mode: "medications",
-  //       meds: [],
-  //       results: [],
-  //     });
-  //     setVisibleBox?.("searchResults");
-  //   } finally { setMedLoading(false); }
-  // };
 
   // Not-on Med Category (OFF)
   const addNonMed = (val) => {
@@ -422,45 +306,11 @@ const CriteriaSearch = ({ onResults }) => {
   };
   const clearNonMeds = () => { setNonMedCatSearchArray([]); setNonMedSelect(""); setNonMedErr(""); };
 
-  // const handleNonMedSearch = async () => {
-  //   if (!nonMedCatSearchArray.length) { setNonMedErr("Add at least one medication category to exclude."); return; }
-  //   const ids = nonMedCatSearchArray.map((m) => m.ID);
-  //   setNonMedLoading(true); setNonMedErr("");
-  //   try {
-  //     const res = await fetch("https://gdmt.ca/PHP/special.php", {
-  //       method: "POST",
-  //       headers: { "Content-Type": "application/json" },
-  //       body: JSON.stringify({ script: "notOnMedicationByCategoryIds", ids }),
-  //     });
-  //     const text = await res.text();
-  //     let data; try { data = JSON.parse(text); } catch { data = []; }
-
-  //     onResults?.(data);
-  //     updatePatientSearch?.({
-  //       ...(patientSearch || {}),
-  //       didSearch: true,
-  //       mode: "not-on-meds",
-  //       nonMedCats: ids,
-  //       results: Array.isArray(data) ? data : [],
-  //     });
-  //     setVisibleBox?.("searchResults");
-  //   } catch (e) {
-  //     setNonMedErr("Not-on-medication search failed. Check console.");
-  //     updatePatientSearch?.({
-  //       ...(patientSearch || {}),
-  //       didSearch: true,
-  //       mode: "not-on-meds",
-  //       nonMedCats: [],
-  //       results: [],
-  //     });
-  //     setVisibleBox?.("searchResults");
-  //   } finally { setNonMedLoading(false); }
-  // };
-
   // ─────────────── SUPER SEARCH ───────────────
   const [superLoading, setSuperLoading] = useState(false);
 
   const handleSuperSearch = async () => {
+    setPatientArray([])
     const conditionCodes = displayConds.map((x) => x.code).filter(Boolean);
 
     // Only send labs that have at least one bound filled
@@ -473,6 +323,7 @@ const CriteriaSearch = ({ onResults }) => {
     const medCategoryIds = catSearchArray.map((m) => m.ID);
     const nonMedCategoryIds = nonMedCatSearchArray.map((m) => m.ID);
 
+
     setSuperLoading(true);
     try {
       const res = await fetch("https://gdmt.ca/PHP/supersearch.php", {
@@ -484,6 +335,7 @@ const CriteriaSearch = ({ onResults }) => {
           conditionCodes,
           appointmentDate,
           medCategoryIds,        // ✅ on-meds
+          providerId,
           nonMedCategoryIds,
           patientDB: user?.patientTable || "Patient",
           historyDB: user?.historyTable || "Patient_History"
@@ -493,13 +345,14 @@ const CriteriaSearch = ({ onResults }) => {
       let data; try { data = JSON.parse(text); } catch { data = []; }
 
       onResults?.(data);
+      setPatientArray?.(Array.isArray(data) ? data : []);
       updatePatientSearch?.({
         ...(patientSearch || {}),
         didSearch: true,
         mode: "super",
         results: Array.isArray(data) ? data : [],
       });
-      setVisibleBox?.("searchResults");
+      setVisibleBox?.("results");
     } catch (e) {
       console.error("Super Search failed:", e);
       updatePatientSearch?.({
@@ -508,7 +361,7 @@ const CriteriaSearch = ({ onResults }) => {
         mode: "super",
         results: [],
       });
-      setVisibleBox?.("searchResults");
+      setVisibleBox?.("results");
     } finally {
       setSuperLoading(false);
     }
@@ -520,6 +373,7 @@ const CriteriaSearch = ({ onResults }) => {
     clearMeds();
     clearNonMeds();
     setAppointmentDate("");
+    setProviderID(null);
   };
 
   const hasOn = Array.isArray(catSearchArray) && catSearchArray.length > 0;
@@ -528,72 +382,103 @@ const CriteriaSearch = ({ onResults }) => {
   // ─────────────── UI ───────────────
   return (
     <div className="p-2">
-      <div className="row g-2">
-        {/* LEFT: Builders */}
-        <div className="col-32">
-          {/* Extra Search Details */}
-          <div className="d-flex align-items-center justify-content-between mb-2">
-            <h5 className="m-0 ps-4">Extra Search Details</h5>
-            <div className="d-flex gap-2 align-items-center">
-              <label htmlFor="AppointmentDate" className="me-2 mb-0">Appointment Date:</label>
-              <input
-                type="date"
-                id="AppointmentDate"
-                className="form-control form-control-sm"
-                style={{ width: 180 }}
-                value={appointmentDate}
-                onChange={(e) => setAppointmentDate(e.target.value)}
-              />
-              <button className="btn btn-danger" onClick={() => setAppointmentDate("")} disabled={superLoading}>
-                Clear Date
-              </button>
-            </div>
-            <div className="text-center alert-warning">
-              <select className="form-select form-select-sm" disabled>
-                <option value="">Provider (Coming Soon)</option>
+      <div className="col-48">
+        <div className="d-flex align-items-center justify-content-between">
+          <h5 className="m-0">Super Search</h5>
+          <div className="d-flex gap-2">
+            <button className="btn btn-outline-danger btn-sm" onClick={clearAll}>
+              Clear All
+            </button>
+            <button
+              className="btn btn-success btn-sm text-white"
+              onClick={handleSuperSearch}
+              disabled={false}
+              title="Runs one query using all selected criteria"
+            >
+              {superLoading ? "Super Searching…" : "Run Super Search"}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Extra Search Details — horizontal layout for the four columns */}
+      <div className="col-48 border rounded p-3 mt-3">
+        <div className="d-flex align-items-center justify-content-between mb-3">
+          <div className="d-flex gap-2 align-items-center col-25">
+            <label htmlFor="AppointmentDate" className="me-2 mb-0">Appointment Date:</label>
+            <input
+              type="date"
+              id="AppointmentDate"
+              className="form-control form-control-sm"
+              style={{ width: 180 }}
+              value={appointmentDate}
+              onChange={(e) => setAppointmentDate(e.target.value)}
+            />
+            <button className="btn btn-outline-danger" onClick={() => setAppointmentDate("")} disabled={superLoading}>
+              Clear Date
+            </button>
+          </div>
+          <div className="flex-grow-1  d-flex align-items-center justify-content-center gap-2 rounded">
+            <div className={`col-22 text-end`}>Choose Provider</div>
+            <div className="col-24">
+              <select
+                className={`form-select fs-7 ${providerId !== null ? 'alert-success' : ''}`}
+                value={providerId ?? ""}
+                onChange={(e) => {
+                  const val = e.target.value || null; // "" -> null
+                  setProviderID(val);
+                }}
+              >
+                <option value="">Select Provider</option>
+                {Array.isArray(patientProvider) && patientProvider.map((p) => {
+                  const id = p?.id != null ? String(p.id) : "";
+                  const label = String(p?.providerName ?? p?.name ?? p?.displayName ?? id);
+                  return (
+                    <option key={id || label} value={id}>
+                      {label}
+                    </option>
+                  );
+                })}
               </select>
+
             </div>
           </div>
+        </div>
 
-          {/* Condition Search */}
-          <div className="d-flex align-items-center justify-content-between mb-2">
-            <h5 className="m-0 ps-4">Condition Search</h5>
-            <div className="d-flex gap-2">
-              <button className="btn btn-danger" onClick={clearConditions} disabled={condLoading}>
+        {/* Four-column horizontal layout */}
+        <div className="row g-1">
+          {/* Conditions */}
+          <div className="col-11 p-0">
+            <div className="d-flex align-items-center justify-content-between mb-2 ps-3 pe-2">
+              <h6 className="m-0">Conditions</h6>
+              <button className="btn btn-sm btn-outline-danger" onClick={clearConditions} disabled={condLoading}>
                 Clear
               </button>
             </div>
-          </div>
-          {condErr && <div className="alert alert-danger py-1">{condErr}</div>}
+            {condErr &&
+              <div className="alert alert-danger py-1">{condErr}</div>}
+            <div className="p-2">
+              <select
+                className="form-select form-select-sm mb-2"
+                value={condSelect}
+                onChange={(e) => addCondition(e.target.value)}
+              >
+                <option value="">— Choose a condition —</option>
+                {normalizedConditions.map((c) => (
+                  <option key={c.value} value={c.value}>
+                    {c.label}{c.code ? ` (${c.code})` : ""}
+                  </option>
+                ))}
+              </select>
 
-          <div className="border rounded p-2 mb-3">
-            <div className="row g-2 align-items-end mb-2">
-              <div className="col-20">
-                <select
-                  className="form-select form-select-sm"
-                  value={condSelect}
-                  onChange={(e) => addCondition(e.target.value)}
-                >
-                  <option value="">— Choose a condition —</option>
-                  {normalizedConditions.map((c) => (
-                    <option key={c.value} value={c.value}>
-                      {c.label}{c.code ? ` (${c.code})` : ""}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="border rounded p-2">
               {displayConds.length === 0 ? (
                 <div className="text-muted small"><em>No conditions added.</em></div>
               ) : (
-                <div className="row row-cols-4 g-2">
+                <div className="row row-cols-1 g-2">
                   {conditionSearchArray.map((c, i) => (
                     <div key={i} className="col">
-                      <div className="text-start p-1 fw-bold text-navy border-bottom border-navy border-2">
-                        <span>{c.condition_name}</span>
-                        {c.condition_code ? <span>{` (${c.condition_code})`}</span> : null}
+                      <div className="text-start ps-1 text-purple border-bottom border-navy border-1 fs-6" style={{ height: "50px", lineHeight: "50px" }}>
+                        <span className="text-truncate fs-7">{c.condition_name}</span>
                       </div>
                     </div>
                   ))}
@@ -602,49 +487,43 @@ const CriteriaSearch = ({ onResults }) => {
             </div>
           </div>
 
-          {/* Lab Search */}
-          <div className="d-flex align-items-center justify-content-between mb-2">
-            <h5 className="m-0 ps-4">Lab Search</h5>
-            <div className="d-flex gap-2">
-              <button className="btn btn-danger" onClick={clearLabs} disabled={labLoading}>
+          {/* Lab Ranges */}
+          <div className="col-17">
+            <div className="d-flex align-items-center justify-content-between mb-2 ps-3 pe-2">
+              <h6 className="m-0">Lab Ranges</h6>
+              <button className="btn btn-sm btn-outline-danger" onClick={clearLabs} disabled={labLoading}>
                 Clear
               </button>
             </div>
-          </div>
-          {labErr && <div className="alert alert-danger py-1">{labErr}</div>}
+            {labErr &&
+              <div className="py-1">{labErr}</div>}
+            <div className="p-2">
+              <select
+                className="form-select form-select-sm mb-2"
+                value={labSelect}
+                onChange={(e) => {
+                  setLabSelect(e.target.value);
+                  if (e.target.value) addLab(e.target.value);
+                }}
+              >
+                <option value="">— Choose a lab —</option>
+                {LAB_FIELDS.map(([key, label]) => (
+                  <option key={key} value={key}>{label}</option>
+                ))}
+              </select>
 
-          <div className="border rounded p-2 mb-3">
-            <div className="row g-2 align-items-end mb-2">
-              <div className="col-20">
-                <select
-                  className="form-select form-select-sm"
-                  value={labSelect}
-                  onChange={(e) => {
-                    setLabSelect(e.target.value);
-                    if (e.target.value) addLab(e.target.value);
-                  }}
-                >
-                  <option value="">— Choose a lab —</option>
-                  {LAB_FIELDS.map(([key, label]) => (
-                    <option key={key} value={key}>{label}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="border rounded p-2">
               {labs.length === 0 ? (
                 <div className="text-muted small"><em>No labs added.</em></div>
               ) : (
-                <div className="row g-2">
+                <div className="d-flex flex-column gap-2">
                   {labs.map((r, i) => {
                     const label = LAB_FIELDS.find(([k]) => k === r.field)?.[1] || r.field;
                     return (
-                      <div key={`${r.field}_${i}`} className="col-24">
-                        <div className="border rounded p-2 d-flex align-items-center gap-2">
-                          <div className="text-purple fw-bold flex-grow-1">{`Search Lab ${i + 1}: ${label}`}</div>
-                          <div className="d-flex align-items-center gap-2">
-                            <span className="text-danger fw-bold">&gt;</span>
+                      <div key={`${r.field}_${i}`} className="d-flex align-items-center border-bottom border-secondary" style={{ height: "50px", lineHeight: "50px" }}>
+                        <div className="text-purple fs-7 col-20 overflow-hidden">{`${label}`}</div>
+                        <div className="d-flex align-items-center gap-2 flex-grow-1">
+
+                          <div className="col-16">
                             <input
                               className={`form-control form-control-sm ${r.gt ? "alert-success" : ""}`}
                               placeholder="min"
@@ -653,7 +532,8 @@ const CriteriaSearch = ({ onResults }) => {
                               style={{ width: 90 }}
                               inputMode="decimal"
                             />
-                            <span className="text-danger fw-bold">&lt;</span>
+                          </div>
+                          <div className="col-16 ps-1">
                             <input
                               className={`form-control form-control-sm ${r.lt ? "alert-success" : ""}`}
                               placeholder="max"
@@ -662,8 +542,10 @@ const CriteriaSearch = ({ onResults }) => {
                               style={{ width: 90 }}
                               inputMode="decimal"
                             />
+                          </div>
+                          <div className="col-16 text-end pe-3">
                             <button className="btn btn-sm btn-outline-danger" onClick={() => removeLab(i)}>
-                              Remove
+                              X
                             </button>
                           </div>
                         </div>
@@ -675,201 +557,98 @@ const CriteriaSearch = ({ onResults }) => {
             </div>
           </div>
 
-          {/* Medication Category Search (ON) */}
-          <div className="d-flex align-items-center justify-content-between mb-2">
-            <h5 className="m-0 ps-4">Medication Category Search</h5>
-            <div className="d-flex gap-2">
-              <button className="btn btn-danger" onClick={clearMeds} disabled={medLoading}>
+          {/* Medication Category (ON) */}
+          <div className="col-10">
+            <div className="d-flex align-items-center justify-content-between mb-2 ps-3 pe-2">
+              <h6 className="m-0">On Medication</h6>
+              <button className="btn btn-sm btn-outline-danger" onClick={clearMeds} disabled={medLoading}>
                 Clear
               </button>
             </div>
-          </div>
-          {medErr && <div className="alert alert-danger py-1">{medErr}</div>}
+            {medErr &&
+              <div className="alert alert-danger py-1">{medErr}</div>}
+            <div className="p-2">
+              <select
+                className="form-select form-select-sm mb-2"
+                value={medSelect}
+                onChange={(e) => addMed(e.target.value)}
+              >
+                <option value="">— Choose medication</option>
+                {Array.isArray(medsCategory) && medsCategory.length > 0
+                  ? medsCategory.map((m) => {
+                    const id = String(m?.ID ?? m?.id ?? "");
+                    const label = String(m?.medication_cat);
+                    return <option key={id} value={id}>{label}</option>;
+                  })
+                  : null}
+              </select>
 
-          <div className="border rounded p-2 mb-3">
-            <div className="row g-2 align-items-end mb-2">
-              <div className="col-24 col-md-20">
-                <select
-                  className="form-select form-select-sm"
-                  value={medSelect}
-                  onChange={(e) => addMed(e.target.value)}
-                >
-                  <option value="">— Choose a medication category —</option>
-                  {Array.isArray(medsCategory) && medsCategory.length > 0
-                    ? medsCategory.map((m) => {
-                      const id = String(m?.ID ?? m?.id ?? "");
-                      const label = String(m?.medication_cat);
-                      return <option key={id} value={id}>{label}</option>;
-                    })
-                    : null}
-                </select>
-              </div>
-            </div>
-
-            <div className="border rounded p-2">
               {catSearchArray.length === 0 ? (
-                <div className="text-muted small"><em>No medication categories added.</em></div>
+                <div className="text-muted small"><em>No medications added.</em></div>
               ) : (
-                <div className="row row-cols-4 g-2">
+                <div className="row row-cols-1 g-2">
                   {catSearchArray.map((c, i) => (
                     <div key={c.ID ?? i} className="col">
-                      <div className="text-start p-1 text-purple fw-bold">
-                        <span>{c.medication_cat}</span>{c.ID ? <span>{` (#${c.ID})`}</span> : null}
+                      <div
+                        className="text-start ps-1 text-purple border-bottom border-navy border-1 fs-6"
+                        style={{ height: "50px", lineHeight: "50px" }}
+                      >
+                        <span className="text-truncate fs-7" title={c.medication_cat}>
+                          {c.medication_cat}
+                        </span>
                       </div>
                     </div>
                   ))}
                 </div>
               )}
+
             </div>
           </div>
 
-          {/* Not on Medication Search (OFF) */}
-          <div className="d-flex align-items-center justify-content-between mb-2">
-            <h5 className="m-0 ps-4 text-danger mt-3 mb-1">Not on Medication Search</h5>
-            <div className="d-flex gap-2">
-              <button className="btn btn-danger" onClick={clearNonMeds} disabled={nonMedLoading}>
+          {/* Not on Medication (OFF) */}
+          <div className="col-10">
+            <div className="d-flex align-items-center justify-content-between mb-2 ps-3 pe-2">
+              <h6 className="m-0 text-danger">Not On Medication</h6>
+              <button className="btn btn-sm btn-outline-danger" onClick={clearNonMeds} disabled={nonMedLoading}>
                 Clear
               </button>
             </div>
-          </div>
-          {nonMedErr && <div className="alert alert-danger py-1">{nonMedErr}</div>}
+            {nonMedErr && <div className="alert alert-danger py-1">{nonMedErr}</div>}
+            <div className="p-2">
+              <select
+                className="form-select form-select-sm mb-2"
+                value={nonMedSelect}
+                onChange={(e) => addNonMed(e.target.value)}
+              >
+                <option value="">— Choose a medication —</option>
+                {Array.isArray(medsCategory) && medsCategory.length > 0
+                  ? medsCategory.map((m) => {
+                    const id = String(m?.ID ?? m?.id ?? "");
+                    const label = String(m?.medication_cat);
+                    return <option key={id} value={id}>{label}</option>;
+                  })
+                  : null}
+              </select>
 
-          <div className="border rounded p-2">
-            <div className="row g-2 align-items-end mb-2">
-              <div className="col-24 col-md-20">
-                <select
-                  className="form-select form-select-sm"
-                  value={nonMedSelect}
-                  onChange={(e) => addNonMed(e.target.value)}
-                >
-                  <option value="">— Choose a medication category —</option>
-                  {Array.isArray(medsCategory) && medsCategory.length > 0
-                    ? medsCategory.map((m) => {
-                      const id = String(m?.ID ?? m?.id ?? "");
-                      const label = String(m?.medication_cat);
-                      return <option key={id} value={id}>{label}</option>;
-                    })
-                    : null}
-                </select>
-              </div>
-            </div>
-
-            <div className="border rounded p-2">
               {nonMedCatSearchArray.length === 0 ? (
                 <div className="text-muted small"><em>No categories selected.</em></div>
               ) : (
-                <div className="row row-cols-4 g-2">
+                <div className="row row-cols-1 g-2">
                   {nonMedCatSearchArray.map((c, i) => (
                     <div key={c.ID ?? i} className="col">
-                      <div className="text-start p-1 text-purple fw-bold">
-                        <span>{c.medication_cat}</span>{c.ID ? <span>{` (#${c.ID})`}</span> : null}
+                      <div
+                        className="text-start ps-1 text-danger border-bottom border-navy border-1 fs-6"
+                        style={{ height: "50px", lineHeight: "50px" }}
+                      >
+                        <span className="text-truncate fs-7" title={c.medication_cat}>
+                          {c.medication_cat}
+                        </span>
                       </div>
                     </div>
                   ))}
                 </div>
               )}
-            </div>
-          </div>
-        </div>
 
-        {/* RIGHT: Super Search Mirror */}
-        <div className="col-16">
-          <div className="border rounded p-3 h-100">
-            <div className="d-flex align-items-center justify-content-between">
-              <h5 className="m-0">Super Search</h5>
-              <div className="d-flex gap-2">
-                <button className="btn btn-outline-secondary btn-sm" onClick={clearAll}>
-                  Clear All
-                </button>
-                <button
-                  className="btn btn-primary btn-sm text-white"
-                  onClick={handleSuperSearch}
-                  disabled={false}
-                  title="Runs one query using all selected criteria"
-                >
-                  {superLoading ? "Super Searching…" : "Run Super Search"}
-                </button>
-              </div>
-            </div>
-
-            {/* Summary mirror */}
-            <div className="mt-3">
-              <div className="mb-2">
-                <div className="fw-semibold small text-primary fw-bold">Appointment Date</div>
-                <div className="alert alert-light py-2 mb-0">
-                  {appointmentDate ? appointmentDate : <em>None selected</em>}
-                </div>
-              </div>
-
-              <div className="mb-2">
-                <div className="fw-semibold small text-primary fw-bold">Conditions</div>
-                {displayConds.length ? (
-                  <ul className="mb-0">
-                    {displayConds.map((c, i) => (
-                      <li key={i}>
-                        {c.name}{c.code ? ` (${c.code})` : ""}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <div className="text-muted small"><em>No conditions selected</em></div>
-                )}
-              </div>
-
-              <div className="mb-2">
-                <div className="fw-semibold small text-primary fw-bold">Lab Ranges</div>
-                {labs.length ? (
-                  <ul className="mb-0">
-                    {labs.map((r, i) => {
-                      const label = LAB_FIELDS.find(([k]) => k === r.field)?.[1] || r.field;
-                      const min = String(r.gt ?? "").trim();
-                      const max = String(r.lt ?? "").trim();
-                      const parts = [];
-                      if (min) parts.push(`>${min}`);
-                      if (max) parts.push(`<${max}`);
-                      return (
-                        <li key={`${r.field}-${i}`}>
-                          {label}: {parts.length ? parts.join(" & ") : "—"}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                ) : (
-                  <div className="text-muted small"><em>No labs selected</em></div>
-                )}
-              </div>
-
-              {/* ✅ Always show both ON and OFF medication selections — no restriction */}
-              <div className="mb-2">
-                <div className="fw-semibold small text-primary fw-bold">On Medication</div>
-                {hasOn ? (
-                  <ul className="mb-0">
-                    {catSearchArray.map((c, i) => (
-                      <li key={c?.ID ?? `on-${i}`}>
-                        {c?.medication_cat}{c?.ID ? ` (#${c.ID})` : ""}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <div className="text-muted small"><em>No Medications selected</em></div>
-                )}
-              </div>
-
-              <div className="mb-2">
-                <div className="fw-semibold small text-danger fw-bold">NOT On Medications</div>
-                {hasNot ? (
-                  <ul className="mb-0">
-                    {nonMedCatSearchArray.map((c, i) => (
-                      <li key={c?.ID ?? `not-${i}`}>
-                        {c?.medication_cat}{c?.ID ? ` (#${c.ID})` : ""}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <div className="text-muted small"><em>No Non Medications selected</em></div>
-                )}
-              </div>
-              {/* End summary mirror */}
             </div>
           </div>
         </div>

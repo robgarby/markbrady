@@ -19,8 +19,8 @@ $input = file_get_contents('php://input');
 $data = json_decode($input, true);
 ;
 
-$patientTable =  $data['patientDB'] ?? 'Patient';
-$historyTable =  $data['historyDB'] ?? 'Patient_History';
+$patientTable = $data['patientDB'] ?? 'Patient';
+$historyTable = $data['historyDB'] ?? 'Patient_History';
 
 // print_r($data);
 // exit;
@@ -60,21 +60,39 @@ if ($data['script'] === 'updateClientMeds') {
 }
 
 if ($data['script'] === 'updateRecommendations') {
-    $patientId = $data['patientID'];
-    $recommendations = $data['recommendations'];
+    $patientId = $data['patientID'] ?? null;
+    $recommendations = $data['recommendations'] ?? null; // can be null to clear
+
+    if (!$patientId) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'error' => 'Missing patient ID']);
+        exit;
+    }
+
     $stmt = $conn->prepare("UPDATE `$patientTable` SET recommendations = ? WHERE id = ?");
+    if (!$stmt) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Prepare failed', 'details' => $conn->error]);
+        exit;
+    }
+
     $stmt->bind_param("si", $recommendations, $patientId);
 
     if ($stmt->execute()) {
         http_response_code(200);
-        echo json_encode(['success' => true]);
+        echo json_encode(['success' => true, 'affected_rows' => $stmt->affected_rows]);
+        $stmt->close();
+        // $conn->close(); // close at end of script if you do that elsewhere
+        exit;
     } else {
         http_response_code(500);
-        echo json_encode(['success' => false]);
+        echo json_encode(['success' => false, 'error' => 'Query failed', 'details' => $stmt->error]);
+        $stmt->close();
+        // $conn->close();
+        exit;
     }
-    $stmt->close();
-    exit;
 }
+
 
 if ($data['script'] === 'getPatientById') {
     // header('Content-Type: application/json; charset=utf-8');
@@ -147,6 +165,137 @@ if ($data['script'] === 'loadConditionData') {
 
     exit;
 }
+
+
+if ($data['script'] === 'saveLabs') {
+    $patientId  = $data['patientID']   ?? null;
+    $patientTbl = $data['patientDB']   ?? $patientTable;   // fallback to default table
+
+    if (!$patientId) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'error' => 'Missing patient ID']);
+        exit;
+    }
+
+    // Gather all fields (nullable strings are fine for decimals/dates)
+    $cholesterol = $data['cholesterol'] ?? null;
+    $cholesterolDate = $data['cholesterolDate'] ?? null;
+    $triglyceride = $data['triglyceride'] ?? null;
+    $triglycerideDate = $data['triglycerideDate'] ?? null;
+    $hdl = $data['hdl'] ?? null;
+    $hdlDate = $data['hdlDate'] ?? null;
+    $ldl = $data['ldl'] ?? null;
+    $ldlDate = $data['ldlDate'] ?? null;
+    $nonHdl = $data['nonHdl'] ?? null;
+    $nonHdlDate = $data['nonHdlDate'] ?? null;
+    $cholesterolHdlRatio = $data['cholesterolHdlRatio'] ?? null;
+    $cholesterolHdlRatioDate = $data['cholesterolHdlRatioDate'] ?? null;
+    $creatineKinase = $data['creatineKinase'] ?? null;
+    $creatineKinaseDate = $data['creatineKinaseDate'] ?? null; // ← fixed
+    $alanineAminotransferase = $data['alanineAminotransferase'] ?? null;
+    $alanineAminotransferaseDate = $data['alanineAminotransferaseDate'] ?? null;
+    $lipoproteinA = $data['lipoproteinA'] ?? null;
+    $lipoproteinADate = $data['lipoproteinADate'] ?? null;
+    $apolipoproteinB = $data['apolipoproteinB'] ?? null;
+    $apolipoproteinBDate = $data['apolipoproteinBDate'] ?? null;
+    $natriureticPeptideB = $data['natriureticPeptideB'] ?? null;
+    $natriureticPeptideBDate = $data['natriureticPeptideBDate'] ?? null;
+    $urea = $data['urea'] ?? null;
+    $ureaDate = $data['ureaDate'] ?? null;
+    $creatinine = $data['creatinine'] ?? null;
+    $creatinineDate = $data['creatinineDate'] ?? null;
+    $gfr = $data['gfr'] ?? null;
+    $gfrDate = $data['gfrDate'] ?? null;
+    $albumin = $data['albumin'] ?? null;
+    $albuminDate = $data['albuminDate'] ?? null;
+    $sodium = $data['sodium'] ?? null;
+    $sodiumDate = $data['sodiumDate'] ?? null;
+    $potassium = $data['potassium'] ?? null;
+    $potassiumDate = $data['potassiumDate'] ?? null;
+    $vitaminB12 = $data['vitaminB12'] ?? null;
+    $vitaminB12Date = $data['vitaminB12Date'] ?? null;
+    $ferritin = $data['ferritin'] ?? null;
+    $ferritinDate = $data['ferritinDate'] ?? null;
+    $hemoglobinA1C = $data['hemoglobinA1C'] ?? null;
+    $hemoglobinA1CDate = $data['hemoglobinA1CDate'] ?? null;
+    $urineAlbumin = $data['urineAlbumin'] ?? null;
+    $urineAlbuminDate = $data['urineAlbuminDate'] ?? null;
+    $albuminCreatinineRatio = $data['albuminCreatinineRatio'] ?? null;
+    $albuminCreatinineRatioDate = $data['albuminCreatinineRatioDate'] ?? null;
+
+    $sql = "UPDATE `$patientTbl` SET
+        cholesterol = ?, cholesterolDate = ?,
+        triglyceride = ?, triglycerideDate = ?,
+        hdl = ?, hdlDate = ?,
+        ldl = ?, ldlDate = ?,
+        nonHdl = ?, nonHdlDate = ?,
+        cholesterolHdlRatio = ?, cholesterolHdlRatioDate = ?,
+        creatineKinase = ?, creatineKinaseDate = ?,       -- ← fixed column
+        alanineAminotransferase = ?, alanineAminotransferaseDate = ?,
+        lipoproteinA = ?, lipoproteinADate = ?,
+        apolipoproteinB = ?, apolipoproteinBDate = ?,
+        natriureticPeptideB = ?, natriureticPeptideBDate = ?,
+        urea = ?, ureaDate = ?,
+        creatinine = ?, creatinineDate = ?,
+        gfr = ?, gfrDate = ?,
+        albumin = ?, albuminDate = ?,
+        sodium = ?, sodiumDate = ?,
+        potassium = ?, potassiumDate = ?,
+        vitaminB12 = ?, vitaminB12Date = ?,
+        ferritin = ?, ferritinDate = ?,
+        hemoglobinA1C = ?, hemoglobinA1CDate = ?,
+        urineAlbumin = ?, urineAlbuminDate = ?,
+        albuminCreatinineRatio = ?, albuminCreatinineRatioDate = ?
+        WHERE id = ?";
+
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Prepare failed', 'details' => $conn->error]);
+        exit;
+    }
+
+    // 44 strings + 1 int id
+    $stmt->bind_param(
+        str_repeat('s', 44) . 'i',
+        $cholesterol, $cholesterolDate,
+        $triglyceride, $triglycerideDate,
+        $hdl, $hdlDate,
+        $ldl, $ldlDate,
+        $nonHdl, $nonHdlDate,
+        $cholesterolHdlRatio, $cholesterolHdlRatioDate,
+        $creatineKinase, $creatineKinaseDate,   // ← fixed variable
+        $alanineAminotransferase, $alanineAminotransferaseDate,
+        $lipoproteinA, $lipoproteinADate,
+        $apolipoproteinB, $apolipoproteinBDate,
+        $natriureticPeptideB, $natriureticPeptideBDate,
+        $urea, $ureaDate,
+        $creatinine, $creatinineDate,
+        $gfr, $gfrDate,
+        $albumin, $albuminDate,
+        $sodium, $sodiumDate,
+        $potassium, $potassiumDate,
+        $vitaminB12, $vitaminB12Date,
+        $ferritin, $ferritinDate,
+        $hemoglobinA1C, $hemoglobinA1CDate,
+        $urineAlbumin, $urineAlbuminDate,
+        $albuminCreatinineRatio, $albuminCreatinineRatioDate,
+        $patientId
+    );
+
+    if ($stmt->execute()) {
+        http_response_code(200);
+        echo json_encode(['success' => true, 'affected_rows' => $stmt->affected_rows]);
+        $stmt->close();
+        exit;
+    } else {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Query failed', 'details' => $stmt->error]);
+        $stmt->close();
+        exit;
+    }
+}
+
 
 if ($data['script'] === 'saveConditionData') {
     $conditions = $data['conditions'];
@@ -567,7 +716,7 @@ if ($data['script'] === 'postMeds') {
         $existingMedCodes = array_filter(array_map('trim', explode(',', $existingMedData ?? '')));
         $incomingMedCodes = array_filter(array_map('trim', explode(',', $medicationIDs ?? '')));
 
- 
+
 
         // Merge and deduplicate
         $finalCodes = array_unique(array_merge($existingCodes, $incomingCodes));
@@ -591,20 +740,20 @@ if ($data['script'] === 'postMeds') {
     exit;
 }
 
-    if ($data['script'] === 'updatePatientRecommendations') {
-        $patientId = $data['patientID'] ?? null;
-        $recommendations = $data['recommendations'] ?? null;
-        if ($patientId !== null && $recommendations !== null) {
-            $stmt = $conn->prepare("UPDATE `$patientTable` SET recommendations = ? WHERE id = ?");
-            $stmt->bind_param("si", $recommendations, $patientId);
-            $success = $stmt->execute();
-            $stmt->close();
-            echo json_encode(['success' => $success]);
-        } else {
-            echo json_encode(['success' => false, 'error' => 'Missing patientID or recommendations']);
-        }
-        exit;
+if ($data['script'] === 'updatePatientRecommendations') {
+    $patientId = $data['patientID'] ?? null;
+    $recommendations = $data['recommendations'] ?? null;
+    if ($patientId !== null && $recommendations !== null) {
+        $stmt = $conn->prepare("UPDATE `$patientTable` SET recommendations = ? WHERE id = ?");
+        $stmt->bind_param("si", $recommendations, $patientId);
+        $success = $stmt->execute();
+        $stmt->close();
+        echo json_encode(['success' => $success]);
+    } else {
+        echo json_encode(['success' => false, 'error' => 'Missing patientID or recommendations']);
     }
+    exit;
+}
 // === In special.php ===
 
 
