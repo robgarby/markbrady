@@ -1,15 +1,19 @@
-import React, { createContext, useContext, useState, useCallback } from "react";
+// ZStack.context.jsx (minimal API)
+import React, { createContext, useContext, useRef } from "react";
+const ZCtx = createContext(null);
 
-const ZStackContext = createContext({ topKey: null, bringToFront: () => {} });
+export const ZStackProvider = ({ children, base = 500 }) => {
+  const topRef = useRef(base);
+  const zmap = useRef(new Map()); // id -> z
 
-export const useZStack = () => useContext(ZStackContext);
+  const bringToFront = (id) => {
+    const next = ++topRef.current;
+    zmap.current.set(id, next);
+    return next;
+  };
+  const getZ = (id) => zmap.current.get(id) ?? base;
 
-export const ZStackProvider = ({ children }) => {
-  const [topKey, setTopKey] = useState(null);
-  const bringToFront = useCallback((key) => setTopKey(key), []);
-  return (
-    <ZStackContext.Provider value={{ topKey, bringToFront }}>
-      {children}
-    </ZStackContext.Provider>
-  );
+  return <ZCtx.Provider value={{ bringToFront, getZ }}>{children}</ZCtx.Provider>;
 };
+
+export const useZStack = () => useContext(ZCtx);

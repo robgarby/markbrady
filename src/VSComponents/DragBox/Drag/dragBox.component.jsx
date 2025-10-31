@@ -1,210 +1,188 @@
-import React, { useEffect, useRef, useState } from "react";
-import { useZStack } from "../../../Context/ZStack.context.jsx"; // keep this path
+// src/components/DragBox/Drag/dragBox.component.jsx
+import React from "react";
 
-/**
- * DragBox
- * A generic, self-contained draggable card container.
- *
- * Props:
- * - storageKey: string (required)  // where we persist the position in localStorage
- * - defaultPos: { x:number, y:number } (required)
- * - title: string                   // main title text shown in the header
- * - width: number                   // fixed width (default 700)
- * - children: ReactNode             // content rendered inside card body
- * - onAddFunction?: () => void
- * - onAddText?: string
- * - addNote?: string               // send '-' to hide + button
- * - onClose?: () => void           // optional: parent callback when closed
- */
-const DragBox = ({
+const ZBus = (() => {
+  let top = 500;
+  const zmap = new Map();
+  return {
+    bringToFront(id) {
+      const next = ++top;
+      if (id) zmap.set(id, next);
+      return next;
+    },
+    getZ(id, fallback = top) {
+      return id ? (zmap.get(id) ?? fallback) : fallback;
+    },
+    peekTop() { return top; }
+  };
+})();
+
+const genId = (() => {
+  let n = 0;
+  return (prefix = "DRAGBOX") => `${prefix}_${++n}_${Date.now()}`;
+})();
+
+export default function DragBox({
+  id: propId,
+  title = "Window",
+  isOpen = true,
+  defaultPos = { x: 80, y: 80 },
   storageKey,
-  defaultPos,
-  title,
-  width,
-  children,
-  onAddFunction = null,
-  onAddText = "+",
-  addNote,
+  width = 540,
+  zIndexBase = 500,
   onClose,
-}) => {
-  // ---- load & persist position ----
-  const loadSavedPosition = () => {
+  className = "",
+  headerRight = null,
+  children,
+}) {
+  const idRef = React.useRef(propId || genId());
+  const id = idRef.current;
+  const boxWidth = typeof width === "number" ? `${width}px` : width;
+
+  const loadPos = React.useCallback(() => {
+    if (!storageKey) return defaultPos;
     try {
-      const saved = localStorage.getItem(storageKey);
-      return saved ? JSON.parse(saved) : defaultPos;
+      const raw = localStorage.getItem(storageKey);
+      if (!raw) return defaultPos;
+      const p = JSON.parse(raw);
+      if (typeof p?.x === "number" && typeof p?.y === "number") return p;
+      return defaultPos;
     } catch {
       return defaultPos;
     }
-  };
+  }, [storageKey, defaultPos]);
 
-  const [position, setPosition] = useState(loadSavedPosition);
-  const [dragging, setDragging] = useState(false);
-  const dragOffsetRef = useRef({ x: 0, y: 0 });
+  const [pos, setPos] = React.useState(loadPos);
+  const posRef = React.useRef(pos);
+  React.useEffect(() => { posRef.current = pos; }, [pos]);
 
-  // NEW: local UI state
-  const [minimized, setMinimized] = useState(false);
-  const [closed, setClosed] = useState(false);
+  const [z, setZ] = React.useState(() => ZBus.getZ(id, zIndexBase));
 
-  // ---- z-index stack ----
-  const zCtx = useZStack?.();
-  const bringToFront = zCtx?.bringToFront;
-  const topKey = zCtx?.topKey;
-  const isTop = topKey === storageKey;
-  const zIndex = isTop ? 600 : 500; // active box sits on top
+  // bring to front on mount
+  React.useEffect(() => {
+    setZ(ZBus.bringToFront(id));
+  }, [id]);
 
-  const onMouseDown = (e) => {
-    if (e.button !== 0) return;
-    bringToFront?.(storageKey); // focus this box
-    setDragging(true);
-    dragOffsetRef.current = {
-      x: e.clientX - position.x,
-      y: e.clientY - position.y,
-    };
-  };
-
-  const onMouseMove = (e) => {
-    if (!dragging) return;
-    const next = {
-      x: e.clientX - dragOffsetRef.current.x,
-      y: e.clientY - dragOffsetRef.current.y,
-    };
-    setPosition(next);
-  };
-
-  const onMouseUp = (e) => {
-    if (!dragging) return;
-    setDragging(false);
-    const finalPos = {
-      x: e.clientX - dragOffsetRef.current.x,
-      y: e.clientY - dragOffsetRef.current.y,
-    };
-    setPosition(finalPos);
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(finalPos));
-    } catch {}
-  };
-
-  useEffect(() => {
-    if (dragging) {
-      window.addEventListener("mousemove", onMouseMove);
-      window.addEventListener("mouseup", onMouseUp);
-    } else {
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", onMouseUp);
+  // bring to front when re-shown
+  const prevOpen = usePrevious(isOpen);
+  React.useEffect(() => {
+    if (isOpen && prevOpen === false) {
+      setZ(ZBus.bringToFront(id));
     }
-    return () => {
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", onMouseUp);
-    };
-  }, [dragging]);
+  }, [isOpen, prevOpen, id]);
 
-  // Close handler: hide locally, notify parent if provided
-  const handleClose = (e) => {
-    e?.stopPropagation?.();
-    setClosed(true);
-    onClose?.();
+  const dragRef = React.useRef({
+    active: false, startX: 0, startY: 0, origX: 0, origY: 0,
+  });
+
+  const startDrag = (clientX, clientY) => {
+    dragRef.current.active = true;
+    dragRef.current.startX = clientX;
+    dragRef.current.startY = clientY;
+    dragRef.current.origX = posRef.current.x;
+    dragRef.current.origY = posRef.current.y;
+  };
+  const moveDrag = (clientX, clientY) => {
+    if (!dragRef.current.active) return;
+    const dx = clientX - dragRef.current.startX;
+    const dy = clientY - dragRef.current.startY;
+    setPos({ x: dragRef.current.origX + dx, y: dragRef.current.origY + dy });
+  };
+  const endDrag = () => {
+    if (!dragRef.current.active) return;
+    dragRef.current.active = false;
+    // Persist using the ref (latest position)
+    if (storageKey) {
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(posRef.current));
+      } catch {}
+    }
+    // remove listeners
+    document.removeEventListener("mousemove", onMouseMove);
+    document.removeEventListener("mouseup", onMouseUp);
+    document.removeEventListener("touchmove", onTouchMove);
+    document.removeEventListener("touchend", onTouchEnd);
   };
 
-  if (closed) return null;
+  const onMouseDownHeader = (e) => {
+    setZ(ZBus.bringToFront(id));
+    startDrag(e.clientX, e.clientY);
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  };
+  const onMouseMove = (e) => moveDrag(e.clientX, e.clientY);
+  const onMouseUp = () => endDrag();
+
+  const onTouchStartHeader = (e) => {
+    const t = e.touches?.[0];
+    if (!t) return;
+    setZ(ZBus.bringToFront(id));
+    startDrag(t.clientX, t.clientY);
+    document.addEventListener("touchmove", onTouchMove, { passive: false });
+    document.addEventListener("touchend", onTouchEnd);
+  };
+  const onTouchMove = (e) => {
+    const t = e.touches?.[0];
+    if (!t) return;
+    e.preventDefault();
+    moveDrag(t.clientX, t.clientY);
+  };
+  const onTouchEnd = () => endDrag();
+
+  const onBoxMouseDown = () => {
+    if (z < ZBus.peekTop()) setZ(ZBus.bringToFront(id));
+  };
+
+  const [minimized, setMinimized] = React.useState(false);
+
+  if (!isOpen) return null;
 
   return (
     <div
-      onMouseDown={() => bringToFront?.(storageKey)} // bring to front on any click in the card
-      style={{
-        position: "absolute",
-        left: position.x,
-        top: position.y,
-        zIndex,
-        minWidth: width,
-        maxWidth: width,
-        border: "2px solid var(--bs-secondary)",
-        borderRadius: 8,
-        backgroundColor: "var(--bs-body-bg)",
-        boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
-      }}
-      className="card shadow-sm"
+      className={`dragbox shadow ${className}`}
+      onMouseDown={onBoxMouseDown}
+      style={{ position: "absolute", left: `${pos.x}px`, top: `${pos.y}px`, width: boxWidth, zIndex: z }}
     >
       <div
-        className="card-header d-flex align-items-center p-0"
-        onMouseDown={onMouseDown}
-        style={{ cursor: "grab", userSelect: "none" }}
-        title="Drag"
+        className="d-flex align-items-center bg-light border-bottom px-2 py-1"
+        style={{ cursor: "move", userSelect: "none", touchAction: "none" }}
+        onMouseDown={onMouseDownHeader}
+        onTouchStart={onTouchStartHeader}
       >
-        <div
-          className="d-flex align-items-center col-48 p-1"
-          style={{ backgroundColor: "rgba(207, 237, 237, 0.1)" }}
+        <button
+          type="button"
+          className="btn btn-sm btn-outline-primary me-2"
+          onClick={(e) => { e.stopPropagation(); setMinimized((m) => !m); }}
+          title={minimized ? "Restore" : "Minimize"}
         >
-          {/* Minimize button (left) */}
-          <button
-            className="btn btn-sm btn-outline-primary me-2"
-            style={{ height: 30, padding: "0 8px" }}
-            onMouseDown={(e) => {
-              // do not start drag when clicking
-              e.stopPropagation();
-              bringToFront?.(storageKey);
-            }}
-            onClick={(e) => {
-              e.stopPropagation();
-              setMinimized((m) => !m);
-            }}
-            title={minimized ? "Restore" : "Minimize"}
-            aria-label={minimized ? "Restore" : "Minimize"}
-          >
-            {minimized ? "+" : "–"}
-          </button>
+          {minimized ? "▢" : "—"}
+        </button>
 
-          {/* Drag glyph */}
-          {/* <div style={{ marginLeft: "5px", pointerEvents: "none" }} tabIndex={-1}>
-            ⠿ Drag
-          </div> */}
+        <div className="flex-grow-1 text-truncate" title={title}><strong>{title}</strong></div>
 
-          {/* Title */}
-          <div className="text-primary flex-grow-1 text-center fs-7 fw-bold">
-            {title}
+        {headerRight && (
+          <div className="d-flex align-items-center me-2" onMouseDown={(e) => e.stopPropagation()}>
+            {headerRight}
           </div>
+        )}
 
-          {/* + button (optional, right side) */}
-          {addNote !== "-" && (
-            <button
-              className="btn btn-sm btn-outline-success"
-              style={{ marginRight: "5px", height: 30, padding: "0 8px" }}
-              onMouseDown={(e) => {
-                e.stopPropagation();
-                bringToFront?.(storageKey);
-              }}
-              onClick={(e) => {
-                e.stopPropagation();
-                onAddFunction && onAddFunction();
-              }}
-              aria-label="Add"
-              title={addNote}
-            >
-              {onAddText}
-            </button>
-          )}
-
-          {/* Close (red X) replaces old Reset */}
-          <button
-            type="button"
-            className="btn btn-sm btn-outline-danger ms-auto"
-            style={{ marginRight: "5px", height: 30, padding: "0 8px" }}
-            onMouseDown={(e) => {
-              e.stopPropagation();
-              bringToFront?.(storageKey);
-            }}
-            onClick={handleClose}
-            title="Close"
-            aria-label="Close"
-          >
-            ×
-          </button>
-        </div>
+        <button
+          type="button"
+          className="btn btn-sm btn-outline-danger"
+          onClick={(e) => { e.stopPropagation(); onClose?.(); }}
+          title="Close"
+        >
+          ×
+        </button>
       </div>
 
-      {/* Body (hidden when minimized) */}
-      {!minimized && children && <div className="card-body p-2">{children}</div>}
+      {!minimized && <div className="bg-white p-2">{children}</div>}
     </div>
   );
-};
+}
 
-export default DragBox;
+function usePrevious(value) {
+  const ref = React.useRef();
+  React.useEffect(() => { ref.current = value; }, [value]);
+  return ref.current;
+}

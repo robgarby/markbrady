@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { useGlobalContext } from "../../Context/global.context";
 
 // Lazy-load editors (add more as you create them)
-const ConditionAdminPanel = lazy(() => import("./editConditions.component.jsx"));
+// const ConditionAdminPanel = lazy(() => import("./editConditions.component.jsx"));
 // Example placeholders: create these files later and add lazy() imports
 const MedsAdminPanel = lazy(() => import("./editMedications.component.jsx"));
 // imports (top of file)
@@ -13,7 +13,7 @@ const CatAdminPanel = lazy(() => import("./editCat.component.jsx")); // <— mat
 // const UsersAdminPanel = lazy(() => import("../admin/UsersAdminPanel.jsx"));
 
 const PANELS = {
-  conditions: ConditionAdminPanel,
+  // conditions: ConditionAdminPanel,
   meds: MedsAdminPanel,
   cats: CatAdminPanel,
   // users: UsersAdminPanel,

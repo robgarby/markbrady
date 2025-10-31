@@ -1,10 +1,10 @@
 // src/components/patient/patientConditionsBox.component.jsx
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useGlobalContext } from '../../../../Context/global.context';
+import { useGlobalContext } from "../../../Context/global.context.jsx";
 
-const PatientConditionsBox = ({ patient, setPatient }) => {
+const PatientConditionsBox = ({ patient, user }) => {
   const gc = useGlobalContext();
-  const { conditionData, updateConditions } = gc || {};
+  const { conditionData, updateConditions, setActivePatient } = gc || {};
 
   // Selected codes (derived from patient.conditionData)
   const [selectedCodes, setSelectedCodes] = useState([]);
@@ -44,7 +44,7 @@ const PatientConditionsBox = ({ patient, setPatient }) => {
         : [...prev, code];
 
       // Mirror locally
-      setPatient((p) => ({ ...p, conditionData: next.join(',') }));
+      setActivePatient((p) => ({ ...p, conditionData: next.join(',') }));
 
       // Persist (fire-and-forget)
       try {

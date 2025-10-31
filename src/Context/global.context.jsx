@@ -39,7 +39,9 @@ export const GlobalContext = ({ children }) => {
   const [activePatient, setActivePatient] = useState(null); // selected patient object or null
   const [clientBox, setClientBox] = useState(false);        // toggles client panel visibility
   const [patientProvider, setPatientProvider] = useState(''); // Provider category for Patient - Field in Patient is providerSort
-  const [patientArray, setPatientArray] = useState([]);      // Array of found patients
+  const [patientArray, setPatientArray] = useState([]); 
+  const [displayMain, setDisplayMain] = useState(false); 
+  const [mainButton, setMainButton] = useState(null); // The main button that was pressed
 
   // --- Medications master data ---
   const [medsArray, setMedsArray] = useState([]); // [{ ID, medication, medication_cat, medication_dose }, ...]
@@ -92,7 +94,12 @@ export const GlobalContext = ({ children }) => {
         patientArray,  // this is the list of all found patients
         setPatientArray,
         selectedTopButtons, // this is the navigation bar buttons as what is selected
-        setSelectedTopButtons,  // this set the navigation bar buttons as what is selected
+        setSelectedTopButtons, 
+
+        displayMain ,  // This is the value that changes when Labs are pressed
+        setDisplayMain,
+        mainButton ,
+        setMainButton, // This is the Actual Button Pressed to switch to Main
 
         // Meds & categories
         medsArray,

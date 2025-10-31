@@ -3,9 +3,10 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import "./signin.style.scss";
 import logo from "../../assets/GDMT.svg";
-import { LoadMarkBrady, getMedicationData, getConditionData, getProviderList } from "../../Context/functions";
-import { navButtons } from "../../Context/variables";
+import { getMedicationData, getConditionData, getProviderList } from "../../Context/functions";
+import { navButtons, versionNotes } from "../../Context/variables";
 import { useGlobalContext } from "../../Context/global.context";
+import { version, versionDate, versionTime } from "../../Context/variables.jsx";
 
 const PRIMARY_API = "https://www.gdmt.ca/PHP/abc.php";
 
@@ -56,7 +57,7 @@ export default function SignIn() {
         updateConditionData(conditions);
         // Load an Activ Patint for Testing.
         const providers = await getProviderList();
-       setPatientProvider(providers);
+        setPatientProvider(providers);
         // const patientData = await LoadMarkBrady();
         // setActivePatient(patientData);
         navigate("/dashboard");
@@ -108,6 +109,10 @@ export default function SignIn() {
               <button type="submit" className="btn btn-primary">Sign In</button>
             </div>
           </form>
+          <div className="alert alert-secondary mt-4 p-2 small text-center">
+            <div className="text-muted mt-2 text-center col-48">Version {version} - {versionDate} {versionTime}</div>
+            <div className="text-muted mt-2 text-center col-48">{versionNotes}</div>
+            </div>
         </div>
       </div>
     </div>

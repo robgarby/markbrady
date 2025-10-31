@@ -10,6 +10,7 @@ const Recommendations = () => {
 
     return (
         <DragBox
+            id="REC"
             storageKey="RECOMMENDATIONS_POSITION"
             defaultPos={{ x: 300, y: 340 }}
             title= "Recommendations [FULLY WORKING]"

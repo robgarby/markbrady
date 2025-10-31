@@ -1,7 +1,7 @@
 import React from 'react';
 import DragBox from '../../DragBox/Drag/dragBox.component.jsx';
-import PatientConditionBox from '../../../components/Database/DisplayPatient/Patient/patientCondition.component.jsx';
 import { useGlobalContext } from "../../../Context/global.context.jsx";
+import DisplayPatientHistory from './displayPatientHistory.component.jsx';
 
 // Adjust the path to DragBox as needed
 
@@ -24,13 +24,14 @@ const HistoryBox = ({ activePatient, user }) => {
 
     return (
         <DragBox
+            id="HISTORY"
             storageKey="HISTORY_POSITION"
             defaultPos={{ x: 300, y: 340 }}
-            title= "Patient History"
+            title= "Patient History [FULLY WORKING]"
             width={800}
             onAdd={null}
             zIndex={2050}
-            addNote="Edit History"
+            addNote="-"
             onAddText='Edit History'
             onAddFunction={editBox}
             onClose={() => {
@@ -38,7 +39,7 @@ const HistoryBox = ({ activePatient, user }) => {
                 setSelectedTopButtons(updatedButtons);
             }}
         >
-           <div>Patient History Content</div>
+           <DisplayPatientHistory />
         </DragBox>
     );
 };

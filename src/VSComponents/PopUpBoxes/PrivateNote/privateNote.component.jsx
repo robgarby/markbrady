@@ -90,6 +90,7 @@ const PrivateNote = ({ activePatient, user }) => {
 
     return (
         <DragBox
+            id="PRIVATE_NOTE"
             storageKey="PRIVATE_NOTE_POSITION"
             defaultPos={{ x: 300, y: 340 }}
             title="Private Note [FULLY WORKING]"

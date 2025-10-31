@@ -9,13 +9,28 @@ export default function PatientInfo({ user, thePatient, loading = false }) {
   const {
     setActivePatient,
     patientProvider,
+    displayMain,
+    setDisplayMain,
+    mainButton,
+    setMainButton
+
   } = gc || {};
 
   const [patient, setPatient] = React.useState([]);
   const [providerId, setProviderID] = React.useState(null);
   const currentPayment = patient?.paymentMethod || patient?.paymentMethof || '?';
 
-
+  const changeMainDisplay = (button) => {
+    console.log(mainButton, button, displayMain);
+    if (button === mainButton) {
+      console.log("Toggling off");
+      setMainButton(null);
+      setDisplayMain(false);
+      return;
+    }
+    setMainButton(button);
+    setDisplayMain(true);
+  }
 
   React.useEffect(() => {
     setPatient(thePatient);
@@ -231,13 +246,13 @@ export default function PatientInfo({ user, thePatient, loading = false }) {
                     <label htmlFor="nextAppointment" className="form-label mb-1">Upload</label>
                     <div className="d-flex gap-1 align-content-center">
                       <div className="col-16">
-                        <button className="btn-sm btn btn-outline-primary w-100 fs-7">Life Lab</button>
+                        <button className={`btn-sm btn  w-100 fs-7 ${mainButton === 'lifelab' ? 'btn-warning' : 'btn-outline-primary'}`} onClick={() => changeMainDisplay('lifelab')}>Life Lab</button>
                       </div>
                       <div className="col-16">
-                        <button className="btn-sm btn btn-outline-primary w-100 fs-7">Dynacare</button>
+                        <button className={`btn-sm btn  w-100 fs-7 ${mainButton === 'dynacare' ? 'btn-warning' : 'btn-outline-primary'}`} onClick={() => changeMainDisplay('dynacare')}>Dynacare</button>
                       </div>
                       <div className="col-16">
-                        <button className="btn-sm btn btn-outline-primary w-100 fs-7">new Lab</button>
+                        <button className={`btn-sm btn  w-100 fs-7 ${mainButton === 'newLab' ? 'btn-warning' : 'btn-outline-primary'}`} onClick={() => changeMainDisplay('newLab')}>new Lab</button>
                       </div>
                     </div>
                   </div>
@@ -247,13 +262,13 @@ export default function PatientInfo({ user, thePatient, loading = false }) {
                     <label htmlFor="nextAppointment" className="form-label mb-1">Special</label>
                     <div className="d-flex gap-1 align-content-center">
                       <div className="col-16">
-                        <button className="btn-sm btn btn-outline-primary w-100 fs-7">Hospital</button>
+                         <button className={`btn-sm btn  w-100 fs-7 ${mainButton === 'hospital' ? 'btn-warning' : 'btn-outline-primary'}`} onClick={() => changeMainDisplay('hospital')}>Hospital</button>
                       </div>
                       <div className="col-16">
-                        <button className="btn-sm btn btn-outline-primary w-100 fs-7">Pharmay</button>
+                        <button className={`btn-sm btn  w-100 fs-7 ${mainButton === 'pharmacy' ? 'btn-warning' : 'btn-outline-primary'}`} onClick={() => changeMainDisplay('pharmacy')}>Pharmacy</button>
                       </div>
                       <div className="col-16">
-                        <button className="btn-sm btn btn-outline-primary w-100 fs-7">Alergy</button>
+                        <button className={`btn-sm btn  w-100 fs-7 ${mainButton === 'alergy' ? 'btn-warning' : 'btn-outline-primary'}`} onClick={() => changeMainDisplay('alergy')}>Alergy</button>
                       </div>
                     </div>
                   </div>

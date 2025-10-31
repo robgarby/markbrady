@@ -4,11 +4,14 @@ import PrivateNote from "./PopUpBoxes/PrivateNote/privateNote.component";
 import LabResults from "./PopUpBoxes/LabResults/labResults.component";
 import DoctorNote from "./PopUpBoxes/DoctorNote/doctorNote.component";
 import HistoryBox from "./PopUpBoxes/History/history.component";
-import Conditions from "./PopUpBoxes/Conditions/condition.component";
 import Recommendations from "./PopUpBoxes/Recommendations/recomment.component";
 import AddressBox from "./PopUpBoxes/AddressBox/address.component";
 import PatientInfo from './PopUpBoxes/Patientbox/patientBox.component';
+import Locations from "./PopUpBoxes/Locations/locations.component";
+import Users from "./PopUpBoxes/Users/user.component";
 import { ZStackProvider } from "../Context/ZStack.context.jsx";
+import { getUserFromToken } from "../Context/functions.jsx";
+import FullCondition from "./PopUpBoxes/Conditions/fullCondition.component.jsx";
 
 
 const PatientDisplay = ({
@@ -25,10 +28,13 @@ const PatientDisplay = ({
   const showRecommendations = Array.isArray(selectedTopButtons) && selectedTopButtons.includes("recommendations");
   const showAddress = Array.isArray(selectedTopButtons) && selectedTopButtons.includes("address");
   const showHistory = Array.isArray(selectedTopButtons) && selectedTopButtons.includes("history");
+  const showLocations = Array.isArray(selectedTopButtons) && selectedTopButtons.includes("locations");
+  const showUserInfo = Array.isArray(selectedTopButtons) && selectedTopButtons.includes("users");
 
   useEffect(() => {
-
-  }, [activePatient]);
+   console.log("PatientDisplay: theUser changed:", theUser);
+   
+  }, [theUser]);
 
   return (
     <>
@@ -36,7 +42,14 @@ const PatientDisplay = ({
         {activePatient && (
           <PatientInfo user={theUser} thePatient={activePatient} loading={false} />
         )}
-        {showMeds ? <Medications /> : <EmptyState />}
+        {showMeds
+          ? (theUser ? <Medications user={theUser} /> : <EmptyState />)
+          : <EmptyState />}
+        {showUserInfo ? (activePatient ? <Users activePatient={activePatient} user={theUser} /> : <EmptyState />) : <EmptyState />}
+        {showLocations
+          ? (activePatient ? <Locations activePatient={activePatient} user={theUser} /> : <EmptyState />)
+          : <EmptyState />
+        }
         {showPN
           ? (activePatient ? <PrivateNote activePatient={activePatient} user={theUser} /> : <EmptyState />)
           : <EmptyState />
@@ -49,9 +62,9 @@ const PatientDisplay = ({
           ? (activePatient ? <DoctorNote activePatient={activePatient} user={theUser} /> : <EmptyState />)
           : <EmptyState />
         }
-        {showConditions ? <Conditions patient={activePatient} user={theUser}  /> : <EmptyState />}
+        {showConditions ? <FullCondition activePatient={activePatient} user={theUser} /> : <EmptyState />}
         {showRecommendations ? <Recommendations /> : <EmptyState />}
-        {showAddress ? <AddressBox activePatient={activePatient} user={theUser}  /> : <EmptyState />}
+        {showAddress ? <AddressBox activePatient={activePatient} user={theUser} /> : <EmptyState />}
         {showHistory ? (activePatient ? <HistoryBox activePatient={activePatient} user={theUser} /> : <EmptyState />) : <EmptyState />}
       </ZStackProvider>
     </>

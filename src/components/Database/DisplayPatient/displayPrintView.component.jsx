@@ -306,7 +306,7 @@ const PrintLabView = () => {
           </div>
         </div>
         <div className="col-12 d-flex justify-content-end gap-2 d-print-none">
-          <button className="btn btn-outline-secondary btn-sm" onClick={() => setVisibleBox?.("ClientDetails")}>
+          <button className="btn btn-outline-secondary btn-sm" onClick={() => navigate("/dashboard")}>
             Back
           </button>
           <button className="btn btn-outline-primary btn-sm" onClick={() => window.print()}>

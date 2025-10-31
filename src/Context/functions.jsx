@@ -91,6 +91,7 @@ export const getConditionData = async () => {
         return [];
     }
 };
+
 export const getProviderList = async () => {
     try {
         const resp = await fetch('https://gdmt.ca/PHP/noDB.php', {
@@ -100,6 +101,25 @@ export const getProviderList = async () => {
       })
         const data = await resp.json();
         return Array.isArray(data) ? data : [];
+    } catch (err) {
+        return [];
+    }
+};
+export const fetchUsers = async () => {
+    try {
+        const resp = await fetch('https://gdmt.ca/PHP/special.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ script: 'getUserData' }),
+      })
+        const data = await resp.json();
+        if (data && Array.isArray(data.users)) {
+            return data.users;
+        }
+        if (Array.isArray(data)) {
+            return data;
+        }
+        return [];
     } catch (err) {
         return [];
     }

@@ -1,6 +1,6 @@
 // src/components/admin/ConditionAdminPanel.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useGlobalContext } from "../../Context/global.context";
+import { useGlobalContext } from "../../../Context/global.context.jsx";
 
 // --- Normalize backend rows -> { ID, code, conditionName, _new }
 const normalizeRows = (list = []) => {

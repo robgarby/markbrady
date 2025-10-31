@@ -5,11 +5,17 @@ import logo from "../../../assets/GDMT.svg";
 
 // Adjust the import path to where your NavButton component actually lives
 
-const TopBarNav = ({ navBarButtons, selectedTopButtons, onClick }) => {
+const TopBarNav = ({ navBarButtons, selectedTopButtons, onClick, user }) => {
+    const filteredButtons =
+        user?.dayOfWeek === 1
+            ? navBarButtons
+        : user?.dayOfWeek !== 1
+            ? navBarButtons.filter((b) => String(b.security) === "20")
+            : navBarButtons;
 
     return (
         <div className="ms-auto me-4 gap-1 d-flex align-items-center">
-            {navBarButtons.map((b) => (
+            {filteredButtons.map((b) => (
                 <NavButton
                     key={b.id}
                     buttons={selectedTopButtons}

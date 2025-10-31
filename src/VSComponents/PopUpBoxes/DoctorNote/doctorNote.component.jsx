@@ -90,6 +90,7 @@ const DoctorNote = ({ setActivePatient, activePatient, user }) => {
 
   return (
     <DragBox
+      id="DOCTOR_NOTE"
       storageKey="DOCTOR_NOTE_POSITION"
       defaultPos={{ x: 300, y: 340 }}
       title="Doctor Note [FULLY WORKING]"

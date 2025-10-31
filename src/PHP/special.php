@@ -167,6 +167,84 @@ if ($data['script'] === 'loadConditionData') {
 }
 
 
+// 1) Create a new master medication
+if (($data['script'] ?? '') === 'CreateMedication') {
+    $name = trim($data['medication_name'] ?? '');
+    $cat  = trim($data['medication_cat'] ?? '');
+    $dose = trim($data['medication_dose'] ?? '');
+
+    if ($name === '') {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'error' => 'Missing medication_name']);
+        exit;
+    }
+
+    $sql = "INSERT INTO `Meds` (`medication_name`, `medication_cat`, `medication_dose`)
+            VALUES (?, ?, ?)";
+
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Prepare failed', 'details' => $conn->error]);
+        exit;
+    }
+    $stmt->bind_param('sss', $name, $cat, $dose);
+
+    if ($stmt->execute()) {
+        $newId = $conn->insert_id;
+        // Return the newly created row shape your UI expects
+        $med = [
+            'ID'               => (string)$newId,
+            'medication_name'  => $name,
+            'medication_cat'   => $cat,
+            'medication_dose'  => $dose,
+        ];
+        echo json_encode(['success' => true, 'med' => $med, 'affected_rows' => $stmt->affected_rows]);
+    } else {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Insert failed', 'details' => $stmt->error]);
+    }
+    $stmt->close();
+    exit;
+}
+
+// 2) Save patient medication linkages (CSV of IDs)
+if (($data['script'] ?? '') === 'SaveMedication') {
+    $patientId = $data['patientId'] ?? null;
+    $medIdsCSV = $data['medIdsCSV'] ?? ''; // authoritative CSV we’ll store
+    $patientDB = $data['patientDB'] ?? 'Patient'; // respect your dynamic tables if any
+
+    if (!$patientId) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'error' => 'Missing patientId']);
+        exit;
+    }
+
+    // Update medsData column with full CSV
+    $sql = "UPDATE `$patientDB` SET medsData = ? WHERE id = ?";
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Prepare failed', 'details' => $conn->error]);
+        exit;
+    }
+    $stmt->bind_param('si', $medIdsCSV, $patientId);
+
+    if ($stmt->execute()) {
+        echo json_encode([
+            'success' => true,
+            'affected_rows' => $stmt->affected_rows,
+            'medIdsCSV' => $medIdsCSV
+        ]);
+    } else {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Update failed', 'details' => $stmt->error]);
+    }
+    $stmt->close();
+    exit;
+}
+
+
 if ($data['script'] === 'saveLabs') {
     $patientId  = $data['patientID']   ?? null;
     $patientTbl = $data['patientDB']   ?? $patientTable;   // fallback to default table
@@ -754,6 +832,141 @@ if ($data['script'] === 'updatePatientRecommendations') {
     }
     exit;
 }
+
+if (($data['script'] ?? '') === 'saveLocation') {
+    
+    $id = isset($data['id']) && $data['id'] !== '' ? intval($data['id']) : null;
+    $name = $data['name'] ?? '';
+    $theType = $data['theType'] ?? 'update'; // 'create' or 'update'
+
+    if (trim($name) === '') {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'error' => 'Missing name']);
+        exit;
+    }
+
+    // Use table `locations` with columns: id, providerName, prividerPhone
+    if ($theType === 'update' && $id !== null) {
+        $stmt = $conn->prepare("UPDATE `gdmt_providers` SET providerName = ? WHERE id = ?");
+        if (!$stmt) {
+            http_response_code(500);
+            echo json_encode(['success' => false, 'error' => 'Prepare failed', 'details' => $conn->error]);
+            exit;
+        }
+        $stmt->bind_param('si', $name,$id);
+        $ok = $stmt->execute();
+        $stmt->close();
+    } else {
+        $stmt = $conn->prepare("INSERT INTO `gdmt_providers` (providerName) VALUES (?)");
+        if (!$stmt) {
+            http_response_code(500);
+            echo json_encode(['success' => false, 'error' => 'Prepare failed', 'details' => $conn->error]);
+            exit;
+        }
+        $stmt->bind_param('s', $name);
+        $ok = $stmt->execute();
+        $stmt->close();
+    }
+
+    if (!$ok) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Save failed']);
+        exit;
+    }
+
+    echo json_encode(['success' => true]);
+    exit;
+}
+
+if (($data['script'] ?? '') === 'getUserData') {
+        $stmt = $conn->prepare("SELECT * FROM `LOGIN` order by id desc");
+        if (!$stmt) {
+            http_response_code(500);
+            echo json_encode(['success' => false, 'error' => 'Prepare failed', 'details' => $conn->error]);
+            exit;
+        }
+
+        // No parameters to bind for this query
+        $users = [];
+        if ($stmt->execute()) {
+            $result = $stmt->get_result();
+            while ($row = $result->fetch_assoc()) {
+                $users[] = $row;
+            }
+            echo json_encode(['success' => true, 'users' => $users]);
+        } else {
+            http_response_code(500);
+            echo json_encode(['success' => false, 'error' => 'Query failed', 'details' => $stmt->error]);
+        }
+
+        $stmt->close();
+        exit;
+}
+
+if (($data['script'] ?? '') === 'saveUser') {
+    $theType = $data['theType'] ?? 'update';
+    $id = isset($data['id']) ? intval($data['id']) : null;
+    $userName = $data['userName'] ?? '';
+    $password = $data['password'] ?? '';
+
+    if ($theType === 'update') {
+        if ($id === null || trim($userName) === '') {
+            http_response_code(400);
+            echo json_encode(['success' => false, 'error' => 'Missing id or userName']);
+            exit;
+        }
+
+        if ($password !== '') {
+            $stmt = $conn->prepare("UPDATE `LOGIN` SET userName = ?, password = ? WHERE id = ?");
+            if (!$stmt) {
+            http_response_code(500);
+            echo json_encode(['success' => false, 'error' => 'Prepare failed', 'details' => $conn->error]);
+            exit;
+            }
+            $stmt->bind_param('ssi', $userName, $password, $id);
+        }
+        $ok = $stmt->execute();
+        if ($ok) {
+            echo json_encode(['success' => true, 'affected_rows' => $stmt->affected_rows]);
+        } else {
+            http_response_code(500);
+            echo json_encode(['success' => false, 'error' => 'Update failed', 'details' => $stmt->error]);
+        }
+        $stmt->close();
+        exit;
+    }
+     if ($theType === 'create') {
+        $timesOn = 0;
+        $dayOfWeek = 20;
+        $patientTable = 'Patient_DEMO';
+        $historyTable = 'Patient_History_DEMO';
+
+        if (trim($userName) !== '' && trim($password) !== '') {
+            $stmt = $conn->prepare("INSERT INTO `LOGIN` (userName, password,dayOfWeek,timesOn,patientTable,historyTable) VALUES (?, ?, ?, ?, ?, ?)");
+            if (!$stmt) {
+            http_response_code(500);
+            echo json_encode(['success' => false, 'error' => 'Prepare failed', 'details' => $conn->error]);
+            exit;
+            }
+            $stmt->bind_param('ssiiss', $userName, $password, $dayOfWeek, $timesOn, $patientTable, $historyTable);
+        }
+        $ok = $stmt->execute();
+        if ($ok) {
+            echo json_encode(['success' => true, 'affected_rows' => $stmt->affected_rows]);
+        } else {
+            http_response_code(500);
+            echo json_encode(['success' => false, 'error' => 'Update failed', 'details' => $stmt->error]);
+        }
+        $stmt->close();
+        exit;
+    }
+
+    // Unsupported theType
+    http_response_code(400);
+    echo json_encode(['success' => false, 'error' => 'Unsupported theType']);
+    exit;
+}
+
 // === In special.php ===
 
 

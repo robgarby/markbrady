@@ -129,9 +129,11 @@ const AddressBox = ({ activePatient, user }) => {
 
   return (
     <DragBox
+      id="ADDRESS"
       storageKey="ADDRESS_POSITION"
       defaultPos={{ x: 300, y: 340 }}
       title="Complete Address [FULLY WORKING]"
+      isOpen={selectedTopButtons.includes('address')}
       width={800}
       onAdd={null}
       zIndex={2050}

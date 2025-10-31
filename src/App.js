@@ -7,6 +7,7 @@ import AdminPanel from './components/Admin/adminPanel.component.jsx';
 import UploadThree from './components/UploadLab/uploadThree.component.jsx';
 import Layout from './VSComponents/layout.component.jsx';
 import { AllButtonsProvider } from './Context/buttons.context.jsx';
+import PrintLabView from './components/Database/DisplayPatient/displayPrintView.component.jsx';
 
 function App() {
   return (
@@ -19,6 +20,7 @@ function App() {
             <Route path="/dashboard-main" element={<Dashboard />} />
             <Route path="/dashboard" element={<Layout />} />
             <Route path="/upload" element={<UploadThree />} />
+            <Route path="/print" element={<PrintLabView />} />
             <Route path="/admin" element={<AdminPanel />} />
             <Route path="*" element={<Navigate to="/signin" />} />
           </Routes>

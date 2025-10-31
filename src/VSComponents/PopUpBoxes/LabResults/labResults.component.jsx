@@ -237,6 +237,7 @@ const LabResults = ({ activePatient, user }) => {
 
   return (
     <DragBox
+      id="LAB"
       storageKey="LAB_RESULTS_POSITION"
       defaultPos={{ x: 300, y: 340 }}
       title="Lab Results [FULLY WORKING]"
