@@ -56,6 +56,8 @@ const PatientConditionsBox = ({ patient, user }) => {
             script: 'updatePatientConditions',
             patientID: patient.id,
             conditionCodes: next.join(','),
+            patientDB : user.patientTable,
+            historyDB : user.historyTable,
           }),
         }).catch(() => {});
       } catch (_) {}
@@ -68,7 +70,6 @@ const PatientConditionsBox = ({ patient, user }) => {
 
   // Keep selectedCodes in sync with patient
   useEffect(() => {
-    console.log("Patient condition data changed:", patient?.conditionData);
     setSelectedCodes(parseCodes(patient?.conditionData ?? ''));
   }, [patient?.conditionData]);
 

@@ -1125,7 +1125,6 @@ if ($data['script'] === 'labRangeSearch') {
 if ($data['script'] === 'updatePatientConditions') {
      $patientID = $data['patientID'] ?? null;
      $conditionCodes = $data['conditionCodes'] ?? null;
-
      if (!$patientID || $conditionCodes === null) {
           http_response_code(400);
           echo json_encode(['success' => false, 'error' => 'Missing patientID or conditionCodes']);
@@ -1133,6 +1132,21 @@ if ($data['script'] === 'updatePatientConditions') {
      }
 
      $stmt = "UPDATE `$patientTable` SET conditionData = '{$conditionCodes}' WHERE id = '{$patientID}'";
+     $go = $conn->query($stmt) or die($stmt);
+}
+
+if ($data['script'] === 'updatePatientSuspected') {
+     $patientID = $data['patientID'] ?? null;
+     $conditionCodes = $data['conditionCodes'] ?? null;
+
+
+     if (!$patientID || $conditionCodes === null) {
+          http_response_code(400);
+          echo json_encode(['success' => false, 'error' => 'Missing patientID or conditionCodes']);
+          exit;
+     }
+
+     $stmt = "UPDATE `$patientTable` SET suspectedCon = '{$conditionCodes}' WHERE id = '{$patientID}'";
      $go = $conn->query($stmt) or die($stmt);
 }
 

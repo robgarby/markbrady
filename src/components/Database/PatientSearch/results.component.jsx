@@ -143,7 +143,6 @@ const ResultsPage = () => {
         data = {};
       }
       const full = data.patient;
-      console.log("ResultsPage fetched patient data:", full);
       setActivePatient(full);
     } catch (err) {
       setActivePatient([]);

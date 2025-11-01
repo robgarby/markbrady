@@ -81,7 +81,6 @@ const CriteriaSearch = ({ onResults }) => {
       return userData;
     };
     fetchUser().then((userT) => {
-      console.log({ userT });
       if (userT) {
         setUser(userT);
       }
