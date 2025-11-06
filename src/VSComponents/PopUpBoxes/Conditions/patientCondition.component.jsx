@@ -6,10 +6,10 @@ const PatientConditionsBox = ({ patient, user }) => {
   const gc = useGlobalContext();
   const { conditionData, updateConditions, setActivePatient } = gc || {};
 
-  // Selected codes (derived from patient.conditionData)
   const [selectedCodes, setSelectedCodes] = useState([]);
+  const [showAll, setShowAll] = useState(false);
 
-  // Helpers (same shapes you used)
+  // --- helpers --------------------------------------------------------------
   const labelForCondition = (c) =>
     c?.conditionName ?? c?.name ?? c?.label ?? String(c ?? '');
   const codeForCondition = (c, fallbackLabel) =>
@@ -20,13 +20,14 @@ const PatientConditionsBox = ({ patient, user }) => {
     (fallbackLabel
       ? fallbackLabel.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6)
       : null);
+
   const parseCodes = (str) =>
     (str || '')
       .split(',')
       .map((s) => s.trim().toUpperCase())
       .filter(Boolean);
 
-  // Normalize condition list (array or object map)
+  // Normalize master list from context (array or object map)
   const normalizedConditions = useMemo(() => {
     if (Array.isArray(conditionData)) return conditionData;
     if (conditionData && typeof conditionData === 'object') {
@@ -35,45 +36,58 @@ const PatientConditionsBox = ({ patient, user }) => {
     return [];
   }, [conditionData]);
 
-  // Toggle & save
+  // Build items (all), derive selected-only for collapsed view
+  const items = useMemo(() => {
+    return normalizedConditions.map((c, idx) => {
+      const label = labelForCondition(c);
+      const code = codeForCondition(c, label);
+      const id = `cond_${c?.ID || code || idx}`;
+      const checked = !!code && selectedCodes.includes(code);
+      return { id, label, code, checked, raw: c };
+    });
+  }, [normalizedConditions, selectedCodes]);
+
+  const selectedItems = useMemo(() => items.filter((it) => it.checked), [items]);
+  const visibleItems = showAll ? items : selectedItems;
+
+  // --- persistence ----------------------------------------------------------
+  const persistConditions = (codesArray) => {
+    if (typeof setActivePatient === 'function') {
+      setActivePatient((p) => ({ ...p, conditionData: codesArray.join(',') }));
+    }
+    try {
+      fetch('https://gdmt.ca/PHP/database.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        keepalive: true,
+        body: JSON.stringify({
+          script: 'updatePatientConditions',
+          patientID: patient?.id,
+          conditionCodes: codesArray.join(','),
+          patientDB: user?.patientTable,
+          historyDB: user?.historyTable,
+        }),
+      }).catch(() => {});
+    } catch (_) {}
+  };
+
   const toggleConditionCode = (code) => {
     if (!code || !patient?.id) return;
     setSelectedCodes((prev) => {
       const next = prev.includes(code)
-        ? prev.filter((c) => c !== code)
-        : [...prev, code];
-
-      // Mirror locally
-      setActivePatient((p) => ({ ...p, conditionData: next.join(',') }));
-
-      // Persist (fire-and-forget)
-      try {
-        fetch('https://gdmt.ca/PHP/database.php', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          keepalive: true,
-          body: JSON.stringify({
-            script: 'updatePatientConditions',
-            patientID: patient.id,
-            conditionCodes: next.join(','),
-            patientDB : user.patientTable,
-            historyDB : user.historyTable,
-          }),
-        }).catch(() => {});
-      } catch (_) {}
-
+        ? prev.filter((c) => c !== code)   // turn OFF
+        : [...prev, code];                 // turn ON (only visible in Show All)
+      persistConditions(next);
       return next;
     });
   };
 
-  // ----- Effects -----
-
-  // Keep selectedCodes in sync with patient
+  // --- effects --------------------------------------------------------------
   useEffect(() => {
     setSelectedCodes(parseCodes(patient?.conditionData ?? ''));
   }, [patient?.conditionData]);
 
-  // Fetch master conditions once if empty
+  // Fetch master list once if needed
   const conditionsFetchedRef = useRef(false);
   useEffect(() => {
     if (
@@ -94,52 +108,58 @@ const PatientConditionsBox = ({ patient, user }) => {
           else if (Array.isArray(data)) updateConditions(data);
           else conditionsFetchedRef.current = false;
         })
-        .catch(() => {
-          conditionsFetchedRef.current = false;
-        });
+        .catch(() => { conditionsFetchedRef.current = false; });
     }
   }, [conditionData?.length, updateConditions]);
 
-  // ----- Render -----
+  // --- render ---------------------------------------------------------------
   return (
     <div className="d-flex flex-column" style={{ flex: '1 1 0', minHeight: 0 }}>
+      <div className="d-flex align-items-center justify-content-between mb-2 px-1">
+        <div className="fw-semibold">Conditions</div>
+      </div>
+
       <div className="flex-grow-1" style={{ overflowY: 'auto', minHeight: 0 }}>
         <div className="container-fluid px-1">
           <div className="row g-2">
-            {normalizedConditions.map((c, idx) => {
-              const label = labelForCondition(c);
-              const code = codeForCondition(c, label);
-              const id = `cond_${c?.ID || code || idx}`;
-              const checked = !!code && selectedCodes.includes(code);
-
-              return (
-                <div key={id} className="col-24 col-md-18 col-lg-16">
+            {visibleItems.length > 0 ? (
+              visibleItems.map((it) => (
+                <div key={it.id} className="col-24 col-md-18 col-lg-16">
                   <div className="border rounded p-2 d-flex align-items-center">
                     <span
                       className="flex-grow-1 min-w-0 text-truncate me-2 small"
-                      title={`${label}${code ? ` (${code})` : ''}`}
+                      title={it.label + (it.code ? ` (${it.code})` : '')}
                     >
-                      {label}
+                      {it.label}
                     </span>
                     <div className="form-check form-switch m-0">
                       <input
-                        id={id}
+                        id={it.id}
                         type="checkbox"
                         className="form-check-input"
-                        checked={checked}
-                        onChange={() => toggleConditionCode(code)}
+                        checked={!!it.checked}
+                        onChange={() => toggleConditionCode(it.code)}
                       />
                     </div>
                   </div>
                 </div>
-              );
-            })}
-
-            {normalizedConditions.length === 0 && (
+              ))
+            ) : (
               <div className="col-48 text-muted small">
-                <em>No conditions to display.</em>
+                <em>{showAll ? "No conditions available." : "No current conditions."}</em>
               </div>
             )}
+          </div>
+
+          {/* Bottom action inside the DragBox */}
+          <div className="d-flex justify-content-center mt-3 pb-1">
+            <button
+              type="button"
+              className={showAll ? "btn btn-sm btn-primary" : "btn btn-sm btn-outline-primary"}
+              onClick={() => setShowAll((s) => !s)}
+            >
+              {showAll ? "Hide Unused" : "Show All"}
+            </button>
           </div>
         </div>
       </div>

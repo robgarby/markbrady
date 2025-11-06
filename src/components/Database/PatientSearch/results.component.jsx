@@ -10,7 +10,6 @@ const ResultsPage = () => {
   const [user, setUser] = React.useState(null);
   const [hoveredKey, setHoveredKey] = useState(null);
 
-
   useEffect(() => {
     const fetchUser = async () => {
       const userData = await getUserFromToken();
@@ -27,6 +26,7 @@ const ResultsPage = () => {
       }
     });
   }, []);
+
   const {
     patientSearch,
     setVisibleBox,
@@ -188,6 +188,20 @@ const ResultsPage = () => {
     };
   }, []);
 
+  // --- helpers for recommendedMed CSV highlighting ---
+  const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const containsWord = (haystack, needle) => {
+    if (!haystack || !needle) return false;
+    // whole-word, case-insensitive
+    const re = new RegExp(`\\b${escapeRegex(String(needle).trim())}\\b`, "i");
+    return re.test(String(haystack));
+  };
+  const splitCsv = (csv) =>
+    String(csv || "")
+      .split(/[,;]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+
   return (
     <div className="container-fluid d-flex flex-column" style={{ height: "100vh" }}>
       {/* Top bar */}
@@ -221,6 +235,27 @@ const ResultsPage = () => {
             const maskedHcn = maskHealthNumber(hcn, isPrivate);
             const canCopy = !!hcn && hcn !== "-";
             const isCopied = copiedKey === rowKey;
+
+            // --- build the recommendedMed display with check against recommendations text
+            const recText = String(p?.recommendations || "");
+            const medItems = splitCsv(p?.recommendedMed);
+            const renderedMeds =
+              medItems.length === 0 ? (
+                "—"
+              ) : (
+                medItems.map((m, i) => {
+                  const matched = containsWord(recText, m);
+                  return (
+                    <span
+                      key={`${rowKey}-med-${i}`}
+                      className={matched ? "fw-bold text-success" : undefined}
+                    >
+                      {m}
+                      {i < medItems.length - 1 ? ", " : ""}
+                    </span>
+                  );
+                })
+              );
 
             return (
               <div
@@ -261,7 +296,10 @@ const ResultsPage = () => {
                 <div className="col-4" onClick={() => editClient(p)}>
                   {(p.nextAppointment === "0000-00-00" || !p.nextAppointment) ? "—" : p.nextAppointment}
                 </div>
-                <div className="col-6" onClick={() => editClient(p)}>{p.recommendedMed}</div>
+
+                {/* 🔽 recommendedMed column with per-item match highlighting */}
+                <div className="col-6" onClick={() => editClient(p)}>{renderedMeds}</div>
+
                 <div className="flex-grow-1" onClick={() => editClient(p)}>{p.privateNote || "—"}</div>
               </div>
             );

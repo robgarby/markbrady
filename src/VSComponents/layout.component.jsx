@@ -31,6 +31,10 @@ export default function Layout() {
       try {
         if (!theUser) {
           const u = await getUserFromToken();
+          if (u == null || (Array.isArray(u) && u.length === 0)) {
+            navigate("/login");
+            return;
+          }
           setTheUser(u);
         }
 

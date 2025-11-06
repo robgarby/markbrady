@@ -1,4 +1,7 @@
 import React, { useState } from "react";
+import { getUserFromToken } from "../../../Context/functions";
+import { useNavigate } from "react-router-dom";
+import { useGlobalContext } from '../../../Context/global.context';
 
 /**
  * Medication Recommendation Search
@@ -15,54 +18,58 @@ import React, { useState } from "react";
  *
  * Replace fetchPatientsForMedication with a real API call to your database.
  */
-export default function MedicationRecommendationSearch({
-    medications = [
-        { id: "med-aspirin", name: "Aspirin" },
-        { id: "med-metformin", name: "Metformin" },
-        { id: "med-lisinopril", name: "Lisinopril" },
-    ],
-    onMedicationSelect,
-}) {
-    const [selectedMed, setSelectedMed] = useState(null);
-    const [patients, setPatients] = useState([]);
+export default function MedicationRecommendationSearch({ medications = [{ id: "Finerenone", name: "Finerenone" },], }) {
+
+
     const [loading, setLoading] = useState(false);
 
-    // Placeholder: simulate fetching patients that meet prescribing criteria.
-    // Replace this with a real API/DB call.
-    const fetchPatientsForMedication = async (medId) => {
-        setLoading(true);
-        // simulate network delay
-        await new Promise((r) => setTimeout(r, 400));
-        setLoading(false);
+    const {
+        updatePatientSearch,
+        setVisibleBox,
+    } = useGlobalContext();
 
-        // Mocked patient data - replace with real results
-        const mock = {
-            "med-aspirin": [
-                { id: 1, name: "John Doe", age: 65 },
-                { id: 2, name: "Mary Smith", age: 72 },
-            ],
-            "med-metformin": [{ id: 3, name: "Alice Johnson", age: 54 }],
-            "med-lisinopril": [
-                { id: 4, name: "Bob Brown", age: 60 },
-                { id: 5, name: "Eve Davis", age: 58 },
-            ],
-        };
-        return mock[medId] || [];
-    };
+    const navigate = useNavigate();
 
     const handleSelect = async (med) => {
-        setSelectedMed(med);
-        onMedicationSelect?.(med);
-        const results = await fetchPatientsForMedication(med.id);
-        setPatients(results);
+        console.log("Selected medication:", med);
+        const user = await getUserFromToken();
+        if (!user) {
+            console.error("User not found.");
+            navigate('/login');
+            return;
+        }
+        try {
+            const res = await fetch("https://gdmt.ca/PHP/database.php", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    script: "findPatientsForMedication",
+                    medicationId: med.id,
+                    patientDB: user?.patientTable || "Patient",
+                    historyDB: user?.historyTable || "Patient_History"
+                }),
+            });
+            const data = await res.json().catch(() => []);
+            updatePatientSearch({ results: Array.isArray(data) ? data : [] });
+            setVisibleBox?.('results');
+        } catch (e) {
+            console.error(e);
+            updatePatientSearch({ results: [] });
+        } finally {
+            setLoading(false);
+        }
     };
+
+    React.useEffect(() => {
+        setLoading(false);
+    }, []);
 
     return (
         <div style={{ fontFamily: "system-ui, sans-serif", maxWidth: 720, margin: "0 auto" }}>
             <h2>Medication Recommendation Search</h2>
             <p>
                 Press on the preferred Medication to display all patients in the Database that meet the
-                criteria for prescribing this medication
+                criteria for prescribing this medication - <span className="text-danger">Adding Medications to this is Done by Administrator in Admin Panel</span>
             </p>
 
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
@@ -70,37 +77,13 @@ export default function MedicationRecommendationSearch({
                     <button
                         key={med.id}
                         onClick={() => handleSelect(med)}
-                        style={{
-                            padding: "8px 12px",
-                            borderRadius: 6,
-                            border: selectedMed?.id === med.id ? "2px solid #2563eb" : "1px solid #ccc",
-                            background: selectedMed?.id === med.id ? "#eef2ff" : "#fff",
-                            cursor: "pointer",
-                        }}
+                        className="btn btn-outline-primary"
+                        disabled={loading}
                     >
                         {med.name}
                     </button>
                 ))}
             </div>
-
-            {selectedMed && (
-                <section>
-                    <h3>
-                        Patients meeting criteria for "{selectedMed.name}"
-                        {loading ? " (loading...)" : ""}
-                    </h3>
-                    {!loading && patients.length === 0 && <p>No patients found.</p>}
-                    {!loading && patients.length > 0 && (
-                        <ul>
-                            {patients.map((p) => (
-                                <li key={p.id}>
-                                    {p.name} {p.age ? `— ${p.age} y` : ""}
-                                </li>
-                            ))}
-                        </ul>
-                    )}
-                </section>
-            )}
         </div>
     );
 }

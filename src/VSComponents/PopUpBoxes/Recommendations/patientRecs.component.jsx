@@ -17,7 +17,7 @@ const PatientRecs = () => {
     originalRef.current = next;
     setText(next);
     setStatus(null); // reset badges when switching patients
-  }, [activePatient?.id]);
+  }, [activePatient]);
 
   const [user, setUser] = useState(null);
   const [patientDB, setPatientDB] = useState(null);
@@ -91,7 +91,7 @@ const PatientRecs = () => {
           id="patient-recs-textarea"
           className="form-control fs-7 flex-grow-1"
           value={text}
-          maxLength={500} // ← limit to 500
+          maxLength={5000} // ← limit to 500
           onChange={(e) => { setStatus(null); setText(e.target.value); }}
           placeholder="Enter recommendations for this patient…"
           style={{ whiteSpace: "pre-wrap", minHeight: 0, overflow: "auto" }}
@@ -127,7 +127,7 @@ const PatientRecs = () => {
 
         {/* Status + Counter on the right */}
         <div className="ms-auto d-flex align-items-center gap-2 pe-2">
-          <small className="text-muted">{(text || "").length}/500</small>
+          <small className="text-muted">{(text || "").length}/5000</small>
         </div>
       </div>
 

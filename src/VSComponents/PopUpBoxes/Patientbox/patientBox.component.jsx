@@ -1,7 +1,9 @@
-
 import React from "react";
 
 import { useGlobalContext } from '../../../Context/global.context';
+import { getRecommendationText } from "../../../Context/variables";
+import { getUserFromToken } from "../../../Context/functions";
+import { useNavigate } from "react-router-dom";
 
 export default function PatientInfo({ user, thePatient, loading = false }) {
 
@@ -9,21 +11,26 @@ export default function PatientInfo({ user, thePatient, loading = false }) {
   const {
     setActivePatient,
     patientProvider,
-    displayMain,
     setDisplayMain,
     mainButton,
     setMainButton
-
   } = gc || {};
+
+  const navigate = useNavigate();
 
   const [patient, setPatient] = React.useState([]);
   const [providerId, setProviderID] = React.useState(null);
   const currentPayment = patient?.paymentMethod || patient?.paymentMethof || '?';
+  const [recommendedMeds, setRecommendedMeds] = React.useState([]);
+
+  // --- Local modal state lives in patientBox now ---
+  const [showRecModal, setShowRecModal] = React.useState(false);
+  const [recTitle, setRecTitle] = React.useState("Recommendation");
+  const [recText, setRecText] = React.useState("");
+  const [currentKey, setCurrentKey] = React.useState("");
 
   const changeMainDisplay = (button) => {
-    console.log(mainButton, button, displayMain);
     if (button === mainButton) {
-      console.log("Toggling off");
       setMainButton(null);
       setDisplayMain(false);
       return;
@@ -33,6 +40,15 @@ export default function PatientInfo({ user, thePatient, loading = false }) {
   }
 
   React.useEffect(() => {
+    // parse recommendedMeds (CSV / semicolon / newline or already-array) into an array
+    const rawMeds = thePatient?.recommendedMed ?? '';
+    let meds = [];
+    if (Array.isArray(rawMeds)) {
+      meds = rawMeds.map(String).map(s => s.trim()).filter(Boolean);
+    } else if (typeof rawMeds === 'string') {
+      meds = rawMeds.split(/[,;\n]+/).map(s => s.trim()).filter(Boolean);
+    }
+    setRecommendedMeds(meds);
     setPatient(thePatient);
     setProviderID(thePatient?.providerId || null);
   }, [thePatient]);
@@ -97,6 +113,86 @@ export default function PatientInfo({ user, thePatient, loading = false }) {
     }).catch(() => { });
   };
 
+  // --- Modal helpers (now owned by patientBox) ---
+  const openRecModal = (keyOrLabel) => {
+    const key = String(keyOrLabel || "").trim().toLowerCase();
+    const text = getRecommendationText(key) || String(keyOrLabel || "");
+    setCurrentKey(key);
+    setRecTitle(`Recommendation: ${String(keyOrLabel || "").toUpperCase()}`);
+    setRecText(text);
+    setShowRecModal(true);
+  };
+
+  const closeRecModal = () => setShowRecModal(false);
+
+  const UpdateRecommendations = async () => {
+  // Auth guard
+  const userData = await getUserFromToken();
+  if (!userData) {
+    navigate("/login");
+    return;
+  }
+
+  // Current recommendations as plain text
+  const existingText = String(thePatient?.recommendations || "").trim();
+
+  // What we plan to add (from the modal)
+  const candidate = String(recText || "").trim();
+  if (!candidate) {
+    console.log("No recommendation text to add");
+    return;
+  }
+
+  // The key we use to detect duplicates (prefer the normalized currentKey)
+  const key = String(currentKey || "").trim().toLowerCase();
+
+  // Duplicate detection: check by key if available, otherwise by full candidate text
+  const lowerExisting = existingText.toLowerCase();
+  const exists =
+    (key && lowerExisting.includes(key)) ||
+    lowerExisting.includes(candidate.toLowerCase());
+
+  if (exists) {
+    console.log("Already exists:", key || candidate.slice(0, 40));
+    setShowRecModal(false);
+    return;
+  }
+
+  // Append neatly (two newlines between blocks if something is already there)
+  const updatedText = existingText ? `${existingText}\n\n${candidate}` : candidate;
+
+  // Update local state
+  const updatedPatient = { ...thePatient, recommendations: updatedText };
+  setPatient(updatedPatient);
+  if (typeof setActivePatient === "function") setActivePatient(updatedPatient);
+
+    const patientDB  = userData?.patientTable || "Patient";
+    const historyDB  = userData?.historyTable || "Patient_History";
+  try {
+    await fetch("https://gdmt.ca/PHP/database.php", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        script: "updateRecommendations",
+        patientID: thePatient.id,
+        recommendations: updatedText,
+        patientDB: patientDB,
+        historyDB: historyDB,
+      }),
+    });
+  } catch (e) {
+    console.log("Error updating recommendations:", e);
+  }
+  setShowRecModal(false);
+};
+
+
+  // Map button click → open local modal with text from variables.jsx
+  const handleMapClick = (evt, fallback) => {
+    const v = evt?.currentTarget?.value ?? fallback ?? "";
+    openRecModal(v);
+  };
+
   return (
     <>
       {patient && !loading && (
@@ -119,13 +215,25 @@ export default function PatientInfo({ user, thePatient, loading = false }) {
 
                 {/* Right side: pushed to the edge */}
                 <div className="col-auto ms-auto d-flex align-items-center gap-2 pe-3">
-                  <div className="text-end pe-3">Medictaion Recommendations:</div>
-                  <div className="alert d-flex py-1 px-2 mb-0 gap-2 align-items-center" role="region" aria-label="Patient lipid information" >
-                   <div className="btn btn-sm btn-outline-warning">Fertinand</div>
-                   <div className="btn btn-sm btn-outline-warning">Repatha</div>
-                   <div className="btn btn-sm btn-outline-warning">Button 3</div>
+                  <div className="text-end pe-1">Medication Recommendations:</div>
+                  <div className="d-flex flex-wrap gap-1 me-3">
+                    {Array.isArray(recommendedMeds) && recommendedMeds.length > 0 ? (
+                      recommendedMeds.map((med, idx) => (
+                        <button 
+                          key={idx} 
+                          type="button" 
+                          className=" ms-1 btn btn-sm btn-outline-warning"
+                          value={med}
+                          onClick={(e) => handleMapClick(e, med)}  
+                        >
+                          {med}
+                        </button>
+                      ))
+                    ) : (
+                      <span className="text-muted">No recommendations</span>
+                    )}
                   </div>
-                  <div className="text-end fw-bold fs-6">
+                  <div className="text-end fw-bold fs-7">
                     Naive LDLC: <span className="text-purple">N/A</span>
                   </div>
                 </div>
@@ -262,7 +370,7 @@ export default function PatientInfo({ user, thePatient, loading = false }) {
                     <label htmlFor="nextAppointment" className="form-label mb-1">Special</label>
                     <div className="d-flex gap-1 align-content-center">
                       <div className="col-16">
-                         <button className={`btn-sm btn  w-100 fs-7 ${mainButton === 'hospital' ? 'btn-warning' : 'btn-outline-primary'}`} onClick={() => changeMainDisplay('hospital')}>Hospital</button>
+                        <button className={`btn-sm btn  w-100 fs-7 ${mainButton === 'hospital' ? 'btn-warning' : 'btn-outline-primary'}`} onClick={() => changeMainDisplay('hospital')}>Hospital</button>
                       </div>
                       <div className="col-16">
                         <button className={`btn-sm btn  w-100 fs-7 ${mainButton === 'pharmacy' ? 'btn-warning' : 'btn-outline-primary'}`} onClick={() => changeMainDisplay('pharmacy')}>Pharmacy</button>
@@ -276,10 +384,47 @@ export default function PatientInfo({ user, thePatient, loading = false }) {
 
               </div>
             </div>
+
+            {/* --- Local Modal rendered here --- */}
+            {showRecModal && (
+              <div
+                className="modal fade show"
+                role="dialog"
+                aria-modal="true"
+                style={{ display: "block", background: "rgba(0,0,0,0.4)" }}
+              >
+                <div className="modal-dialog modal-lg modal-dialog-centered">
+                  <div className="modal-content">
+                    <div className="modal-header">
+                      <h5 className="modal-title">{recTitle}</h5>
+                      <button
+                        type="button"
+                        className="btn-close"
+                        onClick={closeRecModal}
+                        aria-label="Close"
+                      />
+                    </div>
+                    <div className="modal-body">
+                      <pre className="mb-0" style={{ whiteSpace: "pre-wrap" }}>
+                        {recText}
+                      </pre>
+                    </div>
+                    <div className="modal-footer">
+                      <button className="btn btn-secondary" onClick={closeRecModal}>
+                        Cancel
+                      </button>
+                      <button className="btn btn-primary" onClick={UpdateRecommendations}>
+                        Add This Recommendation
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
           </div>
         </div>
       )}
     </>
   );
 }
-

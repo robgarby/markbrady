@@ -17,7 +17,7 @@ $input = file_get_contents('php://input');
 
 // Decode JSON
 $data = json_decode($input, true);
-;
+
 
 $patientTable = $data['patientDB'] ?? 'Patient';
 $historyTable = $data['historyDB'] ?? 'Patient_History';

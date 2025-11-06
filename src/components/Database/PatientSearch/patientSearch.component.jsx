@@ -200,7 +200,7 @@ const PatientSearch = () => {
       </div>
 
       {/* Line 2: Notes */}
-      <div className="d-flex align-items-center justify-content-center mb-3">
+      {/* <div className="d-flex align-items-center justify-content-center mb-3">
         <div className="col-16">
           <input
             type="text"
@@ -230,10 +230,10 @@ const PatientSearch = () => {
             Clear All
           </button>
         </div>
-      </div>
+      </div> */}
 
       {/* Line 3: Private Notes (NEW) */}
-      <div className="d-flex align-items-center justify-content-center mb-3">
+      {/* <div className="d-flex align-items-center justify-content-center mb-3">
         <div className="col-16">
           <input
             type="text"
@@ -264,10 +264,10 @@ const PatientSearch = () => {
             Clear All
           </button>
         </div>
-      </div>
+      </div> */}
 
       {/* Line 4: Provider & Date */}
-      <div className="d-flex align-items-center justify-content-center mb-2">
+      {/* <div className="d-flex align-items-center justify-content-center mb-2">
         <div className="col-10">
           <input
             type="text"
@@ -308,7 +308,7 @@ const PatientSearch = () => {
             Clear All
           </button>
         </div>
-      </div>
+      </div> */}
     </div>
   );
 };

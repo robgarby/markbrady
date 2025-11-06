@@ -11,7 +11,6 @@ import Locations from "./PopUpBoxes/Locations/locations.component";
 import Users from "./PopUpBoxes/Users/user.component";
 import SuspectConditionsBox from "./PopUpBoxes/Conditions/suspect.component.jsx";
 import { ZStackProvider } from "../Context/ZStack.context.jsx";
-import { getUserFromToken } from "../Context/functions.jsx";
 import FullCondition from "./PopUpBoxes/Conditions/fullCondition.component.jsx";
 
 

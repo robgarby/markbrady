@@ -3,6 +3,9 @@ import React, { useRef, useState, useEffect } from "react";
 import * as pdfjsLib from "pdfjs-dist";
 import DragBox from "../DragBox/Drag/dragBox.component.jsx";
 import { scrub, extractPatientMeta, runAllExtractors } from "./uploadFunction.jsx";
+import { getUserFromToken } from "../../Context/functions.jsx";
+import { useGlobalContext } from "../../Context/global.context.jsx";
+import { useNavigate } from "react-router-dom";
 
 // Keep worker consistent with your stack
 pdfjsLib.GlobalWorkerOptions.workerSrc =
@@ -47,6 +50,16 @@ export default function DynacareLab({ onParsed, onChange }) {
   const [patient, setPatient] = useState(null); // { ...meta, labResults: {...} }
   const [fileKey, setFileKey] = useState(0);   // lets us reset the file input
   const fileInputRef = useRef(null);
+  const { activePatient } = useGlobalContext();
+
+  const [sameClient, setSameClient] = useState(false);
+  const [isNewLab, setIsNewLab] = useState(false);
+  const [newClientLab, setNewClientLab] = useState(false);
+  const [isreadingLab, setIsreadingLab] = useState(true);
+
+  const LAB_API = "https://www.gdmt.ca/PHP/labData.php"; // replace with real endpoint
+
+  const navigate = useNavigate();
 
   // Bubble changes up if parent wants them
   useEffect(() => {
@@ -70,10 +83,16 @@ export default function DynacareLab({ onParsed, onChange }) {
       if (meta && meta.orderDate) meta.orderDate = toYMD(meta.orderDate);
 
       const next = { ...meta, labResults };
+
+      // update local view state
       setPatient(next);
       setMsg("");
 
+      // notify parent (existing)
       onParsed?.(next);
+
+      // immediately run your decision function with the full record
+      makeDecision(next, activePatient);
     } catch (err) {
       console.error(err);
       setMsg("Could not read/parse PDF.");
@@ -82,6 +101,7 @@ export default function DynacareLab({ onParsed, onChange }) {
   };
 
   const resetAll = () => {
+    setIsreadingLab(true);
     setPatient(null);
     setMsg("");
     if (fileInputRef.current) fileInputRef.current.value = "";
@@ -94,21 +114,106 @@ export default function DynacareLab({ onParsed, onChange }) {
       prev ? { ...prev, labResults: { ...(prev.labResults || {}), [k]: v } } : prev
     );
 
-  // Small read-only line item
-  const ReadOnlyLine = ({ label, value }) => (
-    <div className="d-flex align-items-center py-1 border-bottom">
-      <div className="col-16 text-end pe-2 fw-bold">{label}</div>
-      <div className="col-32">{dashIfEmpty(value)}</div>
-    </div>
-  );
+  // simple decision hook (kept as-is)
+  const makeDecision = (record, currentPatient) => {
+    let healthNumber = record.healthNumber || "";
+    let orderDate = record.orderDate || "";
+    let scriptName = 'validateLab';
+    console.log(currentPatient);
+    (async () => {
+      try {
+        const user = await getUserFromToken();
+        if (!user || (Array.isArray(user) && user.length === 0)) {
+          navigate("/login");
+          return;
+        }
+        const resp = await fetch(LAB_API, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            healthNumber,
+            orderDate,
+            scriptName,
+            patientDB: user?.patientTable || "",
+            historyDB: user?.historyTable || ""
+          }),
+        });
 
-  // Build 3 equal arrays for the single "Labs" card (3 columns inside one box)
-  const splitIntoThree = (results) => {
-    const entries = Object.entries(results || {});
-    const cols = [[], [], []];
-    entries.forEach((kv, i) => cols[i % 3].push(kv));
-    return cols;
+        const txt = await resp.text();
+        let result = {};
+        try {
+          result = JSON.parse(txt);
+          setIsreadingLab(false);
+          if (currentPatient.healthNumber === healthNumber) {
+            setSameClient(true);
+          } else {
+            setSameClient(false);
+          }
+          // if (result.HistoryExists && result.HistoryExists > 0) {
+          //   setIsNewLab(false);
+          // } else {
+          //   setIsNewLab(true);
+          // }
+          if (result.patientExists && result.patientExists > 0) {
+            setNewClientLab(false);
+          } else {
+            setNewClientLab(true);
+            setIsNewLab(false);
+          }
+        } catch {
+          // try to recover if the server returned a quoted JSON string
+          try {
+            result = JSON.parse(JSON.parse(txt));
+          } catch (err) {
+            console.warn("Could not parse decision response:", err, txt);
+          }
+        }
+
+        // Normalize expected fields onto the record so the caller can inspect them
+        record.exists = result.exists === true || result.exists === "true";
+        record.orderDateStatus = result.orderdate || result.orderDate || null;
+
+        console.log("Decision result:", result);
+      } catch (err) {
+        console.error("Decision fetch error:", err);
+      }
+    })();
   };
+
+  const letsSaveTheData = async (status) => {
+    let scriptName = null;
+    console.log("letsSaveTheData called with status:", status);
+    if (status === 'new') {
+      scriptName = 'newClientLab';
+    } else if (status === 'update') {
+      scriptName = 'updateExistingLab';
+    }
+    if (!scriptName) return;
+    const user = await getUserFromToken();
+    if (!user || (Array.isArray(user) && user.length === 0)) {
+      navigate("/login");
+      return;
+    }
+    const resp = await fetch(LAB_API, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        patient,
+        scriptName,
+        patientDB: user?.patientTable || "",
+        historyDB: user?.historyTable || ""
+      }),
+    });
+
+    const txt = await resp.text();
+    let result = {};
+    try {
+      result = JSON.parse(txt);
+      console.log("Save result:", result);
+    } catch {
+      console.warn("Could not parse save response:", txt);
+    }
+  }
 
   return (
     <DragBox
@@ -116,84 +221,155 @@ export default function DynacareLab({ onParsed, onChange }) {
       storageKey="Dynacare_POSITION"
       defaultPos={{ x: 300, y: 340 }}
       title="Dynacare Lab Parser [LOCAL ONLY]"
-      width={1200}
+      width={1400}
       onAdd={null}
       zIndex={2050}
       addNote="-"
     >
-      <div className="container my-3">
-        {/* Header + controls */}
-        <div className="row mb-2">
-          <div className="col-48 d-flex align-items-center">
-            <h5 className="m-0">Dynacare Lab: Parse & Review (Local Only)</h5>
-            <div className="ms-auto d-flex gap-2">
-              <button className="btn btn-outline-secondary" onClick={resetAll}>Clear</button>
+      <div
+        className="container my-3"
+        style={{ maxHeight: '75vh', overflowY: 'auto', overflowX: 'hidden' }}
+      >
+        {isreadingLab && (
+          <div className="">
+            {/* Header + controls */}
+            <div className="row mb-2">
+              <div className="col-48 d-flex align-items-center">
+                <h5 className="m-0">Dynacare Lab: Parse & Review (Local Only)</h5>
+                <div className="ms-auto d-flex gap-2">
+                  <button className="btn btn-outline-secondary" onClick={resetAll}>Clear</button>
+                </div>
+              </div>
+            </div>
+
+            {/* File picker + status */}
+            <div className="row g-2 mb-3">
+              <div className="col-24">
+                <input
+                  key={fileKey}
+                  ref={fileInputRef}
+                  type="file"
+                  accept="application/pdf"
+                  onChange={handleFileChange}
+                />
+              </div>
+              <div className="col-24">
+                {msg && <div className="alert alert-info py-2 m-0">{msg}</div>}
+              </div>
             </div>
           </div>
-        </div>
-
-        {/* File picker + status */}
-        <div className="row g-2 mb-3">
-          <div className="col-24">
-            <input
-              key={fileKey}
-              ref={fileInputRef}
-              type="file"
-              accept="application/pdf"
-              onChange={handleFileChange}
-            />
-          </div>
-          <div className="col-24">
-            {msg && <div className="alert alert-info py-2 m-0">{msg}</div>}
-          </div>
-        </div>
+        )}
 
         {/* Parsed content */}
         {!patient ? (
-          <div className="row">
-            <div className="col-48 text-muted">
-              <em>Select a Dynacare (PDF) lab report to parse and review.</em>
-            </div>
-          </div>
+          <>
+            {isreadingLab && (
+              <div className="">
+                <div className="row">
+                  <div className="col-48 text-muted">
+                    <em>Select a Dynacare (PDF) lab report to parse and review.</em>
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
         ) : (
           <>
             {/* Patient summary (READ-ONLY) + actions */}
             <div className="row g-3">
-              <div className="col-36">
-                <div className="card">
-                  <div className="card-body">
-                    <ReadOnlyLine label="Name" value={patient.name} />
-                    <ReadOnlyLine label="Ontario Health Number (HCN)" value={patient.healthNumber} />
+              <div className="col-48">
+                <div className="card p-2">
+                  <div className="col-36 offset-6 d-flex">
+                    <div className="col-24"><div className="w-100 fw-bold mb-2">Patient : {patient.name}</div></div>
+                    <div className="col-24"><div className="w-100 fw-bold mb-2">Health Number : {patient.healthNumber}</div></div>
                     {/* <ReadOnlyLine label="Sex" value={patient.sex} /> */}
-                    {/* Hide the rest for now per your simplification */}
                     {/* <ReadOnlyLine label="Order Date" value={patient.orderDate} /> */}
                   </div>
                 </div>
               </div>
 
-              <div className="col-12">
+              {/* force a new line so the Actions card sits below the patient summary */}
+              <div className="w-100" />
+
+              <div className="col-48 mt-2">
                 <div className="card h-100">
                   <div className="card-header">Actions</div>
-                  <div className="card-body d-flex flex-column gap-2">
-                    <div className="small text-muted">This is where Add actions will go.</div>
-                  </div>
+
+                  {/* UPDATED BUTTON BLOCKS: each option has a Cancel */}
+                  {sameClient ? (
+                    <div className="alert-success d-flex flex-column justify-content-center align-items-center p-3">
+                      <div className="text-success fw-bold row">This Matches The Same Patient</div>
+
+                      {isNewLab ? (
+                        <div className="small text-muted mt-2 d-flex gap-2">
+                          <div className="btn btn-success">This is a New Lab</div>
+                          <div className="btn btn-outline-secondary" onClick={resetAll}>Cancel</div>
+                        </div>
+                      ) : (
+                        <div className="small text-muted mt-2 d-flex gap-2">
+                          <div className="btn btn-danger" onClick={() => letsSaveTheData('update')}>This Lab Already Exists 1</div>
+                          <div className="btn btn-outline-secondary" onClick={resetAll}>Cancel</div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="alert-danger d-flex flex-column justify-content-center align-items-center p-3">
+                      <div className="text-danger fw-bold row">This is NOT THE SAME PATIENT</div>
+
+                      <div className="small text-muted mt-2 d-flex gap-2">
+                        {newClientLab && (
+                          <>
+                            <div className="btn btn-success" onClick={() => letsSaveTheData('new')}>New Patient - Add This Lab</div>
+                            <div className="btn btn-outline-secondary" onClick={resetAll}>Cancel</div>
+                          </>
+                        )}
+                      </div>
+
+                      <div className="small text-muted mt-2 d-flex gap-2">
+                        {isNewLab && !newClientLab && (
+                          <>
+                            <div className="btn btn-warning">But Since This Patient Exists, You can Add This Lab</div>
+                            <div className="btn btn-outline-secondary" onClick={resetAll}>Cancel</div>
+                          </>
+                        )}
+                      </div>
+
+                      <div className="small text-muted mt-2 d-flex gap-2">
+                        {!isNewLab && !newClientLab && (
+                          <>
+                            <div className="btn btn-danger" onClick={resetAll}>This Lab Already Exists For This Patient, You cannot load it</div>
+                            <div className="btn btn-outline-secondary" onClick={resetAll}>Cancel</div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  {/* END UPDATED BUTTON BLOCKS */}
                 </div>
               </div>
             </div>
 
-            {/* ONE box with Labs laid out in THREE columns */}
+            {/* ONE box with Labs laid out in FOUR columns */}
             <div className="row mt-3">
               <div className="col-48">
                 <div className="card">
                   <div className="card-header">Labs</div>
                   <div className="card-body">
                     {(() => {
-                      const [c0, c1, c2] = splitIntoThree(patient.labResults);
+                      // local splitter so we don't touch any top logic
+                      const splitIntoCols = (obj, n = 4) => {
+                        const entries = Object.entries(obj || {});
+                        const buckets = Array.from({ length: n }, () => []);
+                        entries.forEach((kv, i) => buckets[i % n].push(kv));
+                        return buckets;
+                      };
+
+                      const [c0, c1, c2, c3] = splitIntoCols(patient.labResults, 4);
 
                       return (
                         <div className="row g-3">
-                          {/* Each column spans 16 of your 48-grid = 3 columns */}
-                          <div className="col-16 fs-7">
+                          {/* Each column spans 12 of your 48-grid = 4 columns */}
+                          <div className="col-12 fs-7">
                             {c0.length === 0 ? (
                               <div className="text-muted small"><em>No values.</em></div>
                             ) : (
@@ -214,7 +390,7 @@ export default function DynacareLab({ onParsed, onChange }) {
                             )}
                           </div>
 
-                          <div className="col-16 fs-7">
+                          <div className="col-12 fs-7">
                             {c1.length === 0 ? (
                               <div className="text-muted small"><em>No values.</em></div>
                             ) : (
@@ -235,11 +411,32 @@ export default function DynacareLab({ onParsed, onChange }) {
                             )}
                           </div>
 
-                          <div className="col-16 fs-7">
+                          <div className="col-12 fs-7">
                             {c2.length === 0 ? (
                               <div className="text-muted small"><em>No values.</em></div>
                             ) : (
                               c2.map(([key, value]) => (
+                                <div key={key} className="col-48 d-flex align-items-center mb-2">
+                                  <div className="col-28 text-end pe-2 fw-bold text-capitalize">{key}:</div>
+                                  <div className="col-20">
+                                    <input
+                                      type="text"
+                                      className={`form-control ${isFilled(value) ? "alert-success" : ""}`}
+                                      value={value || ""}
+                                      onChange={(e) => updateLabField(key, e.target.value)}
+                                      placeholder="—"
+                                    />
+                                  </div>
+                                </div>
+                              ))
+                            )}
+                          </div>
+
+                          <div className="col-12 fs-7">
+                            {c3.length === 0 ? (
+                              <div className="text-muted small"><em>No values.</em></div>
+                            ) : (
+                              c3.map(([key, value]) => (
                                 <div key={key} className="col-48 d-flex align-items-center mb-2">
                                   <div className="col-28 text-end pe-2 fw-bold text-capitalize">{key}:</div>
                                   <div className="col-20">
