@@ -11,6 +11,7 @@ import logo from "../assets/GMDT_Alone.svg";
 import LabWork from "./labWork.component.jsx";
 
 export default function Layout() {
+ 
   const {
     displayMain, setDisplayMain, setMainButton,
     activePatient, setActivePatient,

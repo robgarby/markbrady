@@ -19,7 +19,7 @@ export default function PatientInfo({ user, thePatient, loading = false }) {
   const navigate = useNavigate();
 
   const [patient, setPatient] = React.useState([]);
-  const [providerId, setProviderID] = React.useState(null);
+  const [providerId, setProviderId] = React.useState("");   // <-- use proper setter name
   const currentPayment = patient?.paymentMethod || patient?.paymentMethof || '?';
   const [recommendedMeds, setRecommendedMeds] = React.useState([]);
 
@@ -49,20 +49,15 @@ export default function PatientInfo({ user, thePatient, loading = false }) {
       meds = rawMeds.split(/[,;\n]+/).map(s => s.trim()).filter(Boolean);
     }
     setRecommendedMeds(meds);
-    setPatient(thePatient);
-    setProviderID(thePatient?.providerId || null);
-  }, [thePatient]);
 
-  const renderRow = (label, value, date) => {
-    if (value === null || value === '' || (typeof value === 'string' && value.trim() === '') ||
-      (!isNaN(parseFloat(value)) && parseFloat(value) === 0)) return null;
-    const displayValue = date ? `${value} (${date})` : value;
-    return (
-      <div className="d-flex justify-content-between py-1 border-bottom">
-        <strong>{label}:</strong> <span>{displayValue}</span>
-      </div>
-    );
-  };
+    // copy patient in
+    setPatient(thePatient);
+
+    // sync providerId state from incoming patient (as a string for the <select>)
+    const incomingProviderId =
+      thePatient?.providerId != null ? String(thePatient.providerId) : "";
+    setProviderId(incomingProviderId);
+  }, [thePatient]);
 
   const calculateAge = (dob) => {
     if (!dob) return "—";
@@ -109,7 +104,13 @@ export default function PatientInfo({ user, thePatient, loading = false }) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       keepalive: true,
-      body: JSON.stringify({ script: 'updateAppointment', patientID: patient.id, appointmentDate: iso, patientDB: user?.patientTable || "Patient", historyDB: user?.historyTable || "Patient_History" }),
+      body: JSON.stringify({
+        script: 'updateAppointment',
+        patientID: patient.id,
+        appointmentDate: iso,
+        patientDB: user?.patientTable || "Patient",
+        historyDB: user?.historyTable || "Patient_History"
+      }),
     }).catch(() => { });
   };
 
@@ -126,66 +127,65 @@ export default function PatientInfo({ user, thePatient, loading = false }) {
   const closeRecModal = () => setShowRecModal(false);
 
   const UpdateRecommendations = async () => {
-  // Auth guard
-  const userData = await getUserFromToken();
-  if (!userData) {
-    navigate("/login");
-    return;
-  }
+    // Auth guard
+    const userData = await getUserFromToken();
+    if (!userData) {
+      navigate("/login");
+      return;
+    }
 
-  // Current recommendations as plain text
-  const existingText = String(thePatient?.recommendations || "").trim();
+    // Current recommendations as plain text
+    const existingText = String(thePatient?.recommendations || "").trim();
 
-  // What we plan to add (from the modal)
-  const candidate = String(recText || "").trim();
-  if (!candidate) {
-    console.log("No recommendation text to add");
-    return;
-  }
+    // What we plan to add (from the modal)
+    const candidate = String(recText || "").trim();
+    if (!candidate) {
+      console.log("No recommendation text to add");
+      return;
+    }
 
-  // The key we use to detect duplicates (prefer the normalized currentKey)
-  const key = String(currentKey || "").trim().toLowerCase();
+    // The key we use to detect duplicates (prefer the normalized currentKey)
+    const key = String(currentKey || "").trim().toLowerCase();
 
-  // Duplicate detection: check by key if available, otherwise by full candidate text
-  const lowerExisting = existingText.toLowerCase();
-  const exists =
-    (key && lowerExisting.includes(key)) ||
-    lowerExisting.includes(candidate.toLowerCase());
+    // Duplicate detection: check by key if available, otherwise by full candidate text
+    const lowerExisting = existingText.toLowerCase();
+    const exists =
+      (key && lowerExisting.includes(key)) ||
+      lowerExisting.includes(candidate.toLowerCase());
 
-  if (exists) {
-    console.log("Already exists:", key || candidate.slice(0, 40));
+    if (exists) {
+      console.log("Already exists:", key || candidate.slice(0, 40));
+      setShowRecModal(false);
+      return;
+    }
+
+    // Append neatly (two newlines between blocks if something is already there)
+    const updatedText = existingText ? `${existingText}\n\n${candidate}` : candidate;
+
+    // Update local state
+    const updatedPatient = { ...thePatient, recommendations: updatedText };
+    setPatient(updatedPatient);
+    if (typeof setActivePatient === "function") setActivePatient(updatedPatient);
+
+    const patientDB = userData?.patientTable || "Patient";
+    const historyDB = userData?.historyTable || "Patient_History";
+    try {
+      await fetch("https://gdmt.ca/PHP/database.php", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          script: "updateRecommendations",
+          patientID: thePatient.id,
+          recommendations: updatedText,
+          patientDB: patientDB,
+          historyDB: historyDB,
+        }),
+      });
+    } catch (e) {
+      console.log("Error updating recommendations:", e);
+    }
     setShowRecModal(false);
-    return;
-  }
-
-  // Append neatly (two newlines between blocks if something is already there)
-  const updatedText = existingText ? `${existingText}\n\n${candidate}` : candidate;
-
-  // Update local state
-  const updatedPatient = { ...thePatient, recommendations: updatedText };
-  setPatient(updatedPatient);
-  if (typeof setActivePatient === "function") setActivePatient(updatedPatient);
-
-    const patientDB  = userData?.patientTable || "Patient";
-    const historyDB  = userData?.historyTable || "Patient_History";
-  try {
-    await fetch("https://gdmt.ca/PHP/database.php", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        script: "updateRecommendations",
-        patientID: thePatient.id,
-        recommendations: updatedText,
-        patientDB: patientDB,
-        historyDB: historyDB,
-      }),
-    });
-  } catch (e) {
-    console.log("Error updating recommendations:", e);
-  }
-  setShowRecModal(false);
-};
-
+  };
 
   // Map button click → open local modal with text from variables.jsx
   const handleMapClick = (evt, fallback) => {
@@ -193,12 +193,58 @@ export default function PatientInfo({ user, thePatient, loading = false }) {
     openRecModal(v);
   };
 
+  // NEW: proper provider change handler
+  const handleProviderChange = (val) => {
+    console.log("Setting providerId:", val);
+    console.log("previous patient:", patient);
+
+    const newProviderId = val || ""; // keep as string for the <select>
+
+    // local state for the select
+    setProviderId(newProviderId);
+
+    // update patient + global active patient
+    setPatient((prev) => {
+        const next = {
+            ...prev,
+            providerId: newProviderId,
+        };
+
+        // sync to GlobalContext, but only if available
+        if (typeof setActivePatient === "function") {
+            setActivePatient(next);
+        }
+
+        return next;
+    });
+
+    // fire-and-forget DB update
+    if (!patient?.id) return; // nothing to save yet
+
+    fetch("https://gdmt.ca/PHP/database.php", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            script: "updateProvider",
+            patientID: patient.id,
+            providerId: newProviderId,
+            patientDB: user?.patientTable || "Patient",
+            historyDB: user?.historyTable || "Patient_History",
+        }),
+    }).catch((e) => {
+        console.log("Error updating provider:", e);
+    });
+};
+
+
   return (
     <>
       {patient && !loading && (
         <div className="d-flex" style={{ flex: '0 0 auto' }}>
           <div className="col-48 mt-0 rounded offset-0 p-3 alert-secondary">
-            <h3 className="mb-3 text-dark">{patient.clientName} [Age: {calculateAge(patient.dateOfBirth)}]</h3>
+            <h3 className="mb-3 text-dark">
+              {patient.clientName} [Age: {calculateAge(patient.dateOfBirth)}]
+            </h3>
 
             <div className="mb-1">
               <div className="row align-items-center g-4 fs-7 mb-4">
@@ -219,12 +265,12 @@ export default function PatientInfo({ user, thePatient, loading = false }) {
                   <div className="d-flex flex-wrap gap-1 me-3">
                     {Array.isArray(recommendedMeds) && recommendedMeds.length > 0 ? (
                       recommendedMeds.map((med, idx) => (
-                        <button 
-                          key={idx} 
-                          type="button" 
+                        <button
+                          key={idx}
+                          type="button"
                           className=" ms-1 btn btn-sm btn-outline-warning"
                           value={med}
-                          onClick={(e) => handleMapClick(e, med)}  
+                          onClick={(e) => handleMapClick(e, med)}
                         >
                           {med}
                         </button>
@@ -239,7 +285,11 @@ export default function PatientInfo({ user, thePatient, loading = false }) {
                 </div>
               </div>
 
-              <div className="alert alert-light p-2 d-flex gap-3 flex-wrap" role="region" aria-label="Patient additional information">
+              <div
+                className="alert alert-light p-2 d-flex gap-3 flex-wrap"
+                role="region"
+                aria-label="Patient additional information"
+              >
                 <div className="d-flex mt-1  flex-column col-16" >
                   <label className="form-label mb-1">Medication Coverage</label>
                   <div className="d-flex w-100" role="group" aria-label="Payment method">
@@ -329,11 +379,11 @@ export default function PatientInfo({ user, thePatient, loading = false }) {
 
                   {/* select below */}
                   <select
-                    className={`form-select fs-7 ${providerId !== null ? "alert-success" : ""}`}
-                    value={providerId ?? ""}
+                    className={`form-select fs-7 ${providerId ? "alert-success" : ""}`}
+                    value={providerId || ""}
                     onChange={(e) => {
-                      const val = e.target.value || null; // "" -> null
-                      setProviderID(val);                 // <-- use the matching setter/case
+                      const val = e.target.value || ""; // "" -> ""
+                      handleProviderChange(val);
                     }}
                   >
                     <option value="">Select Provider</option>
@@ -349,39 +399,94 @@ export default function PatientInfo({ user, thePatient, loading = false }) {
                       })}
                   </select>
                 </div>
-                <div className="d-flex align-content-center col-8">
-                  <div className="w-100 mb-1">
-                    <label htmlFor="nextAppointment" className="form-label mb-1">Upload</label>
-                    <div className="d-flex gap-1 align-content-center">
-                      <div className="col-16">
-                        <button className={`btn-sm btn  w-100 fs-7 ${mainButton === 'lifelab' ? 'btn-warning' : 'btn-outline-primary'}`} onClick={() => changeMainDisplay('lifelab')}>Life Lab</button>
-                      </div>
-                      <div className="col-16">
-                        <button className={`btn-sm btn  w-100 fs-7 ${mainButton === 'dynacare' ? 'btn-warning' : 'btn-outline-primary'}`} onClick={() => changeMainDisplay('dynacare')}>Dynacare</button>
-                      </div>
-                      <div className="col-16">
-                        <button className={`btn-sm btn  w-100 fs-7 ${mainButton === 'newLab' ? 'btn-warning' : 'btn-outline-primary'}`} onClick={() => changeMainDisplay('newLab')}>new Lab</button>
+                {user?.userName !== 'Molly' && (
+                  <div className="d-flex align-content-center col-8">
+                    <div className="w-100 mb-1">
+                      <label
+                        htmlFor="nextAppointment"
+                        className="form-label mb-1"
+                      >
+                        Upload
+                      </label>
+                      <div className="d-flex gap-1 align-content-center">
+                        <div className="col-16">
+                          <button
+                            className={`btn-sm btn  w-100 fs-7 ${
+                              mainButton === 'dynacare' ? 'btn-warning' : 'btn-outline-primary'
+                            }`}
+                            onClick={() => changeMainDisplay('dynacare')}
+                          >
+                            Dynacare
+                          </button>
+                        </div>
+                        <div className="col-16">
+                          <button
+                            className={`btn-sm btn  w-100 fs-7 ${
+                              mainButton === 'lifelab' ? 'btn-warning' : 'btn-outline-primary'
+                            }`}
+                            onClick={() => changeMainDisplay('lifelab')}
+                          >
+                            Life Lab
+                          </button>
+                        </div>
+                        <div className="col-16">
+                          <button
+                            className={`btn-sm btn disabled  w-100 fs-7 ${
+                              mainButton === 'newLab' ? 'btn-warning' : 'btn-outline-primary'
+                            }`}
+                            onClick={() => changeMainDisplay('newLab')}
+                          >
+                            new Lab
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-                <div className="d-flex align-content-center col-8 offset-1">
-                  <div className="w-100 mb-1">
-                    <label htmlFor="nextAppointment" className="form-label mb-1">Special</label>
-                    <div className="d-flex gap-1 align-content-center">
-                      <div className="col-16">
-                        <button className={`btn-sm btn  w-100 fs-7 ${mainButton === 'hospital' ? 'btn-warning' : 'btn-outline-primary'}`} onClick={() => changeMainDisplay('hospital')}>Hospital</button>
-                      </div>
-                      <div className="col-16">
-                        <button className={`btn-sm btn  w-100 fs-7 ${mainButton === 'pharmacy' ? 'btn-warning' : 'btn-outline-primary'}`} onClick={() => changeMainDisplay('pharmacy')}>Pharmacy</button>
-                      </div>
-                      <div className="col-16">
-                        <button className={`btn-sm btn  w-100 fs-7 ${mainButton === 'alergy' ? 'btn-warning' : 'btn-outline-primary'}`} onClick={() => changeMainDisplay('alergy')}>Alergy</button>
+                )}
+                {user?.userName !== 'Molly' && (
+                  <div className="d-flex align-content-center col-8 offset-1">
+                    <div className="w-100 mb-1">
+                      <label
+                        htmlFor="nextAppointment"
+                        className="form-label mb-1"
+                      >
+                        Special
+                      </label>
+                      <div className="d-flex gap-1 align-content-center">
+                        <div className="col-16">
+                          <button
+                            className={`btn-sm btn  w-100 fs-7 ${
+                              mainButton === 'hospital' ? 'btn-warning' : 'btn-outline-primary'
+                            }`}
+                            onClick={() => changeMainDisplay('hospital')}
+                          >
+                            Hospital
+                          </button>
+                        </div>
+                        <div className="col-16">
+                          <button
+                            className={`btn-sm btn  w-100 fs-7 ${
+                              mainButton === 'pharmacy' ? 'btn-warning' : 'btn-outline-primary'
+                            }`}
+                            onClick={() => changeMainDisplay('pharmacy')}
+                          >
+                            Pharmacy
+                          </button>
+                        </div>
+                        <div className="col-16">
+                          <button
+                            className={`btn-sm btn  w-100 fs-7 ${
+                              mainButton === 'alergy' ? 'btn-warning' : 'btn-outline-primary'
+                            }`}
+                            onClick={() => changeMainDisplay('alergy')}
+                          >
+                            Alergy
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-
+                )}
               </div>
             </div>
 

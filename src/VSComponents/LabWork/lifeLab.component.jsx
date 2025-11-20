@@ -2,7 +2,7 @@
 import React, { useRef, useState, useEffect, use } from "react";
 import * as pdfjsLib from "pdfjs-dist";
 import DragBox from "../DragBox/Drag/dragBox.component.jsx";
-import { scrub, extractPatientMeta, runAllExtractors } from "./uploadFunction.jsx";
+import { scrub, extractPatientMeta, runAllExtractors } from "./uploadFunctionLifeLab.jsx";
 import { getUserFromToken } from "../../Context/functions.jsx";
 import { useGlobalContext } from "../../Context/global.context.jsx";
 import { useNavigate } from "react-router-dom";
@@ -233,10 +233,10 @@ export default function DynacareLab({ onParsed, onChange }) {
 
   return (
     <DragBox
-      id="Dynacare"
-      storageKey="Dynacare_POSITION"
+      id="LifeLab"
+      storageKey="LifeLab_POSITION"
       defaultPos={{ x: 300, y: 340 }}
-      title="Dynacare Lab Parser [LOCAL ONLY]"
+      title="LifeLab Parser [LOCAL ONLY]"
       width={1400}
       onAdd={null}
       zIndex={2050}
@@ -251,7 +251,7 @@ export default function DynacareLab({ onParsed, onChange }) {
             {/* Header + controls */}
             <div className="row mb-2">
               <div className="col-48 d-flex align-items-center">
-                <h5 className="m-0">Dynacare Lab: Parse & Review (Local Only)</h5>
+                <h5 className="m-0">LifeLab: Parse & Review (Local Only)</h5>
                 <div className="ms-auto d-flex gap-2">
                   <button className="btn btn-outline-secondary" onClick={resetAll}>Clear</button>
                 </div>
@@ -283,7 +283,7 @@ export default function DynacareLab({ onParsed, onChange }) {
               <div className="">
                 <div className="row">
                   <div className="col-48 text-muted">
-                    <em>Select a Dynacare (PDF) lab report to parse and review.</em>
+                    <em>Select a LifeLab (PDF) lab report to parse and review.</em>
                   </div>
                 </div>
               </div>

@@ -16,10 +16,10 @@ export const navButtons = [
     { security: "1", id: "users", text: "Users", color: "light" },
 ];
 
-export const version = "v3.0.5";
-export const versionDate = "2025-11-06";
-export const versionTime = "5:30 AM";
-export const versionNotes = "Many Changes, but Most Important is Medication Recommendation Search Feature Added";
+export const version = "v3.3.1";
+export const versionDate = "2025-11-20";
+export const versionTime = "3:30 AM";
+export const versionNotes = "Privider is re-connected for both Demo and non-Demo modes. Pharmacy Uploaded downgraded";
 
 // Standardized recommendation texts for popup Medications Below This.. put other variables Above This
 
