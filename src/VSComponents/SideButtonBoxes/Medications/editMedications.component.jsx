@@ -139,6 +139,49 @@ const MedsAdminPanel = () => {
 
   // ---------- Load categories once if empty ----------
 
+  const processUsed = async (din) => {
+  try {
+    const res = await fetch("https://gdmt.ca/PHP/medication.php", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        script: "toggleMedicationUsed",
+        DIN: din,
+      }),
+    });
+
+    const text = await res.text();
+    let payload = null;
+    try {
+      payload = JSON.parse(text);
+    } catch {}
+
+    if (!res.ok || (payload && payload.success === false)) {
+      throw new Error((payload && payload.error) || "Update failed");
+    }
+
+    // Update medsArray to reflect change
+    if (typeof updateMedsArray === "function") {
+      updateMedsArray((prev) =>
+        (Array.isArray(prev) ? prev : []).map((row) =>
+          String(row.DIN) === String(din)
+            ? {
+                ...row,
+                medicationUsed:
+                  String(row.medicationUsed ?? "").toLowerCase() === "yes"
+                    ? "No"
+                    : "Yes",
+              }
+            : row
+        )
+      );
+    }
+  } catch (e) {
+    console.error("Toggle medicationUsed error:", e);
+    setMsg("Update failed: " + (e?.message || "Unknown error"));
+  }
+};
+
 
   useEffect(() => {
     let cancelled = false;
@@ -192,6 +235,47 @@ const MedsAdminPanel = () => {
       cancelled = true;
     };
   }, []);
+
+    console.log("Processing toggle for DIN:", din);
+    return;
+    return async () => {
+      try {
+        const res = await fetch("https://gdmt.ca/PHP/medication.php", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            script: "toggleMedicationUsed",
+            DIN: din,
+          }),
+        });
+
+        const text = await res.text();
+        let payload = null;
+        try {
+          payload = JSON.parse(text);
+        } catch { }
+        if (!res.ok || (payload && payload.success === false)) {
+          throw new Error((payload && payload.error) || "Update failed");
+        }
+
+        // Update medsArray to reflect change
+        if (typeof updateMedsArray === "function") {
+          updateMedsArray((prev) =>
+            (Array.isArray(prev) ? prev : []).map((row) =>
+              String(row.DIN) === String(din)
+                ? {
+                  ...row,
+                  medicationUsed: String(row.medicationUsed ?? "").toLowerCase() === "yes" ? "No" : "Yes",
+                }
+                : row
+            )
+          );
+        }
+      } catch (e) {
+        console.error("Toggle medicationUsed error:", e);
+        setMsg("Update failed: " + (e?.message || "Unknown error"));
+      }
+    }
 
 
   // ---------- Load meds once if empty ----------
@@ -266,6 +350,7 @@ const MedsAdminPanel = () => {
   }, [meds, filter, medFilter]);
 
 
+
   return (
     <div className="container-fluid">
       <div className="row g-3">
@@ -326,7 +411,7 @@ const MedsAdminPanel = () => {
                                   {medication_dose || <span className="text-muted">—</span>}
                                 </div>
                                 <div className="flex-grow-1 text-end gap-2 d-flex justify-content-end">
-                                  <button className={`btn btn-sm w-25 ${medication_used === 'Yes' ? "btn-primary" : "btn-warning"}`}>{medication_used}</button>
+                                  <button onClick={processUsed(medication_din)} className={`btn btn-sm w-25 ${medication_used === 'Yes' ? "btn-primary" : "btn-warning"}`}>{medication_used}</button>
                                   <button
                                     className="btn btn-sm btn-outline-warning"
                                     onClick={() =>
