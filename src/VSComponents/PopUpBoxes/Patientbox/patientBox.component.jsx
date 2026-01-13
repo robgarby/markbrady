@@ -429,7 +429,7 @@ export default function PatientInfo({ user, thePatient, loading = false }) {
                             Life Lab
                           </button>
                         </div>
-                        <div className="col-16">
+                        {/* <div className="col-16">
                           <button
                             className={`btn-sm btn disabled  w-100 fs-7 ${
                               mainButton === 'newLab' ? 'btn-warning' : 'btn-outline-primary'
@@ -438,7 +438,7 @@ export default function PatientInfo({ user, thePatient, loading = false }) {
                           >
                             new Lab
                           </button>
-                        </div>
+                        </div> */}
                       </div>
                     </div>
                   </div>
@@ -462,7 +462,7 @@ export default function PatientInfo({ user, thePatient, loading = false }) {
                             Hospital
                           </button>
                         </div>
-                        <div className="col-16">
+                        {/* <div className="col-16">
                           <button
                             className={`btn-sm btn  w-100 fs-7 ${
                               mainButton === 'pharmacy' ? 'btn-warning' : 'btn-outline-primary'
@@ -481,7 +481,7 @@ export default function PatientInfo({ user, thePatient, loading = false }) {
                           >
                             Alergy
                           </button>
-                        </div>
+                        </div> */}
                       </div>
                     </div>
                   </div>

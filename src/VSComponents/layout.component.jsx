@@ -16,7 +16,10 @@ import { useNavigate } from "react-router-dom";
 import logo from "../assets/GMDT_Alone.svg";
 import LabWork from "./labWork.component.jsx";
 import AsideNav from "./Universal/SideButtons/sideButtons.component.jsx";
-import MedBoxComplete from "./SideButtonBoxes/Medications/medicationAdmin.component.jsx"
+
+import MedBoxComplete from "./SideButtonBoxes/Medications/editMedications.component.jsx";
+import EditCats from "./SideButtonBoxes/Category/editCats.component.jsx";
+import PharmacyUpload from "./SideButtonBoxes/Pharmacy/pharmacy.component.jsx";
 
 export default function Layout() {
   const {
@@ -102,6 +105,9 @@ export default function Layout() {
   }, [selectedTopButtons]);
 
   const isMedAdmin = visibleBox === "medAdmin";
+  const isCatAdmin = visibleBox === "catAdmin";
+  const isPharmacy = visibleBox === "pharmacy";
+  const isOverlayOpen = isMedAdmin || isCatAdmin || isPharmacy;
 
   return (
     <>
@@ -134,20 +140,13 @@ export default function Layout() {
           >
             {/* ✅ Full-screen overlay for Med Admin */}
             {isMedAdmin && (
-              <div
-                className="position-absolute top-0 start-0 w-100 h-100 bg-white"
-                style={{ zIndex: 3000 }}
-              >
-                <div
-                  className="d-flex align-items-center px-3 border-bottom"
-                  style={{ height: "56px" }}
-                >
+              <div className="position-absolute top-0 start-0 w-100 h-100 bg-white" style={{ zIndex: 3000 }}>
+                <div className="d-flex align-items-center px-3 border-bottom" style={{ height: "56px" }}>
                   <div className="fw-bold">Medication Admin</div>
 
                   <div className="ms-auto">
-                    <button
-                      className="btn btn-outline-danger btn-sm"
-                      onClick={() => setVisibleBox("")}
+                    <button className="btn btn-outline-danger btn-sm" onClick={() => setVisibleBox("")}
+                      disabled={loading}
                     >
                       Close
                     </button>
@@ -155,22 +154,64 @@ export default function Layout() {
                 </div>
 
                 <div style={{ height: "calc(100% - 56px)", overflow: "auto" }} className="p-3">
-                  <MedBoxComplete user={theUser} />
+                  <MedBoxComplete />
+                </div>
+              </div>
+            )}
+
+            {/* ✅ Full-screen overlay for Category Admin */}
+            {isCatAdmin && (
+              <div className="position-absolute top-0 start-0 w-100 h-100 bg-white" style={{ zIndex: 3000 }}>
+                <div className="d-flex align-items-center px-3 border-bottom" style={{ height: "56px" }}>
+                  <div className="fw-bold">Category Admin</div>
+
+                  <div className="ms-auto">
+                    <button className="btn btn-outline-danger btn-sm" onClick={() => setVisibleBox("")}
+                      disabled={loading}
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ height: "calc(100% - 56px)", overflow: "auto" }} className="p-3">
+                  <EditCats />
+                </div>
+              </div>
+            )}
+
+            {/* ✅ Full-screen overlay for Pharmacy Upload (same pattern as Med/Cats) */}
+            {isPharmacy && (
+              <div className="position-absolute top-0 start-0 w-100 h-100 bg-white" style={{ zIndex: 3000 }}>
+                <div className="d-flex align-items-center px-3 border-bottom" style={{ height: "56px" }}>
+                  <div className="fw-bold">Upload Pharmacy Reports</div>
+
+                  <div className="ms-auto">
+                    <button className="btn btn-outline-danger btn-sm" onClick={() => setVisibleBox("")}
+                      disabled={loading}
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ height: "calc(100% - 56px)", overflow: "auto" }} className="p-0">
+                  <div className="p-2" style={{ height: "100%" }}>
+                    <PharmacyUpload />
+                  </div>
                 </div>
               </div>
             )}
 
             {/* Sidebar */}
-            <aside
-              className="d-flex flex-column align-items-center pt-1 bg-black gap-2 h-100"
-              style={{ width: "60px" }}
-            >
+            <aside className="d-flex flex-column align-items-center pt-1 bg-black gap-2 h-100" style={{ width: "60px" }}>
               <AsideNav />
             </aside>
 
             {/* Main area */}
             <main className="display flex-grow-1 p-3 h-100 overflow-auto">
-              {!isMedAdmin && (
+              {/* ✅ Hide main content whenever an overlay is open */}
+              {!isOverlayOpen && (
                 <>
                   {activePatient && !displayMain && (
                     <PatientDisplay
@@ -215,17 +256,4 @@ export default function Layout() {
       )}
     </>
   );
-}
-
-function Box({ id, title = "Untitled", content = "" }) {
-  return (
-    <div>
-      <div>{title}</div>
-      <div>{content}</div>
-    </div>
-  );
-}
-
-function EmptyState() {
-  return <div className="text-center text-muted"></div>;
 }

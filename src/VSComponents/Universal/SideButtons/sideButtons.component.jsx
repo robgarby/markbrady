@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { useGlobalContext } from "../../../Context/global.context.jsx";
 
 import medIdon from "../../../assets/icons/meds.svg";
-import uploadIcon from "../../../assets/icons/upload.svg";
 import searchIcon from "../../../assets/icons/search.svg";
 import resultIcon from "../../../assets/icons/results.svg";
 import printIcon from "../../../assets/icons/print.svg";
@@ -12,6 +11,7 @@ import logOutIcon from "../../../assets/icons/logout.svg";
 import allergyIcont from "../../../assets/icons/allergy.svg";
 import pharmacyUploadIcon from "../../../assets/icons/pharmacy.svg";
 import hospitalUploadIcon from "../../../assets/icons/hospital.svg";
+import catIcon from "../../../assets/icons/catEdit.svg";
 
 // -----------------------------------------
 // Internal component (NOT imported)
@@ -143,6 +143,15 @@ export default function SideButtons() {
           }}
         />
         <SideButton
+          title="Edit Categories"
+          divColor="#ffffffff"
+          icon={catIcon}
+           onClick={() => {
+            // ✅ opens the full-screen med admin overlay in Layout
+            setVisibleBox("catAdmin");
+          }}
+        />
+        <SideButton
           title="Edit Conditions"
           divColor="#366c13ff"
           icon={conditionsIcon}
@@ -160,14 +169,16 @@ export default function SideButtons() {
             title="Upload Pharmacy Reports"
             divColor="#ffffffff"
             icon={pharmacyUploadIcon}
-            onClick={() => navigate("/print")}
+            onClick={() => {
+            setVisibleBox("pharmacy");
+          }}
           />
-          <SideButton
+          {/* <SideButton
             title="Upload Hospital Reports"
             divColor="#0b9c3eff"
             icon={hospitalUploadIcon}
             onClick={() => navigate("/print")}
-          />
+          /> */}
         </div>
       </div>
 

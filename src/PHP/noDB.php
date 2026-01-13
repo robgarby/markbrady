@@ -128,7 +128,7 @@ if ($data['script'] === 'updateConditionName') {
 }
 
 if ($data['script'] === 'getMedsCategory') {
-    $sql2 = "SELECT * FROM medCat ORDER BY medication_cat ASC";
+    $sql2 = "SELECT * FROM medCats2026 where catStatus = 'Yes'  ORDER BY catName ASC";
     $result2 = $conn->query($sql2);
     if ($result2) {
         $cats = [];

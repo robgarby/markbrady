@@ -3,13 +3,12 @@ import React, { useRef, useState, useEffect } from "react";
 import * as pdfjsLib from "pdfjs-dist";
 import DragBox from "../DragBox/Drag/dragBox.component.jsx";
 
-// Keep worker consistent with your stack
 pdfjsLib.GlobalWorkerOptions.workerSrc =
   "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js";
 
 // ---------- Helpers ----------
 
-// Read all text from a PDF file client-side (similar to Dynacare)
+// Read all text from a PDF file client-side
 const readPdfToText = async (file) => {
   const buf = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
@@ -28,6 +27,8 @@ const readPdfToText = async (file) => {
   return rawText;
 };
 
+const API_Endpoint = "https://www.gdmt.ca/PHP/labData.php";
+
 const normalizeText = (txt) =>
   (txt || "")
     .replace(/\r\n/g, "\n")
@@ -36,19 +37,66 @@ const normalizeText = (txt) =>
     .trim();
 
 /**
+ * Extract a trailing dose/strength from a medication string WITHOUT removing it from the name.
+ * Examples:
+ *  - "Pantoprazole 40mg" -> "40mg"
+ *  - "Betamethasone Valerate 0.05%" -> "0.05%"
+ *  - "Ethinyl Estradiol / Etonogestrel 2.7mg/11.7mg" -> "2.7mg/11.7mg"
+ *  - "4MM/32G" -> "4MM/32G"
+ */
+const extractDoseFromMedicationName = (full) => {
+  const s = (full || "").trim();
+  if (!s) return "";
+
+  // 4MM/32G style (needle/supply)
+  let m = s.match(/(\d+(?:\.\d+)?\s*mm\s*\/\s*\d+(?:\.\d+)?\s*g)\s*$/i);
+  if (m) {
+    return m[1].replace(/\s+/g, "").toUpperCase(); // 4MM/32G
+  }
+
+  // multi-part: 2.7mg/11.7mg, 5mg/5mL, etc.
+  m = s.match(
+    /(\d+(?:\.\d+)?\s*(?:mcg|mg|g|kg|ml|mL|l|L|%|units|iu|IU)\s*(?:\/\s*\d+(?:\.\d+)?\s*(?:mcg|mg|g|kg|ml|mL|l|L|%|units|iu|IU))+)\s*$/i
+  );
+  if (m) {
+    return m[1].replace(/\s+/g, "").replace(/ml/gi, "mL").replace(/iu/gi, "IU");
+  }
+
+  // single trailing: 40mg, 0.05%, 100mcg, 10mL, etc.
+  m = s.match(/(\d+(?:\.\d+)?\s*(?:mcg|mg|g|kg|ml|mL|l|L|%|units|iu|IU))\s*$/i);
+  if (m) {
+    return m[1].replace(/\s+/g, "").replace(/ml/gi, "mL").replace(/iu/gi, "IU");
+  }
+
+  return "";
+};
+
+/**
  * Extract basic patient meta from the pharmacy med history PDF.
- * Target fields:
- *  - name: line like "Andrews, Dana"
- *  - HCN: first "Billing Info XXXXX" pattern
- *  - address: street + city/province/postal inferred around postal code
- *  - allergies: after "Allergies - ..."
- *  - conditions: after "Conditions - ..."
+ *
+ * Uses the working address logic:
+ *  - Name = first "Last, First" line
+ *  - Street = first non-empty line under name (before "Plan:")
+ *  - City / Prov / Postal pulled from following lines (Hawkesbury ON / K6A 1A5, etc.)
+ * Also:
+ *  - HCN from "Billing Info ... Rel: 0", formatted as "XXXX XXX XXX"
+ *  - Date of Birth from "Date of Birth" line
  */
 const extractPatientMetaFromPharm = (rawText) => {
-  const text = normalizeText(rawText);
+  const rawLines = rawText
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  const normText = normalizeText(rawText);
+
   const meta = {
     name: "",
     healthNumber: "",
+    healthNumberRaw: "",
+    dateOfBirth: "",
     street: "",
     city: "",
     province: "",
@@ -57,52 +105,85 @@ const extractPatientMetaFromPharm = (rawText) => {
     conditions: [],
   };
 
-  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
-
-  // --- Name: first line that looks like "Last, First" ---
-  for (const line of lines) {
+  // --- Name: first "Last, First" style line, track its index ---
+  let nameIndex = -1;
+  for (let i = 0; i < rawLines.length; i++) {
+    const line = rawLines[i];
     const m = line.match(/^([A-ZÀ-Ÿ][^,]+,\s*[A-ZÀ-Ÿ][^,]+)$/);
     if (m) {
       meta.name = m[1].trim();
+      nameIndex = i;
       break;
     }
   }
 
-  // --- HCN: first "Billing Info XXXXXX" ---
-  const hcnMatch = text.match(/Billing Info\s+([A-Z0-9 ]{6,})\s+Rel:/i);
+  // --- HCN: "Billing Info XXXXX Rel: 0" ---
+  const hcnMatch = normText.match(/Billing Info\s+([A-Z0-9 ]{6,})\s+Rel:/i);
   if (hcnMatch) {
-    meta.healthNumber = hcnMatch[1].trim();
+    const raw = hcnMatch[1].replace(/\s+/g, "").trim(); // digits only
+    meta.healthNumberRaw = raw;
+
+    // Format as 4-3-3 => "XXXX XXX XXX" if we have 10 digits
+    if (raw.length === 10) {
+      meta.healthNumber = `${raw.slice(0, 4)} ${raw.slice(4, 7)} ${raw.slice(7)}`;
+    } else {
+      meta.healthNumber = raw;
+    }
   }
 
-  // --- Address: find line with Canadian postal code, use previous line as street ---
-  const postalRegex = /\b([A-Z]\d[A-Z]\s?\d[A-Z]\d)\b/;
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const pm = line.match(postalRegex);
-    if (pm) {
-      meta.postalCode = pm[1];
-      // crude split: city + province before postal
-      const before = line.substring(0, line.indexOf(pm[1])).trim();
-      const parts = before.split(/\s+/);
-      if (parts.length >= 2) {
-        meta.province = parts[parts.length - 1];
-        meta.city = parts.slice(0, parts.length - 1).join(" ");
-      } else {
-        meta.city = before;
+  // --- Date of Birth: handles "Date of Birth - 25-07-1990" etc. ---
+  const dobMatch = normText.match(
+    /date\s*of\s*birth\s*[-–—]?\s*([0-3]?\d[-\/][0-1]?\d[-\/][12]\d{3})/i
+  );
+
+  if (dobMatch) {
+    meta.dateOfBirth = dobMatch[1].trim();
+  }
+
+  // --- Address: street = line under name; city/prov/postal from the next lines ---
+  if (nameIndex !== -1) {
+    // 1) Street: first non-empty line after name, trimmed before "Plan:"
+    for (let i = nameIndex + 1; i < Math.min(nameIndex + 5, rawLines.length); i++) {
+      const line = rawLines[i];
+      if (!line) continue;
+      if (/^Date of Birth/i.test(line)) break; // safety guard
+
+      const streetPart = line.split(/Plan:/i)[0].trim();
+      if (streetPart) {
+        meta.street = streetPart;
       }
-      // previous non-empty line as street
-      for (let j = i - 1; j >= 0; j--) {
-        if (lines[j] && !/Patient Medical History Report/i.test(lines[j])) {
-          meta.street = lines[j];
+
+      // 2) City / Province / Postal: search the next few lines
+      const provinceRegex = /^(.+?)\s+(ON|QC|NB|NS|BC|MB|SK|AB|NL|PE|YT|NT|NU)\b/;
+      const postalRegex = /\b([A-Z]\d[A-Z]\s?\d[A-Z]\d)\b/;
+
+      for (let j = i + 1; j < Math.min(i + 6, rawLines.length); j++) {
+        const l2 = rawLines[j];
+        if (!l2) continue;
+
+        const cityProvMatch = l2.match(provinceRegex);
+        if (cityProvMatch) {
+          meta.city = cityProvMatch[1].trim();
+          meta.province = cityProvMatch[2];
+        }
+
+        const postalMatch = l2.match(postalRegex);
+        if (postalMatch) {
+          meta.postalCode = postalMatch[1];
+        }
+
+        if (meta.city && meta.province && meta.postalCode) {
           break;
         }
       }
+
+      // Once we’ve processed from the first address line after the name, we’re done
       break;
     }
   }
 
   // --- Allergies ---
-  const allergyMatch = text.match(/Allergies\s*-\s*([^\n]+)/i);
+  const allergyMatch = normText.match(/Allergies\s*-\s*([^\n]+)/i);
   if (allergyMatch) {
     meta.allergies = allergyMatch[1]
       .split(/[;,\|]/)
@@ -111,7 +192,7 @@ const extractPatientMetaFromPharm = (rawText) => {
   }
 
   // --- Conditions ---
-  const condMatch = text.match(/Conditions?\s*-\s*([^\n]+)/i);
+  const condMatch = normText.match(/Conditions?\s*-\s*([^\n]+)/i);
   if (condMatch) {
     meta.conditions = condMatch[1]
       .split(/[;,\|]/)
@@ -123,21 +204,29 @@ const extractPatientMetaFromPharm = (rawText) => {
 };
 
 /**
- * Extract medication names from the Drug Name table.
- * We use a pattern like:
- *   "1048132 1071853 28 310 TAB Irbesartan 150mg 02317079 Dr."
+ * Extract medication names/DINs and First/Last Fill dates from the Drug Name table.
  *
- * Capture group:
- *   - Form: TAB|CAP|ML|DEV|SUSP etc.
- *   - Name + dose: up to 8-digit DIN, right before it.
+ * Pattern in normalized text (single-line):
+ *   "... TAB Irbesartan 150mg 02317079 Dr. QUENNEVILLE, MI 20-Jun-2025 29-Oct-2025 ..."
+ *
+ * We capture:
+ *   - med name (between form and DIN)
+ *   - DIN (8 digits)
+ *   - first date after "Dr."  => firstFill
+ *   - second date after that  => lastFill
+ *
+ * IMPORTANT: medication keeps the dose in the name (ex: "Irbesartan 150mg")
+ * ALSO: medication_dose saves just the dose (ex: "150mg")
  */
 const extractMedicationsFromPharm = (rawText) => {
   const text = normalizeText(rawText);
 
-  // Expand accepted forms as needed
-  const formPattern = "(?:TAB|CAP|ML|DEV|SUSP|INJ|SOLN|SR|CR|ER)";
+  // expanded common forms
+  const formPattern = "(?:TAB|CAP|ML|DEV|SUSP|INJ|SOLN|SR|CR|ER|GM|DOS|RNG)";
+  const datePattern = "([0-3][0-9]-[A-Za-z]{3}-[12][0-9]{3})";
+
   const regex = new RegExp(
-    `\\b${formPattern}\\s+(.+?)\\s+(\\d{8})\\s+Dr\\.`,
+    `\\b${formPattern}\\s+(.+?)\\s+(\\d{8})\\s+Dr\\..*?${datePattern}(?:\\s+${datePattern})?`,
     "g"
   );
 
@@ -146,14 +235,22 @@ const extractMedicationsFromPharm = (rawText) => {
 
   let m;
   while ((m = regex.exec(text)) !== null) {
-    const fullName = m[1].trim(); // e.g. "Irbesartan 150mg"
+    const fullName = m[1].trim(); // keep dose IN name
+    const dose = extractDoseFromMedicationName(fullName);
+
     const din = m[2];
-    const key = `${fullName}__${din}`;
+    const firstFill = m[3] || "";
+    const lastFill = m[4] || "";
+
+    const key = `${fullName}__${dose}__${din}__${firstFill}__${lastFill}`;
     if (!seen.has(key)) {
       seen.add(key);
       meds.push({
-        medication: fullName,
+        medication: fullName,        // includes dose
+        medication_dose: dose || "", // extracted
         din,
+        firstFill,
+        lastFill,
       });
     }
   }
@@ -170,8 +267,10 @@ export default function PharmacyMedHistory({ onParsed }) {
 
   const [record, setRecord] = useState(null);
   // record = {
-  //   name, healthNumber, street, city, province, postalCode,
-  //   allergies: [], conditions: [], medications: []
+  //   name, healthNumber, healthNumberRaw, dateOfBirth,
+  //   street, city, province, postalCode,
+  //   allergies: [], conditions: [],
+  //   medications: [{ medication, medication_dose, din, firstFill, lastFill }]
   // }
 
   useEffect(() => {
@@ -189,13 +288,60 @@ export default function PharmacyMedHistory({ onParsed }) {
       const rawText = await readPdfToText(file);
 
       const meta = extractPatientMetaFromPharm(rawText);
+
+    // Send meta to backend to get HCN
+    const hcnResponse = await fetch(API_Endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        scriptName: "getHealthCardNumber",
+        patientData: meta,
+      }),
+    });
+
+    const hcnResult = await hcnResponse.json();
+    if (hcnResult.healthNumber) {
+      meta.healthNumber = hcnResult.healthNumberFormatted;
+      meta.healthNumberRaw = hcnResult.healthNumberRaw || meta.healthNumberRaw;
+    }
       const meds = extractMedicationsFromPharm(rawText);
+
+      // backend processing (gdmt)
+      const response = await fetch(API_Endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          scriptName: "processPharmacyMeds",
+          healthNumber: meta.healthNumber,
+          medications: meds,
+        }),
+      });
+
+      const result = await response.json();
+      const processedMeds = result.meds || meds;
 
       const next = {
         ...meta,
-        medications: meds,
+        medications: processedMeds,
         rawText, // keep for debugging if needed
       };
+
+      // local processing (your current extra call — left as-is)
+      await  fetch(API_Endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "processPharmacyMeds",
+          patientData: meta,
+          medications: meds,
+        }),
+      });
 
       setRecord(next);
       setMsg("");
@@ -233,7 +379,7 @@ export default function PharmacyMedHistory({ onParsed }) {
         {/* Header + controls */}
         <div className="row mb-2">
           <div className="col-48 d-flex align-items-center">
-            <h5 className="m-0">Monthly Pharmacy Medication History – Parse & Review</h5>
+            <h5 className="m-0">Monthly Pharmacy Medication History – Parse &amp; Review</h5>
             <div className="ms-auto d-flex gap-2">
               <button className="btn btn-outline-secondary" onClick={resetAll}>
                 Clear
@@ -274,17 +420,23 @@ export default function PharmacyMedHistory({ onParsed }) {
             <div className="row g-3 mb-3">
               <div className="col-48">
                 <div className="card p-2">
+                  {/* Row 1: Name / HCN / DOB */}
                   <div className="row">
-                    <div className="col-24">
+                    <div className="col-16">
                       <div className="fw-bold">Name</div>
                       <div>{record.name || <em>Unknown</em>}</div>
                     </div>
-                    <div className="col-24">
+                    <div className="col-16">
                       <div className="fw-bold">Health Card Number</div>
                       <div>{record.healthNumber || <em>Unknown</em>}</div>
                     </div>
+                    <div className="col-16">
+                      <div className="fw-bold">Date of Birth</div>
+                      <div>{record.dateOfBirth || <em>Unknown</em>}</div>
+                    </div>
                   </div>
 
+                  {/* Row 2: Address */}
                   <div className="row mt-2">
                     <div className="col-24">
                       <div className="fw-bold">Street</div>
@@ -306,6 +458,7 @@ export default function PharmacyMedHistory({ onParsed }) {
                     </div>
                   </div>
 
+                  {/* Row 3: Allergies / Conditions */}
                   <div className="row mt-2">
                     <div className="col-24">
                       <div className="fw-bold">Allergies</div>
@@ -316,7 +469,9 @@ export default function PharmacyMedHistory({ onParsed }) {
                           ))}
                         </ul>
                       ) : (
-                        <div><em>None listed</em></div>
+                        <div>
+                          <em>None listed</em>
+                        </div>
                       )}
                     </div>
                     <div className="col-24">
@@ -328,7 +483,9 @@ export default function PharmacyMedHistory({ onParsed }) {
                           ))}
                         </ul>
                       ) : (
-                        <div><em>None listed</em></div>
+                        <div>
+                          <em>None listed</em>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -352,15 +509,31 @@ export default function PharmacyMedHistory({ onParsed }) {
                           <table className="table table-sm table-striped mb-0">
                             <thead>
                               <tr>
-                                <th style={{ width: "60%" }}>Medication</th>
-                                <th style={{ width: "40%" }}>DIN</th>
+                                <th style={{ width: "30%" }}>Medication</th>
+                                <th style={{ width: "15%", textAlign: "center" }}>DIN</th>
+                                <th style={{ width: "10%" }}></th>
+                                <th style={{ width: "15%", textAlign: "center" }}>First Fill</th>
+                                <th style={{ width: "15%", textAlign: "center" }}>Last Fill</th>
+                                <th style={{ width: "15%", textAlign: "center" }}>Action</th>
                               </tr>
                             </thead>
                             <tbody>
                               {record.medications.map((m, idx) => (
                                 <tr key={`${m.medication}_${m.din}_${idx}`}>
                                   <td>{m.medication}</td>
-                                  <td>{m.din}</td>
+                                  <td className="text-center">{m.din}</td>
+                                  <td></td>
+                                  <td className="text-center">
+                                    {m.firstFill || <span className="text-muted text-center">-</span>}
+                                  </td>
+                                  <td className="text-center">
+                                    {m.lastFill || <span className="text-muted text-center">-</span>}
+                                  </td>
+                                  <td>
+                                    {m.action || (
+                                      <span className="text-muted text-center">Add or Update</span>
+                                    )}
+                                  </td>
                                 </tr>
                               ))}
                             </tbody>

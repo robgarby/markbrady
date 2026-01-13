@@ -1403,3 +1403,80 @@ if ($data['script'] === 'updateProvider') {
           exit;
      }
 }
+
+if (($data['script'] ?? '') === 'updateMedicationAndPropagate') {
+
+     $ID = $data['ID'] ?? null;
+     $newMedication = $data['newMedication'] ?? null;
+     $medication_cat = $data['medication_cat'] ?? null;
+     $catID = $data['catID'] ?? null;
+     $medication_dose = $data['medication_dose'] ?? null;
+     $medPoints = $data['medPoints'] ?? null;
+
+     if (!$ID) {
+          http_response_code(400);
+          echo json_encode(['success' => false, 'error' => 'Missing ID']);
+          exit;
+     }
+
+     // 1) Update the edited medication row
+     $stmt = $conn->prepare("
+    UPDATE medications_2026
+    SET medication = ?, medication_cat = ?, catID = ?, medication_dose = ?, medPoints = ?
+    WHERE ID = ?
+  ");
+     if (!$stmt) {
+          http_response_code(500);
+          echo json_encode(['success' => false, 'error' => 'Prepare failed', 'details' => $conn->error]);
+          exit;
+     }
+
+     // ✅ correct types: catID is string, medPoints is int
+     $stmt->bind_param('ssssii', $newMedication, $medication_cat, $catID, $medication_dose, $medPoints, $ID);
+
+     if (!$stmt->execute()) {
+          http_response_code(500);
+          echo json_encode(['success' => false, 'error' => 'Update failed', 'details' => $stmt->error]);
+          $stmt->close();
+          exit;
+     }
+     $affected = $stmt->affected_rows;
+     $stmt->close();
+
+     // 2) Update medicationUsed for ALL meds in one query (fast)
+     $stmt = $conn->prepare("
+     UPDATE medications_2026 m
+          LEFT JOIN medCats2026 c ON c.ID = CAST(m.catID AS UNSIGNED)
+          SET
+          m.medicationUsed = CASE
+                WHEN CAST(m.catID AS UNSIGNED) = 237 THEN 'No'
+               ELSE c.catStatus
+          END,
+          m.medPoints = CASE
+          WHEN CAST(m.catID AS UNSIGNED) = 237 THEN 0
+          WHEN c.catPoints IS NULL THEN m.medPoints
+          ELSE c.catPoints
+          END
+          WHERE m.catID IS NOT NULL AND m.catID <> '';
+
+
+  ");
+     if (!$stmt) {
+          http_response_code(500);
+          echo json_encode(['success' => false, 'error' => 'Prepare failed', 'details' => $conn->error]);
+          exit;
+     }
+
+     $stmt->execute();
+     $updatedUsed = $stmt->affected_rows;
+     $stmt->close();
+
+     // 3) Set medicationUsed = 'No' for all meds with catID = '237'
+     echo json_encode([
+          'success' => true,
+          'edited_rows' => $affected,
+          'medicationUsed_rows_updated' => $updatedUsed
+     ]);
+     exit;
+}
+

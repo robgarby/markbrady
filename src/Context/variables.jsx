@@ -16,10 +16,10 @@ export const navButtons = [
     { security: "1", id: "users", text: "Users", color: "light" },
 ];
 
-export const version = "v3.3.5";
-export const versionDate = "2025-11-28";
-export const versionTime = "6:30 AM";
-export const versionNotes = "Pharmacy Lab Work Updates";
+export const version = "v4.0.0";
+export const versionDate = "2026-01-09";
+export const versionTime = "9:15 AM";
+export const versionNotes = "Ready to Assign Meds";
 
 // Standardized recommendation texts for popup Medications Below This.. put other variables Above This
 

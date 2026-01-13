@@ -53,7 +53,30 @@ if ($data['script'] === 'getMeds2026') {
      exit;
 }
 
+if ($data['script'] === 'toggleMedicationUsed') {
 
+
+     $medDin = $data['DIN'] ?? '';
+     $medUsed = $data['nextValue'] ?? 'Yes';
+
+     $u = "update medications_2026 SET medicationUsed = ? where DIN = ?"; 
+     $stmt = $conn->prepare($u);
+     $stmt->bind_param("ss", $medUsed, $medDin);
+     if ($stmt->execute()) {
+          echo json_encode([
+               'success' => true,
+               'message' => 'Medication usage status updated successfully.'
+          ]);
+     } else {
+          http_response_code(500);
+          echo json_encode([
+               'success' => false,
+               'error' => 'Update failed',
+               'details' => $stmt->error
+          ]);
+     }
+     exit;
+}
 
 if ($data['script'] === 'getMedsArray') {
      $sql = "SELECT * FROM medications ORDER BY medication ASC";
@@ -79,3 +102,92 @@ if ($data['script'] === 'getMedsArray') {
 
      exit;
 }
+
+if ($data['script'] === 'getCats') {
+$sql = "SELECT * FROM medCats2026 ORDER BY catName ASC";
+$result = $conn->query($sql);
+if ($result) {
+     $cats = [];
+     while ($row = $result->fetch_assoc()) {
+          $cats[] = $row;
+     }
+     echo json_encode([
+          'success' => true,
+          'cats' => $cats
+     ]);
+} else {
+     http_response_code(500);
+     echo json_encode([
+          'success' => false,
+          'error' => 'Query failed',
+          'details' => $conn->error
+     ]);
+}
+exit;
+}
+
+// --- inside medication.php (or included) ---
+
+if (($data['script'] ?? '') === 'toggleCatUsed') {
+
+    $ID = intval($data['ID'] ?? 0);
+    $nextValue = trim((string)($data['nextValue'] ?? ''));
+
+    // Normalize
+    $nextValueLower = strtolower($nextValue);
+    $nextValue = ($nextValueLower === 'yes') ? 'Yes' : 'No';
+
+    if ($ID <= 0) {
+        // send-and-forget: return minimal
+        echo json_encode(['success' => false, 'error' => 'Missing/invalid ID']);
+        exit;
+    }
+
+    $sql = "UPDATE medCats2026 SET catStatus = ? WHERE ID = ? LIMIT 1";
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        echo json_encode(['success' => false, 'error' => 'Prepare failed']);
+        exit;
+    }
+
+    $stmt->bind_param("si", $nextValue, $ID);
+    $ok = $stmt->execute();
+    $stmt->close();
+
+    // If you truly don’t care, you can just echo success always,
+    // but this helps debugging.
+    echo json_encode(['success' => $ok ? true : false]);
+    exit;
+}
+
+// --- inside medication.php (or included) ---
+
+if (($data['script'] ?? '') === 'saveCatDisplayName') {
+
+    $ID = intval($data['ID'] ?? 0);
+    $displayName = trim((string)($data['displayName'] ?? ''));
+    $catPoints = intval($data['catPoints'] ?? 0); // ✅ NEW
+
+    if ($ID <= 0) {
+        echo json_encode(['success' => false, 'error' => 'Missing/invalid ID']);
+        exit;
+    }
+
+    // ✅ catName is read-only now, so we do NOT update it
+    $sql = "UPDATE medCats2026 SET displayName = ?, catPoints = ? WHERE ID = ? LIMIT 1";
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        echo json_encode(['success' => false, 'error' => 'Prepare failed']);
+        exit;
+    }
+
+    $stmt->bind_param("sii", $displayName, $catPoints, $ID);
+    $ok = $stmt->execute();
+    $stmt->close();
+
+    echo json_encode(['success' => $ok ? true : false]);
+    exit;
+}
+
+
+
