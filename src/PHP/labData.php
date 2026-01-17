@@ -1914,3 +1914,254 @@ if (($data['scriptName'] ?? '') === 'findPoints') {
     ]);
     exit;
 }
+// -----------------------------------------------------------------------------
+// savePatientInfo
+// Stores patient medication history into Patient_2026
+// - medications: JSON array of { din, lastFill }
+// - medsData: CSV string of DINs
+// - totalPoints stored (no medCount / unknownCats)
+// - dataPoint stored as the date the record was saved/updated
+// -----------------------------------------------------------------------------
+if (($data['scriptName'] ?? '') === 'savePatientInfo') {
+
+    header('Content-Type: application/json');
+
+    $table = 'Patient_2026';
+
+    // -------- helpers --------
+    $digitsOnly = function ($v) {
+        return preg_replace('/\D+/', '', (string) $v);
+    };
+
+    $formatHcn = function ($raw) use ($digitsOnly) {
+        $d = $digitsOnly($raw);
+        if (strlen($d) !== 10) {
+            return trim((string) $raw);
+        }
+        return substr($d, 0, 4) . ' ' . substr($d, 4, 3) . ' ' . substr($d, 7, 3);
+    };
+
+    $normalizeDateYmd = function ($in) {
+        $s = trim((string) $in);
+        if ($s === '') return null;
+
+        // already YYYY-MM-DD
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $s)) return $s;
+
+        // DD-MM-YYYY or DD/MM/YYYY
+        if (preg_match('/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/', $s, $m)) {
+            $dd = str_pad($m[1], 2, '0', STR_PAD_LEFT);
+            $mm = str_pad($m[2], 2, '0', STR_PAD_LEFT);
+            $yy = $m[3];
+            return $yy . '-' . $mm . '-' . $dd;
+        }
+
+        // fallback: strtotime
+        $ts = strtotime($s);
+        if ($ts === false) return null;
+        return date('Y-m-d', $ts);
+    };
+
+    $arrToCsv = function ($arr) {
+        if (!is_array($arr)) return '';
+        $clean = [];
+        foreach ($arr as $x) {
+            $v = trim((string) $x);
+            if ($v !== '') $clean[] = $v;
+        }
+        return implode(',', $clean);
+    };
+
+    // -------- inputs --------
+    $patientData = $data['patientData'] ?? [];
+    if (!is_array($patientData)) $patientData = [];
+
+    $healthNumberIn = (string) ($data['healthNumber'] ?? ($patientData['healthNumber'] ?? ''));
+    $healthNumber = $formatHcn($healthNumberIn);
+    $healthNumberDigits = $digitsOnly($healthNumberIn);
+
+    if ($healthNumber === '' || strlen($healthNumberDigits) < 8) {
+        echo json_encode(['success' => false, 'error' => 'Missing or invalid healthNumber']);
+        exit;
+    }
+
+    $dataPoint = (string) ($data['dataPoint'] ?? date('Y-m-d'));
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $dataPoint)) {
+        $dataPoint = date('Y-m-d');
+    }
+
+    $pharmacyID = trim((string) ($data['pharmacyID'] ?? ''));
+    $totalPoints = (int) ($data['totalPoints'] ?? 0);
+
+    $name = trim((string) ($patientData['name'] ?? $patientData['clientName'] ?? ''));
+    $dob = $normalizeDateYmd($patientData['dateOfBirth'] ?? '');
+    $street = trim((string) ($patientData['street'] ?? ''));
+    $city = trim((string) ($patientData['city'] ?? ''));
+    $province = trim((string) ($patientData['province'] ?? ''));
+    $postalCode = trim((string) ($patientData['postalCode'] ?? ''));
+
+    $allergiesCsv = $arrToCsv($patientData['allergies'] ?? []);
+    $conditionsCsv = $arrToCsv($patientData['conditions'] ?? []);
+
+    // medsData (CSV DIN)
+    $medsData = trim((string) ($data['medsData'] ?? ''));
+
+    // medications JSON (array of {din,lastFill})
+    $medicationsIn = $data['medications'] ?? [];
+    if (!is_array($medicationsIn)) $medicationsIn = [];
+
+    $medSlim = [];
+    foreach ($medicationsIn as $m) {
+        if (!is_array($m)) continue;
+        $din = substr($digitsOnly($m['din'] ?? ''), 0, 8);
+        if (strlen($din) !== 8) continue;
+        $lastFill = trim((string) ($m['lastFill'] ?? ''));
+        $medSlim[] = ['din' => $din, 'lastFill' => $lastFill];
+    }
+
+    $medJson = json_encode($medSlim, JSON_UNESCAPED_UNICODE);
+    if ($medJson === false) $medJson = '[]';
+
+    $realHCN = (strlen($healthNumberDigits) === 10) ? 'Yes' : 'No';
+
+    // -------- upsert (by unique healthNumber) --------
+    $sqlExists = "SELECT id FROM `$table` WHERE healthNumber = ? LIMIT 1";
+    $stmtExists = $conn->prepare($sqlExists);
+    if (!$stmtExists) {
+        echo json_encode(['success' => false, 'error' => 'Prepare failed (exists)', 'details' => $conn->error]);
+        exit;
+    }
+
+    $stmtExists->bind_param('s', $healthNumber);
+    if (!$stmtExists->execute()) {
+        echo json_encode(['success' => false, 'error' => 'Execute failed (exists)', 'details' => $stmtExists->error]);
+        $stmtExists->close();
+        exit;
+    }
+
+    $res = $stmtExists->get_result();
+    $exists = ($res && $res->num_rows > 0);
+    $stmtExists->close();
+
+    if ($exists) {
+        $sqlUp = "UPDATE `$table`
+                  SET patientSource = 'pharmacy',
+                      dataPoint = ?,
+                      pharmacyID = ?,
+                      clientName = ?,
+                      dateOfBirth = ?,
+                      street = ?,
+                      city = ?,
+                      province = ?,
+                      postalCode = ?,
+                      allergies = ?,
+                      conditionsFull = ?,
+                      medsData = ?,
+                      medications = ?,
+                      totalPoints = ?,
+                      realHCN = ?
+                  WHERE healthNumber = ?";
+
+        $stmtUp = $conn->prepare($sqlUp);
+        if (!$stmtUp) {
+            echo json_encode(['success' => false, 'error' => 'Prepare failed (update)', 'details' => $conn->error]);
+            exit;
+        }
+
+        $stmtUp->bind_param(
+            'ssssssssssssiss',
+            $dataPoint,
+            $pharmacyID,
+            $name,
+            $dob,
+            $street,
+            $city,
+            $province,
+            $postalCode,
+            $allergiesCsv,
+            $conditionsCsv,
+            $medsData,
+            $medJson,
+            $totalPoints,
+            $realHCN,
+            $healthNumber
+        );
+
+        if (!$stmtUp->execute()) {
+            echo json_encode(['success' => false, 'error' => 'Update failed', 'details' => $stmtUp->error]);
+            $stmtUp->close();
+            exit;
+        }
+
+        $stmtUp->close();
+
+        echo json_encode([
+            'success' => true,
+            'action' => 'updated',
+            'dataPoint' => $dataPoint,
+        ]);
+        exit;
+    }
+
+    // INSERT
+    // NOTE: medCatSearch + patientNote are NOT NULL in your table, so we provide empty strings.
+    $medCatSearch = '';
+    $patientNote = '';
+
+    $sqlIn = "INSERT INTO `$table` (
+                patientSource, healthNumber, dataPoint, pharmacyID,
+                clientName, dateOfBirth, street, city, province, postalCode,
+                allergies, conditionsFull,
+                medsData, medications, totalPoints,
+                realHCN, medCatSearch, patientNote
+            ) VALUES (
+                'pharmacy', ?, ?, ?,
+                ?, ?, ?, ?, ?, ?,
+                ?, ?,
+                ?, ?, ?,
+                ?, ?, ?
+            )";
+
+    $stmtIn = $conn->prepare($sqlIn);
+    if (!$stmtIn) {
+        echo json_encode(['success' => false, 'error' => 'Prepare failed (insert)', 'details' => $conn->error]);
+        exit;
+    }
+
+    $stmtIn->bind_param(
+        'sssssssssssssisss',
+        $healthNumber,
+        $dataPoint,
+        $pharmacyID,
+        $name,
+        $dob,
+        $street,
+        $city,
+        $province,
+        $postalCode,
+        $allergiesCsv,
+        $conditionsCsv,
+        $medsData,
+        $medJson,
+        $totalPoints,
+        $realHCN,
+        $medCatSearch,
+        $patientNote
+    );
+
+    if (!$stmtIn->execute()) {
+        echo json_encode(['success' => false, 'error' => 'Insert failed', 'details' => $stmtIn->error]);
+        $stmtIn->close();
+        exit;
+    }
+
+    $stmtIn->close();
+
+    echo json_encode([
+        'success' => true,
+        'action' => 'inserted',
+        'dataPoint' => $dataPoint,
+    ]);
+    exit;
+}
+

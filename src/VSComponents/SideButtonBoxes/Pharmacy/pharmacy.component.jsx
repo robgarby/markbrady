@@ -1,5 +1,6 @@
 import React, { useRef, useState, useEffect } from "react";
 import * as pdfjsLib from "pdfjs-dist";
+import { useGlobalContext } from "../../../Context/global.context.jsx";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc =
   "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js";
@@ -358,7 +359,7 @@ const PointsBox = ({ points, unknownCats, loading, colClass = "col-6" }) => {
   );
 };
 
-// ---------- Provider (Pharmacy) helpers for your schema ----------
+// ---------- Provider (Pharmacy) helpers ----------
 const getProviderName = (p) => String(p?.pharmacyName ?? "");
 const getProviderLabel = (p) => {
   const name = (p?.pharmacyName ?? "").trim();
@@ -373,8 +374,13 @@ export default function PharmacyMedHistory({ onParsed }) {
   const [fileKey, setFileKey] = useState(0);
   const fileInputRef = useRef(null);
 
+  const {
+    setVisibleBox,
+  } = useGlobalContext();
+
   const [record, setRecord] = useState(null);
   const [processing, setProcessing] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const [showEdit, setShowEdit] = useState(false);
   const [editForm, setEditForm] = useState({
@@ -384,7 +390,6 @@ export default function PharmacyMedHistory({ onParsed }) {
     conditionsCsv: "",
   });
 
-  // Used to ignore stale async returns (points lookup)
   const parseRunRef = useRef(0);
 
   useEffect(() => {
@@ -400,18 +405,16 @@ export default function PharmacyMedHistory({ onParsed }) {
     }
   }, [showEdit, record]);
 
-  // Backend-loaded data (provider list + loadData)
   const [providerData, setProviderData] = useState(null);
   const [loadData, setLoadData] = useState(null);
 
-  // User must choose provider before selecting file
   const [selectedProviderId, setSelectedProviderId] = useState("");
 
   const providerOptions = Array.isArray(providerData)
     ? providerData
     : providerData
-    ? [providerData]
-    : [];
+      ? [providerData]
+      : [];
 
   const selectedProvider =
     providerOptions.find((p) => String(p?.ID ?? "") === selectedProviderId) || null;
@@ -420,7 +423,6 @@ export default function PharmacyMedHistory({ onParsed }) {
     setSelectedProviderId(e.target.value);
   };
 
-  // Fetch provider + loadData on mount (ONLY)
   useEffect(() => {
     let isMounted = true;
 
@@ -462,10 +464,11 @@ export default function PharmacyMedHistory({ onParsed }) {
   }, []);
 
   const resetAll = () => {
-    parseRunRef.current += 1; // invalidate any in-flight points call
+    parseRunRef.current += 1;
     setRecord(null);
     setMsg("");
     setProcessing(false);
+    setSaving(false);
     setShowEdit(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
     setFileKey((k) => k + 1);
@@ -487,12 +490,10 @@ export default function PharmacyMedHistory({ onParsed }) {
 
       const json = await res.json();
 
-      // ignore stale returns
       if (runId !== parseRunRef.current) return;
 
-      // backend returns: totalPoints + unknownCats
       const pts = Number(json?.totalPoints ?? json?.points ?? 0);
-      const unk = Number(json?.unknownCats ?? json?.unfound ?? json?.unFound ?? json?.unknown ?? 0);
+      const unk = Number(json?.unknownCats ?? json?.unfound ?? json?.unknown ?? 0);
 
       setRecord((prev) => {
         if (!prev) return prev;
@@ -525,7 +526,6 @@ export default function PharmacyMedHistory({ onParsed }) {
       return;
     }
 
-    // new parse run
     parseRunRef.current += 1;
     const runId = parseRunRef.current;
 
@@ -548,12 +548,15 @@ export default function PharmacyMedHistory({ onParsed }) {
         medsCount,
         rawText,
 
-        // points results (from backend)
+        // ✅ date saved/updated
+        dataPoint: new Date().toISOString().slice(0, 10),
+
+        saved: false,
+
         totalPoints: 0,
         unknownCats: 0,
         pointsLoading: true,
 
-        // pharmacy provider info
         providerID: selectedProviderId,
         pharmacyName: selectedProvider ? getProviderName(selectedProvider) : "",
         pharmacyLocation: selectedProvider?.pharmacyLocation || "",
@@ -563,7 +566,6 @@ export default function PharmacyMedHistory({ onParsed }) {
       setRecord(next);
       setMsg("");
 
-      // Fire points lookup immediately after parse
       fetchPointsForMeds({ meds, providerID: selectedProviderId, runId });
     } catch (err) {
       console.error(err);
@@ -617,30 +619,111 @@ export default function PharmacyMedHistory({ onParsed }) {
   const unknownCats = record ? Number(record.unknownCats || 0) : 0;
   const pointsLoading = !!record?.pointsLoading;
 
+  // ✅ enable only when valid HCN + unknown = 0 + points finished + not saved
+  const canProcess =
+    !!record &&
+    hcnOk &&
+    !pointsLoading &&
+    Number(unknownCats || 0) === 0 &&
+    String(record?.providerID || "").trim() !== "" &&
+    record?.saved !== true;
+
   const handleProcess = async () => {
-    setMsg("Process step is disabled for now (your next step).");
+    if (!record || !canProcess || saving) return;
+
+    const medsData = (Array.isArray(record.medications) ? record.medications : [])
+      .map((m) => digitsOnly(m?.din || "").slice(0, 8))
+      .filter((d) => d.length === 8)
+      .join(",");
+
+    const medsSlim = (Array.isArray(record.medications) ? record.medications : [])
+      .map((m) => ({
+        din: digitsOnly(m?.din || "").slice(0, 8),
+        lastFill: (m?.lastFill || "").toString().trim(),
+      }))
+      .filter((m) => m.din && m.din.length === 8);
+
+    const payload = {
+      scriptName: "savePatientInfo",
+      patientSource: "pharmacy",
+      healthNumber: record.healthNumber || "",
+      dataPoint: record.dataPoint || new Date().toISOString().slice(0, 10),
+      pharmacyID: record.providerID || "",
+      totalPoints: Number(record.totalPoints || 0),
+      medsData,
+      medications: medsSlim,
+
+      patientData: {
+        name: record.name || "",
+        healthNumber: record.healthNumber || "",
+        healthNumberRaw: record.healthNumberRaw || "",
+        dateOfBirth: record.dateOfBirth || "",
+        street: record.street || "",
+        city: record.city || "",
+        province: record.province || "",
+        postalCode: record.postalCode || "",
+        allergies: Array.isArray(record.allergies) ? record.allergies : [],
+        conditions: Array.isArray(record.conditions) ? record.conditions : [],
+      },
+    };
+
+    setSaving(true);
+    setMsg("Saving patient medication history…");
+
+    try {
+      const res = await fetch(API_Endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const json = await res.json();
+
+      if (json?.success) {
+        setRecord((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            saved: true,
+            dataPoint: json?.dataPoint || prev.dataPoint,
+          };
+        });
+
+        setMsg("Saved.");
+      } else {
+        setMsg(json?.error || "Could not save.");
+      }
+    } catch (err) {
+      console.error("savePatientInfo failed:", err);
+      setMsg("Could not save (network / server error).");
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const uploadMultipleHref = "/BETA/#/pharmacy-multi";
+  const handleUploadMultiple = () => {
+    setVisibleBox('multiPharmacy');
+  };
+
+  const processBtnClass = record?.saved ? "btn btn-success btn-sm" : "btn btn-primary btn-sm";
+  const processBtnText = record?.saved ? "Saved" : saving ? "Saving…" : "Process";
 
   return (
     <div className="h-100 d-flex flex-column" style={{ minHeight: 0 }}>
-      {/* Top controls */}
       <div className="d-flex align-items-center flex-wrap gap-2 mb-2">
         <div className="fw-bold">Single PDF Upload</div>
 
         <div className="ms-auto d-flex gap-2">
-          <a className="btn btn-outline-primary btn-sm" href={uploadMultipleHref}>
+          <button className="btn btn-outline-primary btn-sm" onClick={handleUploadMultiple}>
             Upload Multiple
-          </a>
-          <button className="btn btn-outline-secondary btn-sm" onClick={resetAll} disabled={processing}>
+          </button>
+          <button className="btn btn-outline-secondary btn-sm" onClick={resetAll} disabled={processing || saving}>
             Clear
           </button>
         </div>
       </div>
 
       <div className="flex-grow-1 overflow-auto" style={{ minHeight: 0, overflowX: "hidden" }}>
-        {/* Provider (Pharmacy) selection */}
         <div className="row g-2 mb-2">
           <div className="col-24">
             <label className="form-label mb-1">Pharmacy (required)</label>
@@ -648,7 +731,7 @@ export default function PharmacyMedHistory({ onParsed }) {
               className="form-select form-select-sm"
               value={selectedProviderId}
               onChange={handleProviderChange}
-              disabled={providerOptions.length === 0 || processing}
+              disabled={providerOptions.length === 0 || processing || saving}
             >
               <option value="">
                 {providerOptions.length === 0 ? "Loading pharmacies..." : "Select pharmacy..."}
@@ -662,13 +745,13 @@ export default function PharmacyMedHistory({ onParsed }) {
                 );
               })}
             </select>
+
             {!selectedProviderId && (
               <div className="form-text text-danger">Select a pharmacy before choosing a PDF.</div>
             )}
           </div>
         </div>
 
-        {/* File picker + status */}
         <div className="row g-2 mb-3">
           <div className="col-24">
             <input
@@ -677,7 +760,7 @@ export default function PharmacyMedHistory({ onParsed }) {
               type="file"
               accept="application/pdf"
               onChange={handleFileChange}
-              disabled={processing || !selectedProviderId}
+              disabled={processing || saving || !selectedProviderId}
               title={!selectedProviderId ? "Select a pharmacy first" : ""}
             />
           </div>
@@ -685,7 +768,6 @@ export default function PharmacyMedHistory({ onParsed }) {
           <div className="col-24">{msg && <div className="alert alert-info py-2 m-0">{msg}</div>}</div>
         </div>
 
-        {/* Empty state */}
         {!record && !msg && (
           <div className="row">
             <div className="col-48 text-muted">
@@ -694,7 +776,6 @@ export default function PharmacyMedHistory({ onParsed }) {
           </div>
         )}
 
-        {/* Summary */}
         {record && (
           <div className="row g-2 align-items-center">
             <div className="col-12">
@@ -725,25 +806,32 @@ export default function PharmacyMedHistory({ onParsed }) {
 
             <CountBox label="Allergies" count={allergyCount} colClass="col-6" />
             <CountBox label="Conditions" count={conditionCount} colClass="col-6" />
-
-            {/* Meds count only */}
             <CountBox label="Meds" count={medsCount} colClass="col-6" />
-
-            {/* Points box */}
             <PointsBox points={totalPoints} unknownCats={unknownCats} loading={pointsLoading} colClass="col-6" />
 
             <div className="col d-flex gap-2 justify-content-end">
-              <button className="btn btn-outline-primary btn-sm" onClick={openEdit} disabled={processing}>
+              <button className="btn btn-outline-primary btn-sm" onClick={openEdit} disabled={processing || saving}>
                 Edit
               </button>
 
+              {/* ✅ GREEN when saved + disabled forever */}
               <button
-                className="btn btn-primary btn-sm"
+                className={processBtnClass}
                 onClick={handleProcess}
-                disabled
-                title="Backend processing is disabled for now"
+                disabled={processing || saving || !canProcess || record?.saved === true}
+                title={
+                  record?.saved
+                    ? "Already saved (disabled)"
+                    : !hcnOk
+                      ? "HCN must be valid"
+                      : pointsLoading
+                        ? "Waiting for points"
+                        : Number(unknownCats || 0) !== 0
+                          ? "Unknown medications must be 0"
+                          : "Save to Patient_2026"
+                }
               >
-                Process
+                {processBtnText}
               </button>
             </div>
 
@@ -761,6 +849,9 @@ export default function PharmacyMedHistory({ onParsed }) {
                   </div>
                   <div>
                     <strong>PharmacyID:</strong> {record.providerID || "—"}
+                  </div>
+                  <div>
+                    <strong>dataPoint:</strong> {record.dataPoint || "—"}
                   </div>
                 </div>
               </div>
@@ -802,7 +893,6 @@ export default function PharmacyMedHistory({ onParsed }) {
                         value={editForm.healthNumber}
                         onChange={(e) => setEditForm((s) => ({ ...s, healthNumber: e.target.value }))}
                       />
-                      <div className="form-text">Not validated / not sent to backend in this step.</div>
                     </div>
 
                     <div className="col-20">

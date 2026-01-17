@@ -69,7 +69,6 @@ function SideButton({ divColor = "#f8f9fa", textColor = "#000", icon, title = ""
 
 export default function SideButtons() {
   const navigate = useNavigate();
-
   const {
     setDisplayMain,
     setMainButton,

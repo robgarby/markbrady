@@ -323,7 +323,7 @@ const extractMedicationsFromPharm = (rawText) => {
   return meds;
 };
 
-// ---------- Small UI helpers ----------
+// ---------- Small UI helper ----------
 const CountBox = ({ label, count, colClass = "col-6" }) => {
   const n = Number(count || 0);
   return (
@@ -336,29 +336,8 @@ const CountBox = ({ label, count, colClass = "col-6" }) => {
   );
 };
 
-const PointsBox = ({ points, unknownCats, loading, colClass = "col-6" }) => {
-  const p = Number(points || 0);
-  const u = Number(unknownCats || 0);
-
-  return (
-    <div className={`border rounded px-2 py-1 ${colClass || ""}`.trim()}>
-      <div className="small text-muted">POINTS</div>
-      <div className="fw-semibold text-truncate" title={`Points ${p}`}>
-        {loading ? (
-          <span className="text-muted">
-            <em>Calculating…</em>
-          </span>
-        ) : (
-          <span>
-            {p} [{u} Unknown]
-          </span>
-        )}
-      </div>
-    </div>
-  );
-};
-
 // ---------- Provider (Pharmacy) helpers for your schema ----------
+const getProviderId = (p) => String(p?.ID ?? "");
 const getProviderName = (p) => String(p?.pharmacyName ?? "");
 const getProviderLabel = (p) => {
   const name = (p?.pharmacyName ?? "").trim();
@@ -384,9 +363,6 @@ export default function PharmacyMedHistory({ onParsed }) {
     conditionsCsv: "",
   });
 
-  // Used to ignore stale async returns (points lookup)
-  const parseRunRef = useRef(0);
-
   useEffect(() => {
     if (!showEdit) {
       setEditForm({ name: "", healthNumber: "", allergiesCsv: "", conditionsCsv: "" });
@@ -400,7 +376,7 @@ export default function PharmacyMedHistory({ onParsed }) {
     }
   }, [showEdit, record]);
 
-  // Backend-loaded data (provider list + loadData)
+  // Backend-loaded data (provider list + loadData) — keep as in your baseline
   const [providerData, setProviderData] = useState(null);
   const [loadData, setLoadData] = useState(null);
 
@@ -410,8 +386,8 @@ export default function PharmacyMedHistory({ onParsed }) {
   const providerOptions = Array.isArray(providerData)
     ? providerData
     : providerData
-    ? [providerData]
-    : [];
+      ? [providerData]
+      : [];
 
   const selectedProvider =
     providerOptions.find((p) => String(p?.ID ?? "") === selectedProviderId) || null;
@@ -462,57 +438,12 @@ export default function PharmacyMedHistory({ onParsed }) {
   }, []);
 
   const resetAll = () => {
-    parseRunRef.current += 1; // invalidate any in-flight points call
     setRecord(null);
     setMsg("");
     setProcessing(false);
     setShowEdit(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
     setFileKey((k) => k + 1);
-  };
-
-  const fetchPointsForMeds = async ({ meds, providerID, runId }) => {
-    try {
-      const payload = {
-        scriptName: "findPoints",
-        providerID: providerID || "",
-        medications: Array.isArray(meds) ? meds : [],
-      };
-
-      const res = await fetch(API_Endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      const json = await res.json();
-
-      // ignore stale returns
-      if (runId !== parseRunRef.current) return;
-
-      // backend returns: totalPoints + unknownCats
-      const pts = Number(json?.totalPoints ?? json?.points ?? 0);
-      const unk = Number(json?.unknownCats ?? json?.unfound ?? json?.unFound ?? json?.unknown ?? 0);
-
-      setRecord((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          totalPoints: Number.isFinite(pts) ? pts : 0,
-          unknownCats: Number.isFinite(unk) ? unk : 0,
-          pointsLoading: false,
-        };
-      });
-    } catch (err) {
-      console.error("findPoints failed:", err);
-
-      if (runId !== parseRunRef.current) return;
-
-      setRecord((prev) => {
-        if (!prev) return prev;
-        return { ...prev, totalPoints: 0, unknownCats: 0, pointsLoading: false };
-      });
-    }
   };
 
   const handleFileChange = async (e) => {
@@ -524,10 +455,6 @@ export default function PharmacyMedHistory({ onParsed }) {
       if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
-
-    // new parse run
-    parseRunRef.current += 1;
-    const runId = parseRunRef.current;
 
     try {
       setProcessing(true);
@@ -548,11 +475,6 @@ export default function PharmacyMedHistory({ onParsed }) {
         medsCount,
         rawText,
 
-        // points results (from backend)
-        totalPoints: 0,
-        unknownCats: 0,
-        pointsLoading: true,
-
         // pharmacy provider info
         providerID: selectedProviderId,
         pharmacyName: selectedProvider ? getProviderName(selectedProvider) : "",
@@ -562,9 +484,6 @@ export default function PharmacyMedHistory({ onParsed }) {
 
       setRecord(next);
       setMsg("");
-
-      // Fire points lookup immediately after parse
-      fetchPointsForMeds({ meds, providerID: selectedProviderId, runId });
     } catch (err) {
       console.error(err);
       setMsg("Could not read/parse PDF.");
@@ -613,63 +532,10 @@ export default function PharmacyMedHistory({ onParsed }) {
   const conditionCount = record && Array.isArray(record.conditions) ? record.conditions.length : 0;
   const medsCount = record ? Number(record.medsCount || 0) : 0;
 
-  const totalPoints = record ? Number(record.totalPoints || 0) : 0;
-  const unknownCats = record ? Number(record.unknownCats || 0) : 0;
-  const pointsLoading = !!record?.pointsLoading;
-
-  // ✅ Process enabled only when HCN is valid AND unknown medications = 0
-  // (unknown medications = unknownCats from backend points lookup)
-  const canProcess =
-    !!record &&
-    hcnOk &&
-    !pointsLoading &&
-    Number(unknownCats || 0) === 0 &&
-    String(record?.providerID || "").trim() !== "";
-
+  // NOTE: This is baseline-like: Process is still here, but YOU said backend step comes later.
+  // For now, disable Process button until you decide next step.
   const handleProcess = async () => {
-    if (!record) return;
-
-    // ✅ This is EXACTLY what we would send to the backend
-    const processPayload = {
-      scriptName: "processPharmacyMeds",
-
-      // pharmacy
-      providerID: record.providerID || "",
-      pharmacyName: record.pharmacyName || "",
-      pharmacyLocation: record.pharmacyLocation || "",
-      pharmacyPhone: record.pharmacyPhone || "",
-
-      // patient meta
-      patientData: {
-        name: record.name || "",
-        healthNumber: record.healthNumber || "",
-        healthNumberRaw: record.healthNumberRaw || "",
-        dateOfBirth: record.dateOfBirth || "",
-        street: record.street || "",
-        city: record.city || "",
-        province: record.province || "",
-        postalCode: record.postalCode || "",
-        allergies: Array.isArray(record.allergies) ? record.allergies : [],
-        conditions: Array.isArray(record.conditions) ? record.conditions : [],
-      },
-
-      // meds
-      medications: Array.isArray(record.medications) ? record.medications : [],
-
-      // summary numbers (useful for backend logging)
-      medsCount: Number(record.medsCount || 0),
-      totalPoints: Number(record.totalPoints || 0),
-      unknownCats: Number(record.unknownCats || 0),
-    };
-
-    console.log("✅ PHARMACY PROCESS PAYLOAD (about to send)");
-    console.log(processPayload);
-
-    // Optional: also show it as a JSON string (easy copy/paste)
-    console.log("✅ PHARMACY PROCESS PAYLOAD JSON");
-    console.log(JSON.stringify(processPayload, null, 2));
-
-    setMsg("Process payload logged to console.");
+    setMsg("Process step is disabled for now (your next step).");
   };
 
   const uploadMultipleHref = "/BETA/#/pharmacy-multi";
@@ -776,12 +642,7 @@ export default function PharmacyMedHistory({ onParsed }) {
 
             <CountBox label="Allergies" count={allergyCount} colClass="col-6" />
             <CountBox label="Conditions" count={conditionCount} colClass="col-6" />
-
-            {/* Meds count only */}
             <CountBox label="Meds" count={medsCount} colClass="col-6" />
-
-            {/* Points box */}
-            <PointsBox points={totalPoints} unknownCats={unknownCats} loading={pointsLoading} colClass="col-6" />
 
             <div className="col d-flex gap-2 justify-content-end">
               <button className="btn btn-outline-primary btn-sm" onClick={openEdit} disabled={processing}>
@@ -791,18 +652,8 @@ export default function PharmacyMedHistory({ onParsed }) {
               <button
                 className="btn btn-primary btn-sm"
                 onClick={handleProcess}
-                disabled={processing || !canProcess}
-                title={
-                  processing
-                    ? "Working…"
-                    : !hcnOk
-                    ? "HCN must be valid before processing"
-                    : pointsLoading
-                    ? "Waiting for points / unknown medications"
-                    : Number(unknownCats || 0) !== 0
-                    ? "Unknown medications must be 0 to process"
-                    : "Click to log the backend payload to console"
-                }
+                disabled
+                title="Backend processing is disabled for now"
               >
                 Process
               </button>
@@ -866,22 +717,9 @@ export default function PharmacyMedHistory({ onParsed }) {
                       <div className="form-text">Not validated / not sent to backend in this step.</div>
                     </div>
 
-                    <div className="col-20">
-                      <label className="form-label mb-1">Points</label>
-                      <input
-                        className="form-control form-control-sm"
-                        value={record?.pointsLoading ? "Calculating…" : record?.totalPoints ?? 0}
-                        readOnly
-                      />
-                    </div>
-
                     <div className="col-24">
-                      <label className="form-label mb-1">Cats Unknown</label>
-                      <input
-                        className="form-control form-control-sm"
-                        value={record?.pointsLoading ? "Calculating…" : record?.unknownCats ?? 0}
-                        readOnly
-                      />
+                      <label className="form-label mb-1">Points</label>
+                      <input className="form-control form-control-sm" value={record?.medsCount || 0} readOnly />
                     </div>
 
                     <div className="col-24">

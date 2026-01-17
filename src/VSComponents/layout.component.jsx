@@ -20,6 +20,7 @@ import AsideNav from "./Universal/SideButtons/sideButtons.component.jsx";
 import MedBoxComplete from "./SideButtonBoxes/Medications/editMedications.component.jsx";
 import EditCats from "./SideButtonBoxes/Category/editCats.component.jsx";
 import PharmacyUpload from "./SideButtonBoxes/Pharmacy/pharmacy.component.jsx";
+import PharmacyMultiple from "./SideButtonBoxes/Pharmacy/pharmacyMultiple.component.jsx";
 
 export default function Layout() {
   const {
@@ -107,6 +108,7 @@ export default function Layout() {
   const isMedAdmin = visibleBox === "medAdmin";
   const isCatAdmin = visibleBox === "catAdmin";
   const isPharmacy = visibleBox === "pharmacy";
+  const isMultiPharmacy = visibleBox === "multiPharmacy";
   const isOverlayOpen = isMedAdmin || isCatAdmin || isPharmacy;
 
   return (
@@ -198,6 +200,27 @@ export default function Layout() {
                 <div style={{ height: "calc(100% - 56px)", overflow: "auto" }} className="p-0">
                   <div className="p-2" style={{ height: "100%" }}>
                     <PharmacyUpload />
+                  </div>
+                </div>
+              </div>
+            )}
+            {isMultiPharmacy && (
+              <div className="position-absolute top-0 start-0 w-100 h-100 bg-white" style={{ zIndex: 3000 }}>
+                <div className="d-flex align-items-center px-3 border-bottom" style={{ height: "56px" }}>
+                  <div className="fw-bold">Upload Multi Pharmacy Reports</div>
+
+                  <div className="ms-auto">
+                    <button className="btn btn-outline-danger btn-sm" onClick={() => setVisibleBox("")}
+                      disabled={loading}
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ height: "calc(100% - 56px)", overflow: "auto" }} className="p-0">
+                  <div className="p-2" style={{ height: "100%" }}>
+                    <PharmacyMultiple />
                   </div>
                 </div>
               </div>
