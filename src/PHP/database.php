@@ -975,7 +975,7 @@ if ($data['script'] === 'findPatientsForMedication') {
           case 'Metformin':
           case 'SGLT2 Inhibitor':
           case 'GLP-1 Receptor Agonist':
-          case 'Repatha':
+          case 'Praluent':
                // Thresholds
                $nonHdlThreshold = 2.4; // starting filter: patients with nonHdl >= 2.4
                $nativeCutoff = 5.0; // check nativeLDLC vs 5.0

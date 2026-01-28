@@ -18,7 +18,7 @@ import { useGlobalContext } from '../../../Context/global.context';
  *
  * Replace fetchPatientsForMedication with a real API call to your database.
  */
-export default function MedicationRecommendationSearch({ medications = [{ id: "Finerenone", name: "Finerenone" }, { id: "Vescepa", name: "Vascepa" }, { id: "Repatha", name: "Repatha" }], }) {
+export default function MedicationRecommendationSearch({ medications = [{ id: "Finerenone", name: "Finerenone" }, { id: "Vescepa", name: "Vascepa" }, { id: "Praluent", name: "Praluent" }], }) {
 
 
     const [loading, setLoading] = useState(false);

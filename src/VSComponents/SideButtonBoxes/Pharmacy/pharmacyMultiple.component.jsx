@@ -209,6 +209,102 @@ const extractHCNFromBlock = (block) => {
   return "";
 };
 
+// --------------------
+// ✅ Address + Billing Info Chunk extraction
+// --------------------
+const extractAddressBillingChunk = (block, patientName) => {
+  const lines = (block || "")
+    .split("\n")
+    .map((x) => x.trim())
+    .filter(Boolean);
+
+  const name = (patientName || "").trim();
+  if (!name) {
+    return { chunk: "", chunkLines: [] };
+  }
+
+  // Find the name line in the block
+  let nameIdx = lines.findIndex((l) => l === name);
+  if (nameIdx === -1) nameIdx = lines.findIndex((l) => l.includes(name));
+  if (nameIdx === -1) {
+    return { chunk: "", chunkLines: [] };
+  }
+
+  // The address/billing section usually ends before "Date of Birth"
+  let endIdx = -1;
+  for (let i = nameIdx + 1; i < lines.length; i++) {
+    const l = lines[i] || "";
+    if (/^date of birth\b/i.test(l) || /date of birth\s*-/i.test(l)) {
+      endIdx = i;
+      break;
+    }
+  }
+
+  const chunkLines = lines.slice(nameIdx + 1, endIdx === -1 ? nameIdx + 14 : endIdx);
+  const chunk = chunkLines.join("\n").trim();
+
+  return { chunk, chunkLines };
+};
+
+const extractBillingInfoFromChunkLines = (chunkLines) => {
+  const list = (Array.isArray(chunkLines) ? chunkLines : []).filter((l) => /billing info/i.test(l));
+  if (list.length === 0) return "";
+  return list.join("\n").trim();
+};
+
+const extractAddressFromChunkLines = (chunkLines) => {
+  const lines = Array.isArray(chunkLines) ? chunkLines : [];
+
+  // street line often contains digits and "Plan:"
+  let streetLine =
+    lines.find((l) => /\d/.test(l) && /plan:/i.test(l)) ||
+    lines.find(
+      (l) =>
+        /\d/.test(l) &&
+        !/billing info/i.test(l) &&
+        !/date of birth/i.test(l) &&
+        !/allergies/i.test(l) &&
+        !/conditions/i.test(l)
+    ) ||
+    "";
+
+  let street = "";
+  if (streetLine) {
+    street = streetLine.split(/Plan:/i)[0].trim();
+  }
+
+  // city/province line usually has "ON" etc and can include Billing Info
+  const cityProvLine =
+    lines.find((l) => /\b[A-Z]{2}\b/.test(l) && /billing info/i.test(l)) ||
+    lines.find((l) => /\b[A-Z]{2}\b/.test(l)) ||
+    "";
+
+  let city = "";
+  let province = "";
+  if (cityProvLine) {
+    const cleaned = cityProvLine.replace(/Billing Info.*$/i, "").trim();
+    const m = cleaned.match(/^(.+?)\s+([A-Z]{2})\b/i);
+    if (m) {
+      city = (m[1] || "").trim();
+      province = (m[2] || "").trim().toUpperCase();
+    }
+  }
+
+  // postal code line nearby
+  const postalRe = /\b([A-Z]\d[A-Z])\s*([0-9][A-Z][0-9])\b/i;
+  let postalCode = "";
+  const postalLine = lines.find((l) => postalRe.test(l));
+  if (postalLine) {
+    const pm = postalLine.match(postalRe);
+    if (pm) postalCode = `${pm[1].toUpperCase()} ${pm[2].toUpperCase()}`;
+  }
+
+  const fullAddress = [street, city, province, postalCode].filter(Boolean).join(", ");
+  const hasAddress = !!(street || city || province || postalCode);
+
+  return { street, city, province, postalCode, fullAddress, hasAddress };
+};
+
 // ---------- Medication parsing (MATCHES SINGLE UPLOADER) ----------
 const extractDoseFromMedicationName = (full) => {
   const s = (full || "").trim();
@@ -303,12 +399,11 @@ const extractMedicationsFromBlock_MATCH_SINGLE = (block) => {
   return meds;
 };
 
-// compress to UNIQUE DINs (prevents 264 duplicates)
+// compress to UNIQUE DINs (prevents duplicates)
 const compressMedsToUniqueDin = (meds) => {
   const list = Array.isArray(meds) ? meds : [];
   const map = new Map(); // din -> best record
 
-  // parse "31-Oct-2025" -> Date
   const parseDDMMMYYYY = (s) => {
     const v = (s || "").trim();
     const m = v.match(/^([0-3][0-9])-([A-Za-z]{3})-([12][0-9]{3})$/);
@@ -561,6 +656,27 @@ export default function PharmacyMultiple() {
           const medsUnique = compressMedsToUniqueDin(medsFull);
           const medsCount = Array.isArray(medsUnique) ? medsUnique.length : 0;
 
+          // ✅ capture address + billing section chunk
+          const ab = extractAddressBillingChunk(block, name);
+          const billingInfo = extractBillingInfoFromChunkLines(ab.chunkLines);
+          const addr = extractAddressFromChunkLines(ab.chunkLines);
+
+          // ✅ store these in objects so you can save the whole thing cleanly
+          const addressData = {
+            street: addr.street || "",
+            city: addr.city || "",
+            province: addr.province || "",
+            postalCode: addr.postalCode || "",
+            fullAddress: addr.fullAddress || "",
+            hasAddress: !!addr.hasAddress,
+          };
+
+          const billingData = {
+            billingInfo: billingInfo || "",
+            addressBillingChunk: ab.chunk || "",
+            hasBillingInfo: !!(billingInfo || "").trim(),
+          };
+
           const _key = makePatientKey(idx + 1, hcnRaw, name);
 
           return {
@@ -573,6 +689,22 @@ export default function PharmacyMultiple() {
 
             healthNumberRaw: hcnRaw || "",
             healthNumber: hcnFmt || "",
+
+            // ✅ requested structured storage
+            addressData,
+            billingData,
+
+            // ✅ flat fields (kept for compatibility / searching)
+            street: addressData.street,
+            city: addressData.city,
+            province: addressData.province,
+            postalCode: addressData.postalCode,
+            fullAddress: addressData.fullAddress,
+            hasAddress: addressData.hasAddress,
+
+            billingInfo: billingData.billingInfo,
+            hasBillingInfo: billingData.hasBillingInfo,
+            addressBillingChunk: billingData.addressBillingChunk,
 
             allergies,
             conditions,
@@ -755,6 +887,43 @@ export default function PharmacyMultiple() {
 
     const medsData = medsSlim.map((m) => m.din).join(",");
 
+    // ✅ include billingInfo + address fields in patientData
+    const patientDataForBackend = {
+      name: p.name || "",
+      healthNumber: formatHcn(p.healthNumberRaw || p.healthNumber || ""),
+      healthNumberRaw: digitsOnly(p.healthNumberRaw || ""),
+      dateOfBirth: p.dateOfBirth || "",
+
+      // ✅ requested structured storage
+      addressData: p.addressData || {
+        street: "",
+        city: "",
+        province: "",
+        postalCode: "",
+        fullAddress: "",
+        hasAddress: false,
+      },
+
+      billingData: p.billingData || {
+        billingInfo: "",
+        addressBillingChunk: "",
+        hasBillingInfo: false,
+      },
+
+      // ✅ keep flat fields too (easy searching)
+      street: p.street || "",
+      city: p.city || "",
+      province: p.province || "",
+      postalCode: p.postalCode || "",
+      fullAddress: p.fullAddress || "",
+
+      billingInfo: p.billingInfo || "",
+      addressBillingChunk: p.addressBillingChunk || "",
+
+      allergies: Array.isArray(p.allergies) ? p.allergies : [],
+      conditions: Array.isArray(p.conditions) ? p.conditions : [],
+    };
+
     const payload = {
       scriptName: "savePatientInfo",
 
@@ -767,18 +936,8 @@ export default function PharmacyMultiple() {
       medsData,
       medications: medsSlim,
 
-      patientData: {
-        name: p.name || "",
-        healthNumber: formatHcn(p.healthNumberRaw || p.healthNumber || ""),
-        healthNumberRaw: digitsOnly(p.healthNumberRaw || ""),
-        dateOfBirth: p.dateOfBirth || "",
-        street: "",
-        city: "",
-        province: "",
-        postalCode: "",
-        allergies: Array.isArray(p.allergies) ? p.allergies : [],
-        conditions: Array.isArray(p.conditions) ? p.conditions : [],
-      },
+      // ✅ this is what gets stored into allDataSave on backend (if you do that)
+      patientData: patientDataForBackend,
     };
 
     setSavingKey(String(p._key || ""));
@@ -972,12 +1131,76 @@ export default function PharmacyMultiple() {
                   return (
                     <div className="col" key={p._key}>
                       <div className="border rounded p-2">
-                        {/* Top Line */}
+                        {/* Top Line (Name + Meds + Address + Billing) */}
                         <div className="d-flex justify-content-between align-items-center">
-                          <div className="fw-semibold text-truncate" style={{ maxWidth: "65%" }}>
-                            {p.index}. {p.name}
+                          {/* LEFT */}
+                          <div
+                            className="d-flex align-items-center gap-2 flex-wrap"
+                            style={{ maxWidth: "70%" }}
+                          >
+                            <div className="fw-semibold text-truncate" style={{ maxWidth: "360px" }}>
+                              {p.index}. {p.name}
+                            </div>
+
+                            <div className="small">
+                              <span className="text-muted">Meds:</span>{" "}
+                              <span className="fw-semibold">{Number(p.medsCount || 0)}</span>
+                              {renderUnknownBadge(p.unknownCount)}
+                            </div>
+
+                            <div className="small">
+                              <span className="text-muted">Points:</span>{" "}
+                              <span className="fw-semibold">
+                                {p.pointsLoading ? (
+                                  <span className="text-muted">
+                                    <em>…</em>
+                                  </span>
+                                ) : (
+                                  renderPointsValue(p.totalPoints, p.pointsReady)
+                                )}
+                              </span>
+                            </div>
+
+                            <div className="small">
+                              <span className="text-muted">Address:</span>{" "}
+                              <span
+                                className={
+                                  p.addressData?.hasAddress
+                                    ? "text-success fw-semibold"
+                                    : "text-danger fw-semibold"
+                                }
+                              >
+                                {p.addressData?.hasAddress ? "Yes" : "No"}
+                              </span>
+                            </div>
+
+                            <div className="small">
+                              <span className="text-muted">Billing:</span>{" "}
+                              <span
+                                className={
+                                  p.billingData?.hasBillingInfo
+                                    ? "text-success fw-semibold"
+                                    : "text-danger fw-semibold"
+                                }
+                              >
+                                {p.billingData?.hasBillingInfo ? "Yes" : "No"}
+                              </span>
+                            </div>
+
+                            <div className="small text-muted">
+                              {p.addressData?.hasAddress ? (
+                                <em>
+                                  {(p.addressData?.city || "-") +
+                                    " " +
+                                    (p.addressData?.province || "")}
+                                </em>
+                              ) : (
+                                <em>-</em>
+                              )}
+                            </div>
                           </div>
 
+                          {/* RIGHT */}
                           <div className="d-flex gap-2 align-items-center">
                             <div className="small text-muted">
                               {p.age !== null ? `Age: ${p.age}` : "Age: -"}

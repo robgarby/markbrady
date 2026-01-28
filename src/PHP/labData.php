@@ -1926,7 +1926,11 @@ if (($data['scriptName'] ?? '') === 'savePatientInfo') {
 
     header('Content-Type: application/json');
 
+
     $table = 'Patient_2026';
+
+    print_r($data);
+    return;
 
     // -------- helpers --------
     $digitsOnly = function ($v) {
@@ -1975,6 +1979,8 @@ if (($data['scriptName'] ?? '') === 'savePatientInfo') {
     // -------- inputs --------
     $patientData = $data['patientData'] ?? [];
     if (!is_array($patientData)) $patientData = [];
+    $allData = JSON_ENCODE($data);
+
 
     $healthNumberIn = (string) ($data['healthNumber'] ?? ($patientData['healthNumber'] ?? ''));
     $healthNumber = $formatHcn($healthNumberIn);
@@ -2046,6 +2052,7 @@ if (($data['scriptName'] ?? '') === 'savePatientInfo') {
     if ($exists) {
         $sqlUp = "UPDATE `$table`
                   SET patientSource = 'pharmacy',
+                      allDataSave = ?,
                       dataPoint = ?,
                       pharmacyID = ?,
                       clientName = ?,
@@ -2069,7 +2076,8 @@ if (($data['scriptName'] ?? '') === 'savePatientInfo') {
         }
 
         $stmtUp->bind_param(
-            'ssssssssssssiss',
+            'ssssssssssssisss',
+            $allData,
             $dataPoint,
             $pharmacyID,
             $name,
@@ -2113,13 +2121,13 @@ if (($data['scriptName'] ?? '') === 'savePatientInfo') {
                 clientName, dateOfBirth, street, city, province, postalCode,
                 allergies, conditionsFull,
                 medsData, medications, totalPoints,
-                realHCN, medCatSearch, patientNote
+                realHCN, medCatSearch, patientNote,allDataSave
             ) VALUES (
                 'pharmacy', ?, ?, ?,
                 ?, ?, ?, ?, ?, ?,
                 ?, ?,
                 ?, ?, ?,
-                ?, ?, ?
+                ?, ?, ?,?
             )";
 
     $stmtIn = $conn->prepare($sqlIn);
@@ -2129,7 +2137,7 @@ if (($data['scriptName'] ?? '') === 'savePatientInfo') {
     }
 
     $stmtIn->bind_param(
-        'sssssssssssssisss',
+        'sssssssssssssissss',
         $healthNumber,
         $dataPoint,
         $pharmacyID,
@@ -2146,7 +2154,8 @@ if (($data['scriptName'] ?? '') === 'savePatientInfo') {
         $totalPoints,
         $realHCN,
         $medCatSearch,
-        $patientNote
+        $patientNote,
+        $allData
     );
 
     if (!$stmtIn->execute()) {

@@ -17,9 +17,9 @@ export const navButtons = [
 ];
 
 export const version = "v5.0.0";
-export const versionDate = "2026-01-17";
+export const versionDate = "2026-01-19";
 export const versionTime = "6:15 AM";
-export const versionNotes = "Multi Now Works for you to Play Around";
+export const versionNotes = "Connecting New System to GDMT.CA API";
 
 // Standardized recommendation texts for popup Medications Below This.. put other variables Above This
 
@@ -41,9 +41,9 @@ export const getRecommendationText = (key) => {
                 "Vascepa Recommendations:",
                 "This Medication is not currently included in the published recommendations with GDMT.CA. Contact Mark Brady for more information.",
             ].join("\n");
-        case "repatha":
+        case "praluent":
             return [
-                "Repatha (evolocumab) Recommendations:",
+                "Praluent (evolocumab) Recommendations:",
                 "",
                 "CLINICAL SUMMARY:",
                 "• Patient meets very-high-risk ASCVD criteria per 2021 CCS Dyslipidemia Guidelines (clinical ASCVD and/or diabetes with target organ damage and/or CKD).",
@@ -54,7 +54,7 @@ export const getRecommendationText = (key) => {
                 "• PCSK9 inhibitors provide an additional ~50–60% LDL-C reduction and lower major CV events.",
                 "",
                 "SPECIFIC RECOMMENDATION:",
-                "• Initiate Repatha (evolocumab) 140 mg SC every 2 weeks OR 420 mg SC monthly.",
+                "• Initiate Praluent (evolocumab) 140 mg SC every 2 weeks OR 420 mg SC monthly.",
                 "• Continue current statin at maximally tolerated dose and ezetimibe 10 mg daily (if applicable).",
                 "• Treatment goal: LDL-C <1.8 mmol/L and ideally ApoB <0.7 g/L in very-high-risk disease.",
                 "",
@@ -64,7 +64,7 @@ export const getRecommendationText = (key) => {
                 "• Main adverse effects are mild injection-site reactions; no signal for myopathy, hepatic, or renal toxicity.",
                 "",
                 "OVERALL:",
-                "• Given persistent elevation of LDL-C on optimized therapy and very-high-risk status, adding Repatha is guideline-concordant and expected to significantly reduce future cardiovascular events."
+                "• Given persistent elevation of LDL-C on optimized therapy and very-high-risk status, adding Praluent is guideline-concordant and expected to significantly reduce future cardiovascular events."
             ].join("\n");
 
         default:
