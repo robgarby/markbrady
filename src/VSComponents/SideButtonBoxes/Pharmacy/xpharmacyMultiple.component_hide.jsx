@@ -1,3 +1,4 @@
+// pharmacyMultiple.component.jsx
 import React, { useRef, useState, useEffect } from "react";
 import * as pdfjsLib from "pdfjs-dist";
 import { useGlobalContext } from "../../../Context/global.context.jsx";
@@ -42,6 +43,44 @@ const formatHcn = (raw) => {
   const d = digitsOnly(raw);
   if (d.length !== 10) return (raw || "").toString().trim();
   return `${d.slice(0, 4)} ${d.slice(4, 7)} ${d.slice(7, 10)}`;
+};
+
+
+// Display-only masking (do NOT send masked values to backend)
+const maskHcnDisplay = (rawOrFormatted) => {
+  const d = digitsOnly(rawOrFormatted);
+  if (d.length !== 10) return (rawOrFormatted || "").toString().trim() || "-";
+  return `#### ${d.slice(4, 7)} ${d.slice(7, 10)}`;
+};
+
+const maskNamePart = (s) => {
+  const t = (s || "").toString().trim();
+  if (!t) return "";
+  if (t.length <= 2) return "XX";
+  return `XX${t.slice(2)}`;
+};
+
+const maskNameDisplay = (name) => {
+  const n = (name || "").toString().trim();
+  if (!n) return "-";
+
+  // expected: "Last, First"
+  if (n.includes(",")) {
+    const [lastRaw, firstRaw] = n.split(",");
+    const last = maskNamePart((lastRaw || "").trim());
+    const first = maskNamePart((firstRaw || "").trim());
+    return first ? `${last},${first}` : last;
+  }
+
+  // fallback: "First Last"
+  const parts = n.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) {
+    const first = maskNamePart(parts[0]);
+    const last = maskNamePart(parts.slice(1).join(" "));
+    return `${last},${first}`;
+  }
+
+  return maskNamePart(n);
 };
 
 const parseDOB_DDMMYYYY = (dob) => {
@@ -222,12 +261,14 @@ const extractAddressBillingChunk = (block, patientName) => {
     return { chunk: "", chunkLines: [] };
   }
 
+  // Find the name line in the block
   let nameIdx = lines.findIndex((l) => l === name);
   if (nameIdx === -1) nameIdx = lines.findIndex((l) => l.includes(name));
   if (nameIdx === -1) {
     return { chunk: "", chunkLines: [] };
   }
 
+  // The address/billing section usually ends before "Date of Birth"
   let endIdx = -1;
   for (let i = nameIdx + 1; i < lines.length; i++) {
     const l = lines[i] || "";
@@ -252,6 +293,7 @@ const extractBillingInfoFromChunkLines = (chunkLines) => {
 const extractAddressFromChunkLines = (chunkLines) => {
   const lines = Array.isArray(chunkLines) ? chunkLines : [];
 
+  // street line often contains digits and "Plan:"
   let streetLine =
     lines.find((l) => /\d/.test(l) && /plan:/i.test(l)) ||
     lines.find(
@@ -269,6 +311,7 @@ const extractAddressFromChunkLines = (chunkLines) => {
     street = streetLine.split(/Plan:/i)[0].trim();
   }
 
+  // city/province line usually has "ON" etc and can include Billing Info
   const cityProvLine =
     lines.find((l) => /\b[A-Z]{2}\b/.test(l) && /billing info/i.test(l)) ||
     lines.find((l) => /\b[A-Z]{2}\b/.test(l)) ||
@@ -285,6 +328,7 @@ const extractAddressFromChunkLines = (chunkLines) => {
     }
   }
 
+  // postal code line nearby
   const postalRe = /\b([A-Z]\d[A-Z])\s*([0-9][A-Z][0-9])\b/i;
   let postalCode = "";
   const postalLine = lines.find((l) => postalRe.test(l));
@@ -299,7 +343,7 @@ const extractAddressFromChunkLines = (chunkLines) => {
   return { street, city, province, postalCode, fullAddress, hasAddress };
 };
 
-// ---------- Medication parsing ----------
+// ---------- Medication parsing (MATCHES SINGLE UPLOADER) ----------
 const extractDoseFromMedicationName = (full) => {
   const s = (full || "").trim();
   if (!s) return "";
@@ -393,9 +437,10 @@ const extractMedicationsFromBlock_MATCH_SINGLE = (block) => {
   return meds;
 };
 
+// compress to UNIQUE DINs (prevents duplicates)
 const compressMedsToUniqueDin = (meds) => {
   const list = Array.isArray(meds) ? meds : [];
-  const map = new Map();
+  const map = new Map(); // din -> best record
 
   const parseDDMMMYYYY = (s) => {
     const v = (s || "").trim();
@@ -407,8 +452,18 @@ const compressMedsToUniqueDin = (meds) => {
     const yyyy = Number(m[3]);
 
     const months = {
-      jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
-      jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+      jan: 0,
+      feb: 1,
+      mar: 2,
+      apr: 3,
+      may: 4,
+      jun: 5,
+      jul: 6,
+      aug: 7,
+      sep: 8,
+      oct: 9,
+      nov: 10,
+      dec: 11,
     };
 
     const mm = months[mon];
@@ -475,6 +530,7 @@ const renderUnknownBadge = (unknownCount) => {
   return <span className="text-muted ms-1">[0]</span>;
 };
 
+// Step 1 totalPoints = N/A until pointsReady
 const renderPointsValue = (points, pointsReady) => {
   if (!pointsReady) return <span className="text-warning fw-semibold">N/A</span>;
   const n = Number(points || 0);
@@ -483,6 +539,7 @@ const renderPointsValue = (points, pointsReady) => {
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
+// unique key per patient
 const makePatientKey = (index, hcnRaw, name) => {
   const a = String(index || "");
   const b = digitsOnly(hcnRaw || "") || "NOHCN";
@@ -502,11 +559,14 @@ export default function PharmacyMultiple() {
   const [fileName, setFileName] = useState("");
   const [stepReady, setStepReady] = useState(false);
 
+  // Step 2 state
   const [step2Running, setStep2Running] = useState(false);
   const [step2Done, setStep2Done] = useState(0);
 
+  // Saving state
   const [savingKey, setSavingKey] = useState("");
 
+  // Edit modal
   const [showEdit, setShowEdit] = useState(false);
   const [editKey, setEditKey] = useState("");
   const [editForm, setEditForm] = useState({
@@ -514,17 +574,17 @@ export default function PharmacyMultiple() {
     healthNumberRaw: "",
     allergiesCsv: "",
     conditionsCsv: "",
-    privateNote: "",
   });
 
+  // Pharmacy select
   const [providerData, setProviderData] = useState(null);
   const [selectedProviderId, setSelectedProviderId] = useState("");
 
   const providerOptions = Array.isArray(providerData)
     ? providerData
     : providerData
-      ? [providerData]
-      : [];
+    ? [providerData]
+    : [];
 
   const selectedProvider =
     providerOptions.find((p) => String(p?.ID ?? "") === String(selectedProviderId)) || null;
@@ -574,15 +634,13 @@ export default function PharmacyMultiple() {
 
     setShowEdit(false);
     setEditKey("");
-    setEditForm({
-      name: "",
-      healthNumberRaw: "",
-      allergiesCsv: "",
-      conditionsCsv: "",
-      privateNote: "",
-    });
+    setEditForm({ name: "", healthNumberRaw: "", allergiesCsv: "", conditionsCsv: "" });
 
     if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const goSingleUpload = () => {
+    if (typeof setVisibleBox === "function") setVisibleBox("pharmacy");
   };
 
   const handleProviderChange = (e) => {
@@ -631,14 +689,17 @@ export default function PharmacyMultiple() {
           const allergies = normalizeAllergies(extractAllergiesFromBlock(block));
           const conditions = normalizeConditions(extractConditionsFromBlock(block));
 
+          // ✅ MATCH SINGLE PARSER + compress to unique DINs
           const medsFull = extractMedicationsFromBlock_MATCH_SINGLE(block);
           const medsUnique = compressMedsToUniqueDin(medsFull);
           const medsCount = Array.isArray(medsUnique) ? medsUnique.length : 0;
 
+          // ✅ capture address + billing section chunk
           const ab = extractAddressBillingChunk(block, name);
           const billingInfo = extractBillingInfoFromChunkLines(ab.chunkLines);
           const addr = extractAddressFromChunkLines(ab.chunkLines);
 
+          // ✅ store these in objects so you can save the whole thing cleanly
           const addressData = {
             street: addr.street || "",
             city: addr.city || "",
@@ -667,9 +728,11 @@ export default function PharmacyMultiple() {
             healthNumberRaw: hcnRaw || "",
             healthNumber: hcnFmt || "",
 
+            // ✅ requested structured storage
             addressData,
             billingData,
 
+            // ✅ flat fields (kept for compatibility / searching)
             street: addressData.street,
             city: addressData.city,
             province: addressData.province,
@@ -684,17 +747,21 @@ export default function PharmacyMultiple() {
             allergies,
             conditions,
 
-            medications: medsUnique,
+            // ✅ meds
+            medications: medsUnique, // [{medication,dose,din,firstFill,lastFill}]
             medsCount,
 
-            unknownCount: -1,
-            totalPoints: 0,
+            // Step 1 placeholders
+            unknownCount: -1, // show [N/A]
+            totalPoints: 0, // show N/A until step2
             pointsReady: false,
             pointsLoading: false,
 
+            // process state
             saved: false,
+
+            // saved/updated date
             dataPoint: todayISO(),
-            privateNote: "",
 
             rawBlock: block,
           };
@@ -704,6 +771,7 @@ export default function PharmacyMultiple() {
       setAllPatients(patients);
       setMsg(`Done. Found ${patients.length} report(s).`);
       setStepReady(patients.length > 0);
+
       setStep2Done(0);
     } catch (err) {
       console.error("Multiple PDF parse failed:", err);
@@ -736,6 +804,7 @@ export default function PharmacyMultiple() {
           totalPoints: 0,
         });
 
+        // ✅ send meds in SAME SHAPE as single parser expects
         const medsForPoints = (Array.isArray(p.medications) ? p.medications : [])
           .map((m) => ({
             medication: (m?.medication || m?.din || "").toString().trim(),
@@ -796,10 +865,9 @@ export default function PharmacyMultiple() {
     setEditKey(String(p._key || ""));
     setEditForm({
       name: p.name || "",
-      healthNumberRaw: digitsOnly(p.healthNumberRaw || ""),
+      healthNumberRaw: p.healthNumberRaw || "",
       allergiesCsv: (Array.isArray(p.allergies) ? p.allergies : []).join(", "),
       conditionsCsv: (Array.isArray(p.conditions) ? p.conditions : []).join(", "),
-      privateNote: p.privateNote || "",
     });
     setShowEdit(true);
   };
@@ -808,7 +876,7 @@ export default function PharmacyMultiple() {
     const key = String(editKey || "");
     if (!key) return;
 
-    const newHcnRaw = digitsOnly(editForm.healthNumberRaw || "").slice(0, 10);
+    const newHcnRaw = digitsOnly(editForm.healthNumberRaw || "");
 
     setAllPatients((prev) =>
       prev.map((p) => {
@@ -822,20 +890,13 @@ export default function PharmacyMultiple() {
           healthNumber: formatHcn(nextRaw),
           allergies: normalizeAllergies(parseCsvInput(editForm.allergiesCsv)),
           conditions: normalizeConditions(parseCsvInput(editForm.conditionsCsv)),
-          privateNote: (editForm.privateNote || "").trim(),
         };
       })
     );
 
     setShowEdit(false);
     setEditKey("");
-    setEditForm({
-      name: "",
-      healthNumberRaw: "",
-      allergiesCsv: "",
-      conditionsCsv: "",
-      privateNote: "",
-    });
+    setEditForm({ name: "", healthNumberRaw: "", allergiesCsv: "", conditionsCsv: "" });
   };
 
   // --------------------
@@ -850,14 +911,11 @@ export default function PharmacyMultiple() {
     return hcnOk && ready && !loading && unk === 0 && p.saved !== true && !!selectedProviderId;
   };
 
-  const canEditPatient = (p) => {
-    return !!p?.pointsReady && !p?.pointsLoading && !parsing && !step2Running && !savingKey;
-  };
-
   const handleProcessPatient = async (p) => {
     if (!p || savingKey) return;
     if (!canProcessPatient(p)) return;
 
+    // ✅ meds saved in DB: [{din,lastFill}] + medsData CSV
     const medsSlim = (Array.isArray(p.medications) ? p.medications : [])
       .map((m) => ({
         din: digitsOnly(m?.din || "").slice(0, 8),
@@ -867,12 +925,14 @@ export default function PharmacyMultiple() {
 
     const medsData = medsSlim.map((m) => m.din).join(",");
 
+    // ✅ include billingInfo + address fields in patientData
     const patientDataForBackend = {
       name: p.name || "",
       healthNumber: formatHcn(p.healthNumberRaw || p.healthNumber || ""),
       healthNumberRaw: digitsOnly(p.healthNumberRaw || ""),
       dateOfBirth: p.dateOfBirth || "",
 
+      // ✅ requested structured storage
       addressData: p.addressData || {
         street: "",
         city: "",
@@ -888,6 +948,7 @@ export default function PharmacyMultiple() {
         hasBillingInfo: false,
       },
 
+      // ✅ keep flat fields too (easy searching)
       street: p.street || "",
       city: p.city || "",
       province: p.province || "",
@@ -899,23 +960,26 @@ export default function PharmacyMultiple() {
 
       allergies: Array.isArray(p.allergies) ? p.allergies : [],
       conditions: Array.isArray(p.conditions) ? p.conditions : [],
-      privateNote: (p.privateNote || "").trim(),
     };
 
     const payload = {
       scriptName: "savePatientInfo",
+
       patientSource: "pharmacy",
       healthNumber: formatHcn(p.healthNumberRaw || p.healthNumber || ""),
       dataPoint: p.dataPoint || todayISO(),
       pharmacyID: String(selectedProviderId || ""),
       totalPoints: Number(p.totalPoints || 0),
+
       medsData,
       medications: medsSlim,
+
+      // ✅ this is what gets stored into allDataSave on backend (if you do that)
       patientData: patientDataForBackend,
     };
 
     setSavingKey(String(p._key || ""));
-    setMsg(`Saving ${p.name || "patient"}…`);
+    setMsg(`Saving ${maskNameDisplay(p.name || "patient")}…`);
 
     try {
       const res = await fetch(API_Endpoint, {
@@ -943,6 +1007,7 @@ export default function PharmacyMultiple() {
     }
   };
 
+  // ---------- UI ----------
   return (
     <div className="container-fluid p-2">
       {/* Header */}
@@ -957,11 +1022,19 @@ export default function PharmacyMultiple() {
 
         <div className="col-18 text-end d-flex justify-content-end gap-2">
           <button
+            className="btn btn-outline-primary btn-sm"
+            onClick={goSingleUpload}
+            disabled={parsing || step2Running}
+          >
+            Upload Single PDF
+          </button>
+
+          <button
             className="btn btn-outline-danger btn-sm"
             onClick={resetAll}
             disabled={parsing || step2Running || !!savingKey}
           >
-            Reset
+            Clear
           </button>
         </div>
       </div>
@@ -1035,13 +1108,13 @@ export default function PharmacyMultiple() {
                 ) : null}
               </div>
 
-              <div className="col-24 text-end d-flex justify-content-end">
+              <div className="col-24 text-end d-flex justify-content-end gap-2">
                 <button
-                  className="btn btn-warning btn-lg fw-bold px-4 shadow-sm"
+                  className="btn btn-outline-primary btn-sm"
                   disabled={!stepReady || parsing || step2Running || !!savingKey}
                   onClick={runStep2}
                 >
-                  {step2Running ? "Running Step 2…" : "MOVE TO STEP 2"}
+                  Move to Step 2
                 </button>
               </div>
             </div>
@@ -1080,30 +1153,31 @@ export default function PharmacyMultiple() {
                 {allPatients.map((p) => {
                   const hcnOk = isValidHcn(p.healthNumberRaw || p.healthNumber || "");
                   const canProcess = canProcessPatient(p);
-                  const canEdit = canEditPatient(p);
 
                   const processBtnClass = p.saved
                     ? "btn btn-success btn-sm"
                     : canProcess
-                      ? "btn btn-primary btn-sm"
-                      : "btn btn-outline-secondary btn-sm";
+                    ? "btn btn-primary btn-sm"
+                    : "btn btn-outline-secondary btn-sm";
 
                   const processText = p.saved
                     ? "Saved"
                     : savingKey && String(savingKey) === String(p._key)
-                      ? "Saving…"
-                      : "Process";
+                    ? "Saving…"
+                    : "Process";
 
                   return (
                     <div className="col" key={p._key}>
                       <div className="border rounded p-2">
+                        {/* Top Line (Name + Meds + Address + Billing) */}
                         <div className="d-flex justify-content-between align-items-center">
+                          {/* LEFT */}
                           <div
                             className="d-flex align-items-center gap-2 flex-wrap"
                             style={{ maxWidth: "70%" }}
                           >
                             <div className="fw-semibold text-truncate" style={{ maxWidth: "360px" }}>
-                              {p.index}. {p.name}
+                              {p.index}. {maskNameDisplay(p.name)}
                             </div>
 
                             <div className="small">
@@ -1164,24 +1238,19 @@ export default function PharmacyMultiple() {
                             </div>
                           </div>
 
+                          {/* RIGHT */}
                           <div className="d-flex gap-2 align-items-center">
                             <div className="small text-muted">
                               {p.age !== null ? `Age: ${p.age}` : "Age: -"}
                             </div>
 
-                            {canEdit ? (
-                              <button
-                                className="btn btn-outline-primary btn-sm"
-                                onClick={() => openEdit(p)}
-                                disabled={parsing || step2Running || !!savingKey}
-                              >
-                                Edit
-                              </button>
-                            ) : (
-                              <span className="small text-muted">
-                                {!p.pointsReady ? "Edit after Step 2" : ""}
-                              </span>
-                            )}
+                            <button
+                              className="btn btn-outline-primary btn-sm"
+                              onClick={() => openEdit(p)}
+                              disabled={parsing || step2Running || !!savingKey}
+                            >
+                              Edit
+                            </button>
 
                             <button
                               className={processBtnClass}
@@ -1193,11 +1262,12 @@ export default function PharmacyMultiple() {
                           </div>
                         </div>
 
+                        {/* Compact Info Row */}
                         <div className="row g-2 mt-1 align-items-center">
                           <div className="col-10">
                             <div className="small text-muted">HCN</div>
                             <div className={`fw-semibold ${hcnOk ? "" : "text-danger"}`}>
-                              {p.healthNumber || "-"}
+                              {maskHcnDisplay(p.healthNumber || "-")}
                             </div>
                           </div>
 
@@ -1235,13 +1305,6 @@ export default function PharmacyMultiple() {
                               )}
                             </div>
                           </div>
-
-                          {!!(p.privateNote || "").trim() && (
-                            <div className="col-48 mt-1">
-                              <div className="small text-muted">Note</div>
-                              <div className="small text-dark">{p.privateNote}</div>
-                            </div>
-                          )}
                         </div>
                       </div>
                     </div>
@@ -1285,13 +1348,7 @@ export default function PharmacyMultiple() {
                     <input
                       className="form-control form-control-sm"
                       value={editForm.healthNumberRaw}
-                      onChange={(e) =>
-                        setEditForm((s) => ({
-                          ...s,
-                          healthNumberRaw: digitsOnly(e.target.value).slice(0, 10),
-                        }))
-                      }
-                      placeholder="##########"
+                      onChange={(e) => setEditForm((s) => ({ ...s, healthNumberRaw: e.target.value }))}
                     />
                     <div className="form-text text-muted">
                       Formatted: <strong>{formatHcn(editForm.healthNumberRaw || "") || "-"}</strong>
@@ -1315,16 +1372,6 @@ export default function PharmacyMultiple() {
                       rows={4}
                       value={editForm.conditionsCsv}
                       onChange={(e) => setEditForm((s) => ({ ...s, conditionsCsv: e.target.value }))}
-                    />
-                  </div>
-
-                  <div className="col-48">
-                    <label className="form-label mb-1">Private Note</label>
-                    <textarea
-                      className="form-control form-control-sm"
-                      rows={5}
-                      value={editForm.privateNote}
-                      onChange={(e) => setEditForm((s) => ({ ...s, privateNote: e.target.value }))}
                     />
                   </div>
                 </div>

@@ -437,24 +437,6 @@ const PatientDetails = () => {
         <div className="flex-grow-1 p-3">
           <div className="card shadow-sm h-100">
             <div className="card-header d-flex align-items-end gap-3 flex-wrap">
-
-              {/* Next Appointment (narrower) */}
-              <div className="d-flex align-items-end" style={{ minWidth: 180, maxWidth: 260 }}>
-                <div className="w-100">
-                  <label htmlFor="nextAppointment" className="form-label mb-1">Next Appointment</label>
-                  <div className="input-group input-group-sm">
-                    <span className="input-group-text" aria-hidden="true">📅</span>
-                    <input
-                      type="date"
-                      id="nextAppointment"
-                      className="form-control form-control-sm"
-                      value={patient.nextAppointment ? patient.nextAppointment.substring(0, 10) : ''}
-                      onChange={(e) => SetAppointment(e.target.value)}
-                    />
-                  </div>
-                </div>
-              </div>
-
               {/* Payment Method Toggles */}
               <div className="d-flex flex-column flex-grow-1" style={{ minWidth: 240 }}>
                 <label className="form-label mb-1 text-muted fw-bold">Medication Coverage</label>

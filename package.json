@@ -12,6 +12,8 @@
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.2.0",
     "@testing-library/user-event": "^13.5.0",
+    "baseline-browser-mapping": "^2.10.0",
+    "caniuse-lite": "^1.0.30001774",
     "jwt-decode": "^4.0.0",
     "make-cancellable-promise": "^2.0.0",
     "pdfjs-dist": "2.16.105",

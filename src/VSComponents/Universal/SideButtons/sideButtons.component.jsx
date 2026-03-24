@@ -2,16 +2,17 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useGlobalContext } from "../../../Context/global.context.jsx";
 
-import medIdon from "../../../assets/icons/meds.svg";
 import searchIcon from "../../../assets/icons/search.svg";
 import resultIcon from "../../../assets/icons/results.svg";
 import printIcon from "../../../assets/icons/print.svg";
-import conditionsIcon from "../../../assets/icons/health.svg";
 import logOutIcon from "../../../assets/icons/logout.svg";
-import allergyIcont from "../../../assets/icons/allergy.svg";
 import pharmacyUploadIcon from "../../../assets/icons/pharmacy.svg";
-import hospitalUploadIcon from "../../../assets/icons/hospital.svg";
+import labTube from "../../../assets/icons//lab-tube.svg";
+import adminIcon from "../../../assets/icons/admin.svg";
+import medIdon from "../../../assets/icons/meds.svg";
 import catIcon from "../../../assets/icons/catEdit.svg";
+import conditionsIcon from "../../../assets/icons/complete.svg";
+import allergyIcont from "../../../assets/icons/allergy.svg"; 
 
 // -----------------------------------------
 // Internal component (NOT imported)
@@ -121,14 +122,14 @@ export default function SideButtons() {
         }}
       />
 
-      <SideButton
+      {/* <SideButton
         title="Print Doctor Form"
         divColor="#f8f9fa"
         icon={printIcon}
         onClick={() => {
           navigate("/print");
         }}
-      />
+      /> */}
 
       {/* keep your placeholder block exactly as-is (but using SideButton now) */}
       <div className="mt-3 py-3 rounded d-flex flex-column align-items-center gap-2">
@@ -150,7 +151,7 @@ export default function SideButtons() {
             setVisibleBox("catAdmin");
           }}
         />
-        <SideButton
+        {/* <SideButton
           title="Edit Conditions"
           divColor="#366c13ff"
           icon={conditionsIcon}
@@ -161,28 +162,33 @@ export default function SideButtons() {
           divColor="#ebeb31ff"
           icon={allergyIcont}
           onClick={() => navigate("/print")}
-        />
+        /> */}
 
-        <div className="mt-5">
+        <div className="mt-5 mb-3 d-flex flex-column align-items-center gap-2">
           <SideButton
             title="Upload Pharmacy Reports"
             divColor="#ffffffff"
             icon={pharmacyUploadIcon}
             onClick={() => {
-            setVisibleBox("pharmacy");
+            setVisibleBox("multiPharmacy")
           }}
           />
-          {/* <SideButton
-            title="Upload Hospital Reports"
-            divColor="#0b9c3eff"
-            icon={hospitalUploadIcon}
-            onClick={() => navigate("/print")}
-          /> */}
+          <SideButton
+            title="Upload Labs"
+            divColor="#ffffff"
+            icon={labTube}
+            onClick={() => {
+              setVisibleBox("labUpload"); 
+            }}
+          />
         </div>
       </div>
 
       <div className="mt-auto">
-        <div className="mb-2">
+        <div className="mb-2 d-flex flex-column align-items-center gap-2">
+          {/* <SideButton title="Admin" divColor="#afafae" icon={adminIcon} onClick={() => {
+              setVisibleBox("AdminPanel"); 
+            }} /> */}
           <SideButton title="Log out" divColor="#dc3545" icon={logOutIcon} onClick={handleLogout} />
         </div>
       </div>

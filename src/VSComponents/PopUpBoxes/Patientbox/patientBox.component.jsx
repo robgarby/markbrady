@@ -19,15 +19,21 @@ export default function PatientInfo({ user, thePatient, loading = false }) {
   const navigate = useNavigate();
 
   const [patient, setPatient] = React.useState([]);
-  const [providerId, setProviderId] = React.useState("");   // <-- use proper setter name
+  const [providerId, setProviderId] = React.useState("");
   const currentPayment = patient?.paymentMethod || patient?.paymentMethof || '?';
   const [recommendedMeds, setRecommendedMeds] = React.useState([]);
 
-  // --- Local modal state lives in patientBox now ---
+  // recommendation modal
   const [showRecModal, setShowRecModal] = React.useState(false);
   const [recTitle, setRecTitle] = React.useState("Recommendation");
   const [recText, setRecText] = React.useState("");
   const [currentKey, setCurrentKey] = React.useState("");
+
+  // edit patient modal
+  const [showEditModal, setShowEditModal] = React.useState(false);
+  const [editName, setEditName] = React.useState("");
+  const [editHealthNumber, setEditHealthNumber] = React.useState("");
+  const [savingEdit, setSavingEdit] = React.useState(false);
 
   const changeMainDisplay = (button) => {
     if (button === mainButton) {
@@ -37,10 +43,9 @@ export default function PatientInfo({ user, thePatient, loading = false }) {
     }
     setMainButton(button);
     setDisplayMain(true);
-  }
+  };
 
   React.useEffect(() => {
-    // parse recommendedMeds (CSV / semicolon / newline or already-array) into an array
     const rawMeds = thePatient?.recommendedMed ?? '';
     let meds = [];
     if (Array.isArray(rawMeds)) {
@@ -50,10 +55,8 @@ export default function PatientInfo({ user, thePatient, loading = false }) {
     }
     setRecommendedMeds(meds);
 
-    // copy patient in
     setPatient(thePatient);
 
-    // sync providerId state from incoming patient (as a string for the <select>)
     const incomingProviderId =
       thePatient?.providerId != null ? String(thePatient.providerId) : "";
     setProviderId(incomingProviderId);
@@ -70,10 +73,78 @@ export default function PatientInfo({ user, thePatient, loading = false }) {
     return age >= 0 ? age : "—";
   };
 
+  const formatHealthNumber = (value) => {
+    const digits = String(value || "").replace(/\D/g, "").slice(0, 10);
+    if (digits.length <= 4) return digits;
+    if (digits.length <= 7) return `${digits.slice(0, 4)} ${digits.slice(4)}`;
+    return `${digits.slice(0, 4)} ${digits.slice(4, 7)} ${digits.slice(7, 10)}`;
+  };
+
+  const digitsOnlyHealthNumber = (value) => {
+    return String(value || "").replace(/\D/g, "").slice(0, 10);
+  };
+
+  const openEditModal = () => {
+    setEditName(String(patient?.clientName || ""));
+    setEditHealthNumber(digitsOnlyHealthNumber(patient?.healthNumber || ""));
+    setShowEditModal(true);
+  };
+
+  const closeEditModal = () => {
+    if (savingEdit) return;
+    setShowEditModal(false);
+  };
+
+  const savePatientBasics = async () => {
+    const cleanedName = String(editName || "").trim();
+    const rawDigits = digitsOnlyHealthNumber(editHealthNumber);
+    const formattedHCN = formatHealthNumber(rawDigits);
+
+    if (!cleanedName || rawDigits.length !== 10 || !patient?.id) {
+      return;
+    }
+
+    setSavingEdit(true);
+
+    const updatedPatient = {
+      ...patient,
+      clientName: cleanedName,
+      healthNumber: formattedHCN,
+      healthNumberRaw: rawDigits,
+    };
+
+    setPatient(updatedPatient);
+    if (typeof setActivePatient === "function") {
+      setActivePatient(updatedPatient);
+    }
+
+    try {
+      await fetch("https://gdmt.ca/PHP/database.php", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          script: "updatePatientBasicInfo",
+          patientID: patient.id,
+          clientName: cleanedName,
+          healthNumber: formattedHCN,
+          healthNumberRaw: rawDigits,
+          patientDB: user?.patientTable || "Patient",
+          historyDB: user?.historyTable || "Patient_History",
+        }),
+      });
+
+      setShowEditModal(false);
+    } catch (e) {
+      console.log("Error updating patient basic info:", e);
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
   const setPaymentMethod = (methodLabel) => {
-    const method = methodLabel; // keep labels exactly: 'CASH' | 'Government' | 'Private' | '?'
+    const method = methodLabel;
     setPatient((prev) => {
-      const next = { ...prev, paymentMethod: method, paymentMethof: method }; // mirror both keys for safety
+      const next = { ...prev, paymentMethod: method, paymentMethof: method };
       if (typeof setActivePatient === 'function') setActivePatient(next);
       return next;
     });
@@ -114,7 +185,6 @@ export default function PatientInfo({ user, thePatient, loading = false }) {
     }).catch(() => { });
   };
 
-  // --- Modal helpers (now owned by patientBox) ---
   const openRecModal = (keyOrLabel) => {
     const key = String(keyOrLabel || "").trim().toLowerCase();
     const text = getRecommendationText(key) || String(keyOrLabel || "");
@@ -127,42 +197,30 @@ export default function PatientInfo({ user, thePatient, loading = false }) {
   const closeRecModal = () => setShowRecModal(false);
 
   const UpdateRecommendations = async () => {
-    // Auth guard
     const userData = await getUserFromToken();
     if (!userData) {
       navigate("/login");
       return;
     }
 
-    // Current recommendations as plain text
     const existingText = String(thePatient?.recommendations || "").trim();
-
-    // What we plan to add (from the modal)
     const candidate = String(recText || "").trim();
     if (!candidate) {
-      console.log("No recommendation text to add");
       return;
     }
 
-    // The key we use to detect duplicates (prefer the normalized currentKey)
     const key = String(currentKey || "").trim().toLowerCase();
-
-    // Duplicate detection: check by key if available, otherwise by full candidate text
     const lowerExisting = existingText.toLowerCase();
     const exists =
       (key && lowerExisting.includes(key)) ||
       lowerExisting.includes(candidate.toLowerCase());
 
     if (exists) {
-      console.log("Already exists:", key || candidate.slice(0, 40));
       setShowRecModal(false);
       return;
     }
 
-    // Append neatly (two newlines between blocks if something is already there)
     const updatedText = existingText ? `${existingText}\n\n${candidate}` : candidate;
-
-    // Update local state
     const updatedPatient = { ...thePatient, recommendations: updatedText };
     setPatient(updatedPatient);
     if (typeof setActivePatient === "function") setActivePatient(updatedPatient);
@@ -187,56 +245,44 @@ export default function PatientInfo({ user, thePatient, loading = false }) {
     setShowRecModal(false);
   };
 
-  // Map button click → open local modal with text from variables.jsx
   const handleMapClick = (evt, fallback) => {
     const v = evt?.currentTarget?.value ?? fallback ?? "";
-    console.log("Clicked recommendation:", v);
     openRecModal(v);
   };
 
-  // NEW: proper provider change handler
   const handleProviderChange = (val) => {
-    console.log("Setting providerId:", val);
-    console.log("previous patient:", patient);
-
-    const newProviderId = val || ""; // keep as string for the <select>
-
-    // local state for the select
+    const newProviderId = val || "";
     setProviderId(newProviderId);
 
-    // update patient + global active patient
     setPatient((prev) => {
-        const next = {
-            ...prev,
-            providerId: newProviderId,
-        };
+      const next = {
+        ...prev,
+        providerId: newProviderId,
+      };
 
-        // sync to GlobalContext, but only if available
-        if (typeof setActivePatient === "function") {
-            setActivePatient(next);
-        }
+      if (typeof setActivePatient === "function") {
+        setActivePatient(next);
+      }
 
-        return next;
+      return next;
     });
 
-    // fire-and-forget DB update
-    if (!patient?.id) return; // nothing to save yet
+    if (!patient?.id) return;
 
     fetch("https://gdmt.ca/PHP/database.php", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-            script: "updateProvider",
-            patientID: patient.id,
-            providerId: newProviderId,
-            patientDB: user?.patientTable || "Patient",
-            historyDB: user?.historyTable || "Patient_History",
-        }),
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        script: "updateProvider",
+        patientID: patient.id,
+        providerId: newProviderId,
+        patientDB: user?.patientTable || "Patient",
+        historyDB: user?.historyTable || "Patient_History",
+      }),
     }).catch((e) => {
-        console.log("Error updating provider:", e);
+      console.log("Error updating provider:", e);
     });
-};
-
+  };
 
   return (
     <>
@@ -249,7 +295,6 @@ export default function PatientInfo({ user, thePatient, loading = false }) {
 
             <div className="mb-1">
               <div className="row align-items-center g-4 fs-7 mb-4">
-                {/* Left info */}
                 <div className="col-auto fw-bold text-start">
                   Health Number: {patient.healthNumber}
                 </div>
@@ -259,8 +304,15 @@ export default function PatientInfo({ user, thePatient, loading = false }) {
                 <div className="col-auto text-start">
                   Date of Birth: {patient.dateOfBirth}
                 </div>
+                <div className="col-auto text-start">
+                  <button
+                    className="btn btn-sm btn-outline-navy"
+                    onClick={openEditModal}
+                  >
+                    Edit
+                  </button>
+                </div>
 
-                {/* Right side: pushed to the edge */}
                 <div className="col-auto ms-auto d-flex align-items-center gap-2 pe-3">
                   <div className="text-end pe-1">Medication Recommendations:</div>
                   <div className="d-flex flex-wrap gap-1 me-3">
@@ -291,10 +343,9 @@ export default function PatientInfo({ user, thePatient, loading = false }) {
                 role="region"
                 aria-label="Patient additional information"
               >
-                <div className="d-flex mt-1  flex-column col-16" >
+                <div className="d-flex mt-1 flex-column col-16">
                   <label className="form-label mb-1">Medication Coverage</label>
                   <div className="d-flex w-100" role="group" aria-label="Payment method">
-                    {/* ? */}
                     <input
                       type="radio"
                       className="btn-check col-12"
@@ -309,7 +360,7 @@ export default function PatientInfo({ user, thePatient, loading = false }) {
                       htmlFor="pm-unknown"
                       style={{ minWidth: 0 }}
                     >?</label>
-                    {/* CASH */}
+
                     <input
                       type="radio"
                       className="btn-check col-12"
@@ -324,7 +375,7 @@ export default function PatientInfo({ user, thePatient, loading = false }) {
                       htmlFor="pm-cash"
                       style={{ minWidth: 0 }}
                     >CASH</label>
-                    {/* Government */}
+
                     <input
                       type="radio"
                       className="btn-check col-12"
@@ -339,7 +390,7 @@ export default function PatientInfo({ user, thePatient, loading = false }) {
                       htmlFor="pm-gov"
                       style={{ minWidth: 0 }}
                     >Government</label>
-                    {/* Private */}
+
                     <input
                       type="radio"
                       className="btn-check col-12"
@@ -356,139 +407,32 @@ export default function PatientInfo({ user, thePatient, loading = false }) {
                     >Private</label>
                   </div>
                 </div>
-                {/* Next Appointment (narrower) */}
-                <div className="d-flex align-items-end col-6">
-                  <div className="w-100">
-                    <label className="form-label mb-1">Next Appointment</label>
-                    <div className="input-group input-group-sm">
-                      <span className="input-group-text" aria-hidden="true">📅</span>
-                      <input
-                        type="date"
-                        id="nextAppointment"
-                        className="form-control form-control-sm"
-                        value={patient.nextAppointment ? patient.nextAppointment.substring(0, 10) : ''}
-                        onChange={(e) => SetAppointment(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                </div>
-                <div className="col-6">
-                  {/* line above */}
-                  <div className="text-start">
-                    <label className="form-label mb-1">Provider</label>
-                  </div>
 
-                  {/* select below */}
-                  <select
-                    className={`form-select fs-7 ${providerId ? "alert-success" : ""}`}
-                    value={providerId || ""}
-                    onChange={(e) => {
-                      const val = e.target.value || ""; // "" -> ""
-                      handleProviderChange(val);
-                    }}
-                  >
-                    <option value="">Select Provider</option>
-                    {Array.isArray(patientProvider) &&
-                      patientProvider.map((p) => {
-                        const id = p?.id != null ? String(p.id) : "";
-                        const label = String(p?.providerName ?? p?.name ?? p?.displayName ?? id);
-                        return (
-                          <option key={id || label} value={id}>
-                            {label}
-                          </option>
-                        );
-                      })}
-                  </select>
+                <div className="d-flex align-content-center col-8 offset-1">
+                  <div className="w-100 mb-1">
+                    <label
+                      htmlFor="nextAppointment"
+                      className="form-label mb-1"
+                    >
+                      Uploads
+                    </label>
+                    <div className="d-flex gap-1 align-content-center">
+                      <div className="col-16">
+                        <button
+                          className={`btn-sm btn  w-100 fs-7 ${
+                            mainButton === 'hospital' ? 'btn-warning' : 'btn-outline-primary'
+                          }`}
+                          onClick={() => changeMainDisplay('hospital')}
+                        >
+                          Hospital
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                  <div className="d-flex align-content-center col-8">
-                    <div className="w-100 mb-1">
-                      <label
-                        htmlFor="nextAppointment"
-                        className="form-label mb-1"
-                      >
-                        Upload
-                      </label>
-                      <div className="d-flex gap-1 align-content-center">
-                        <div className="col-16">
-                          <button
-                            className={`btn-sm btn  w-100 fs-7 ${
-                              mainButton === 'dynacare' ? 'btn-warning' : 'btn-outline-primary'
-                            }`}
-                            onClick={() => changeMainDisplay('dynacare')}
-                          >
-                            Dynacare
-                          </button>
-                        </div>
-                        <div className="col-16">
-                          <button
-                            className={`btn-sm btn  w-100 fs-7 ${
-                              mainButton === 'lifelab' ? 'btn-warning' : 'btn-outline-primary'
-                            }`}
-                            onClick={() => changeMainDisplay('lifelab')}
-                          >
-                            Life Lab
-                          </button>
-                        </div>
-                        {/* <div className="col-16">
-                          <button
-                            className={`btn-sm btn disabled  w-100 fs-7 ${
-                              mainButton === 'newLab' ? 'btn-warning' : 'btn-outline-primary'
-                            }`}
-                            onClick={() => changeMainDisplay('newLab')}
-                          >
-                            new Lab
-                          </button>
-                        </div> */}
-                      </div>
-                    </div>
-                  </div>
-                
-                  <div className="d-flex align-content-center col-8 offset-1">
-                    <div className="w-100 mb-1">
-                      <label
-                        htmlFor="nextAppointment"
-                        className="form-label mb-1"
-                      >
-                        Special
-                      </label>
-                      <div className="d-flex gap-1 align-content-center">
-                        <div className="col-16">
-                          <button
-                            className={`btn-sm btn  w-100 fs-7 ${
-                              mainButton === 'hospital' ? 'btn-warning' : 'btn-outline-primary'
-                            }`}
-                            onClick={() => changeMainDisplay('hospital')}
-                          >
-                            Hospital
-                          </button>
-                        </div>
-                        {/* <div className="col-16">
-                          <button
-                            className={`btn-sm btn  w-100 fs-7 ${
-                              mainButton === 'pharmacy' ? 'btn-warning' : 'btn-outline-primary'
-                            }`}
-                            onClick={() => changeMainDisplay('pharmacy')}
-                          >
-                            Pharmacy
-                          </button>
-                        </div>
-                        <div className="col-16">
-                          <button
-                            className={`btn-sm btn  w-100 fs-7 ${
-                              mainButton === 'alergy' ? 'btn-warning' : 'btn-outline-primary'
-                            }`}
-                            onClick={() => changeMainDisplay('alergy')}
-                          >
-                            Alergy
-                          </button>
-                        </div> */}
-                      </div>
-                    </div>
-                  </div>
               </div>
             </div>
 
-            {/* --- Local Modal rendered here --- */}
             {showRecModal && (
               <div
                 className="modal fade show"
@@ -518,6 +462,75 @@ export default function PatientInfo({ user, thePatient, loading = false }) {
                       </button>
                       <button className="btn btn-primary" onClick={UpdateRecommendations}>
                         Add This Recommendation
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {showEditModal && (
+              <div
+                className="modal fade show"
+                role="dialog"
+                aria-modal="true"
+                style={{ display: "block", background: "rgba(0,0,0,0.4)" }}
+              >
+                <div className="modal-dialog modal-dialog-centered">
+                  <div className="modal-content">
+                    <div className="modal-header">
+                      <h5 className="modal-title">Edit Patient Info</h5>
+                      <button
+                        type="button"
+                        className="btn-close"
+                        onClick={closeEditModal}
+                        aria-label="Close"
+                        disabled={savingEdit}
+                      />
+                    </div>
+
+                    <div className="modal-body">
+                      <div className="row g-2">
+                        <div className="col-48">
+                          <label className="form-label mb-1">Name</label>
+                          <input
+                            className="form-control form-control-sm"
+                            value={editName}
+                            onChange={(e) => setEditName(e.target.value)}
+                          />
+                        </div>
+
+                        <div className="col-48">
+                          <label className="form-label mb-1">Health Card Number</label>
+                          <input
+                            className="form-control form-control-sm"
+                            value={editHealthNumber}
+                            onChange={(e) => setEditHealthNumber(digitsOnlyHealthNumber(e.target.value))}
+                            maxLength={10}
+                            inputMode="numeric"
+                            placeholder="##########"
+                          />
+                          <div className="small text-muted mt-1">
+                            Saved as: {formatHealthNumber(editHealthNumber) || "#### ### ###"}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="modal-footer">
+                      <button
+                        className="btn btn-secondary"
+                        onClick={closeEditModal}
+                        disabled={savingEdit}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        className="btn btn-primary"
+                        onClick={savePatientBasics}
+                        disabled={savingEdit || !editName.trim() || digitsOnlyHealthNumber(editHealthNumber).length !== 10}
+                      >
+                        {savingEdit ? "Saving..." : "Save"}
                       </button>
                     </div>
                   </div>

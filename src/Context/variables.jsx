@@ -16,10 +16,10 @@ export const navButtons = [
     { security: "1", id: "users", text: "Users", color: "light" },
 ];
 
-export const version = "v5.0.0";
-export const versionDate = "2026-01-19";
-export const versionTime = "6:15 AM";
-export const versionNotes = "Connecting New System to GDMT.CA API";
+export const version = "V 7.4.0";
+export const versionDate = "2026-03-22";
+export const versionTime = "16:55 PM";
+export const versionNotes = "Search of private notes";
 
 // Standardized recommendation texts for popup Medications Below This.. put other variables Above This
 
@@ -41,7 +41,7 @@ export const getRecommendationText = (key) => {
                 "Vascepa Recommendations:",
                 "This Medication is not currently included in the published recommendations with GDMT.CA. Contact Mark Brady for more information.",
             ].join("\n");
-        case "praluent":
+        case "praluent----evolocumab":
             return [
                 "Praluent (evolocumab) Recommendations:",
                 "",
@@ -66,6 +66,76 @@ export const getRecommendationText = (key) => {
                 "OVERALL:",
                 "• Given persistent elevation of LDL-C on optimized therapy and very-high-risk status, adding Praluent is guideline-concordant and expected to significantly reduce future cardiovascular events."
             ].join("\n");
+
+        case "praluent":
+            return [
+                "Alirocumab (Praluent®)",
+                "",
+                "Standard starting doses",
+                "• 75 mg subcutaneously every 2 weeks",
+                "or",
+                "• 300 mg subcutaneously every 4 weeks (monthly)",
+                "",
+                "Both are acceptable starting options in ASCVD or HeFH, depending on preference, adherence considerations, and LDL-C target urgency.",
+                "",
+                "—",
+                "",
+                "Titration",
+                "• If LDL-C reduction is insufficient after 4–8 weeks:",
+                "• Increase to 150 mg subcutaneously every 2 weeks",
+                "",
+                "This is the maximum dose.",
+                "",
+                "—",
+                "",
+                "Practical points:",
+                "• 75 mg q2w ≈ ~45–55% LDL-C reduction",
+                "• 150 mg q2w ≈ ~60%+ LDL-C reduction",
+                "• Monthly 300 mg can be convenient, but some clinicians prefer q2w for tighter control and smoother LDL curves",
+                "• No renal dose adjustment required",
+                "• Can be used with statins, ezetimibe, or in statin intolerance",
+                "",
+                "LU code 555 (details attached for ODB qualified patients)",
+            ].join("\n");
+
+        case "praluent":
+            return [
+                "Alirocumab (Praluent®)",
+                "",
+                "Standard starting doses",
+                "• 75 mg subcutaneously every 2 weeks",
+                "or",
+                "• 300 mg subcutaneously every 4 weeks (monthly)",
+                "",
+                "Both are acceptable starting options in ASCVD or HeFH, depending on preference, adherence considerations, and LDL-C target urgency.",
+                "",
+                "—",
+                "",
+                "Titration",
+                "• If LDL-C reduction is insufficient after 4–8 weeks:",
+                "• Increase to 150 mg subcutaneously every 2 weeks",
+                "",
+                "This is the maximum dose.",
+                "",
+                "—",
+                "",
+                "Practical points:",
+                "• 75 mg q2w ≈ ~45–55% LDL-C reduction",
+                "• 150 mg q2w ≈ ~60%+ LDL-C reduction",
+                "• Monthly 300 mg can be convenient, but some clinicians prefer q2w for tighter control and smoother LDL curves",
+                "• No renal dose adjustment required",
+                "• Can be used with statins, ezetimibe, or in statin intolerance",
+                "",
+                "LU code 555 (details attached for ODB qualified patients)",
+            ].join("\n");
+
+        case "leqvio":
+            return [
+                "Leqvio Recommendations:, (For Demo Purposes, Use Finerenone)",
+                "This Medication is not currently included in the published recommendations with GDMT.CA. Contact Mark Brady for more information.",
+            ].join("\n");
+
+
 
         default:
             return "";

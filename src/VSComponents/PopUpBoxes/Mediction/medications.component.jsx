@@ -13,7 +13,7 @@ const Medications = ({ user }) => {
             id="MED"
             storageKey="NOTE_BOX_POSITION"
             defaultPos={{ x: 600, y: 340 }}
-            title= "Medications [FULLY WORKING]"
+            title= "Medications [2026 Update]"
             width={900}
             onAdd={null}
             zIndex={2050}

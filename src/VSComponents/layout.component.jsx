@@ -19,8 +19,9 @@ import AsideNav from "./Universal/SideButtons/sideButtons.component.jsx";
 
 import MedBoxComplete from "./SideButtonBoxes/Medications/editMedications.component.jsx";
 import EditCats from "./SideButtonBoxes/Category/editCats.component.jsx";
-import PharmacyUpload from "./SideButtonBoxes/Pharmacy/pharmacy.component.jsx";
+// import PharmacyUpload from "./SideButtonBoxes/Pharmacy/xpharmacy.component.jsx";
 import PharmacyMultiple from "./SideButtonBoxes/Pharmacy/pharmacyMultiple.component.jsx";
+import UploadLab from "./SideButtonBoxes/LabUpload/uploadLab.component.jsx";
 
 export default function Layout() {
   const {
@@ -93,7 +94,10 @@ export default function Layout() {
 
   function displayClick(text) {
     const current = Array.isArray(selectedTopButtons) ? selectedTopButtons : [];
-    const updated = current.includes(text) ? current.filter((i) => i !== text) : [...current, text];
+    const updated = current.includes(text)
+      ? current.filter((i) => i !== text)
+      : [...current, text];
+
     setSelectedTopButtons(updated);
     setDisplayMain(false);
     setMainButton(null);
@@ -109,14 +113,23 @@ export default function Layout() {
   const isCatAdmin = visibleBox === "catAdmin";
   const isPharmacy = visibleBox === "pharmacy";
   const isMultiPharmacy = visibleBox === "multiPharmacy";
-  const isOverlayOpen = isMedAdmin || isCatAdmin || isPharmacy;
+  const labUpload = visibleBox === "labUpload";
+
+  const isOverlayOpen =
+    isMedAdmin ||
+    isCatAdmin ||
+    isPharmacy ||
+    isMultiPharmacy ||
+    labUpload;
 
   return (
     <>
       {theUser ? (
         <div className="app-container d-flex flex-column">
-          {/* Top navbar (fixed 60px height) */}
-          <div className="bg-black text-white px-0 w-100 d-flex" style={{ height: "60px", lineHeight: "60px" }}>
+          <div
+            className="bg-black text-white px-0 w-100 d-flex"
+            style={{ height: "60px", lineHeight: "60px" }}
+          >
             <div className="ms-4 d-flex align-items-center fw-bold text-white">
               <img src={logo} alt="GDMT" style={{ height: "36px", marginRight: "8px" }} />
               <span style={{ color: "#e2e7d6ff" }}>[{theUser.userName}]</span>
@@ -132,7 +145,6 @@ export default function Layout() {
             )}
           </div>
 
-          {/* Body: fill viewport minus navbar */}
           <div
             className="d-flex position-relative"
             style={{
@@ -140,14 +152,15 @@ export default function Layout() {
               overflow: "hidden",
             }}
           >
-            {/* ✅ Full-screen overlay for Med Admin */}
             {isMedAdmin && (
               <div className="position-absolute top-0 start-0 w-100 h-100 bg-white" style={{ zIndex: 3000 }}>
                 <div className="d-flex align-items-center px-3 border-bottom" style={{ height: "56px" }}>
                   <div className="fw-bold">Medication Admin</div>
 
                   <div className="ms-auto">
-                    <button className="btn btn-outline-danger btn-sm" onClick={() => setVisibleBox("")}
+                    <button
+                      className="btn btn-outline-danger btn-sm"
+                      onClick={() => setVisibleBox("")}
                       disabled={loading}
                     >
                       Close
@@ -161,14 +174,15 @@ export default function Layout() {
               </div>
             )}
 
-            {/* ✅ Full-screen overlay for Category Admin */}
             {isCatAdmin && (
               <div className="position-absolute top-0 start-0 w-100 h-100 bg-white" style={{ zIndex: 3000 }}>
                 <div className="d-flex align-items-center px-3 border-bottom" style={{ height: "56px" }}>
                   <div className="fw-bold">Category Admin</div>
 
                   <div className="ms-auto">
-                    <button className="btn btn-outline-danger btn-sm" onClick={() => setVisibleBox("")}
+                    <button
+                      className="btn btn-outline-danger btn-sm"
+                      onClick={() => setVisibleBox("")}
                       disabled={loading}
                     >
                       Close
@@ -182,14 +196,41 @@ export default function Layout() {
               </div>
             )}
 
-            {/* ✅ Full-screen overlay for Pharmacy Upload (same pattern as Med/Cats) */}
             {isPharmacy && (
               <div className="position-absolute top-0 start-0 w-100 h-100 bg-white" style={{ zIndex: 3000 }}>
                 <div className="d-flex align-items-center px-3 border-bottom" style={{ height: "56px" }}>
                   <div className="fw-bold">Upload Pharmacy Reports</div>
 
                   <div className="ms-auto">
-                    <button className="btn btn-outline-danger btn-sm" onClick={() => setVisibleBox("")}
+                    <button
+                      className="btn btn-outline-danger btn-sm"
+                      onClick={() => setVisibleBox("")}
+                      disabled={loading}
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+
+                {/* 
+                <div style={{ height: "calc(100% - 56px)", overflow: "auto" }} className="p-0">
+                  <div className="p-2" style={{ height: "100%" }}>
+                    <PharmacyUpload />
+                  </div>
+                </div> 
+                */}
+              </div>
+            )}
+
+            {labUpload && (
+              <div className="position-absolute top-0 start-0 w-100 h-100 bg-white" style={{ zIndex: 3000 }}>
+                <div className="d-flex align-items-center px-3 border-bottom" style={{ height: "56px" }}>
+                  <div className="fw-bold">Upload Lab Reports</div>
+
+                  <div className="ms-auto">
+                    <button
+                      className="btn btn-outline-danger btn-sm"
+                      onClick={() => setVisibleBox("")}
                       disabled={loading}
                     >
                       Close
@@ -199,18 +240,21 @@ export default function Layout() {
 
                 <div style={{ height: "calc(100% - 56px)", overflow: "auto" }} className="p-0">
                   <div className="p-2" style={{ height: "100%" }}>
-                    <PharmacyUpload />
+                    <UploadLab />
                   </div>
                 </div>
               </div>
             )}
+
             {isMultiPharmacy && (
               <div className="position-absolute top-0 start-0 w-100 h-100 bg-white" style={{ zIndex: 3000 }}>
                 <div className="d-flex align-items-center px-3 border-bottom" style={{ height: "56px" }}>
                   <div className="fw-bold">Upload Multi Pharmacy Reports</div>
 
                   <div className="ms-auto">
-                    <button className="btn btn-outline-danger btn-sm" onClick={() => setVisibleBox("")}
+                    <button
+                      className="btn btn-outline-danger btn-sm"
+                      onClick={() => setVisibleBox("")}
                       disabled={loading}
                     >
                       Close
@@ -226,14 +270,14 @@ export default function Layout() {
               </div>
             )}
 
-            {/* Sidebar */}
-            <aside className="d-flex flex-column align-items-center pt-1 bg-black gap-2 h-100" style={{ width: "60px" }}>
+            <aside
+              className="d-flex flex-column align-items-center pt-1 bg-black gap-2 h-100"
+              style={{ width: "60px" }}
+            >
               <AsideNav />
             </aside>
 
-            {/* Main area */}
             <main className="display flex-grow-1 p-3 h-100 overflow-auto">
-              {/* ✅ Hide main content whenever an overlay is open */}
               {!isOverlayOpen && (
                 <>
                   {activePatient && !displayMain && (

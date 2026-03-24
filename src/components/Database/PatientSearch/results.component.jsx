@@ -33,6 +33,7 @@ const ResultsPage = () => {
     setActivePatient,
     setClientBox,
     privateMode,
+    medsArray,
   } = useGlobalContext();
 
   const {
@@ -188,19 +189,25 @@ const ResultsPage = () => {
     };
   }, []);
 
-  // --- helpers for recommendedMed CSV highlighting ---
-  const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const containsWord = (haystack, needle) => {
-    if (!haystack || !needle) return false;
-    // whole-word, case-insensitive
-    const re = new RegExp(`\\b${escapeRegex(String(needle).trim())}\\b`, "i");
-    return re.test(String(haystack));
-  };
   const splitCsv = (csv) =>
     String(csv || "")
       .split(/[,;]+/)
       .map((s) => s.trim())
       .filter(Boolean);
+
+  // --- meds master name lookup (bold recommended meds that exist in master meds list) ---
+  const normMed = (s) => String(s || "").trim().toLowerCase();
+
+  const medNameSet = useMemo(() => {
+    const set = new Set();
+    const list = Array.isArray(medsArray) ? medsArray : [];
+    for (const m of list) {
+      const n = m?.medication_name ?? m?.medication ?? m?.name ?? m?.label ?? "";
+      const key = normMed(n);
+      if (key) set.add(key);
+    }
+    return set;
+  }, [medsArray]);
 
   return (
     <div className="container-fluid d-flex flex-column" style={{ height: "100vh" }}>
@@ -236,15 +243,14 @@ const ResultsPage = () => {
             const canCopy = !!hcn && hcn !== "-";
             const isCopied = copiedKey === rowKey;
 
-            // --- build the recommendedMed display with check against recommendations text
-            const recText = String(p?.recommendations || "");
+            // --- build the recommendedMed display: bold if it exists in medsArray master list
             const medItems = splitCsv(p?.recommendedMed);
             const renderedMeds =
               medItems.length === 0 ? (
                 "—"
               ) : (
                 medItems.map((m, i) => {
-                  const matched = containsWord(recText, m);
+                  const matched = medNameSet.has(normMed(m));
                   return (
                     <span
                       key={`${rowKey}-med-${i}`}
@@ -283,7 +289,6 @@ const ResultsPage = () => {
                     aria-label="Copy health number"
                     title={canCopy ? "Copy health number" : "No health number to copy"}
                   >
-                    {/* 👇 Display masked number in private mode (and highlight if needed) */}
                     {isCopied
                       ? "Copied"
                       : mode === "identity"
@@ -292,12 +297,27 @@ const ResultsPage = () => {
                   </button>
                 </div>
 
-                <div className="col-3" onClick={() => editClient(p)} >{calculateAge(p.dateOfBirth)}</div>
-                <div className="col-4" onClick={() => editClient(p)}>
-                  {(p.nextAppointment === "0000-00-00" || !p.nextAppointment) ? "—" : p.nextAppointment}
+                <div className="col-2" onClick={() => editClient(p)}>{calculateAge(p.dateOfBirth)}</div>
+                <div className="col-2" onClick={() => editClient(p)}>
+                  {p.totalPoints != null ? (
+                    <span className="text-dark">
+                      {p.totalPoints} pts
+                    </span>
+                  ) : (
+                    "—"
+                  )}
+                </div>
+                <div className="col-2" onClick={() => editClient(p)}>
+                  {p.totalPoints != null ? (
+                    <span className="text-dark">
+                      {p.labCount} Labs
+                    </span>
+                  ) : (
+                    "—"
+                  )}
                 </div>
 
-                {/* 🔽 recommendedMed column with per-item match highlighting */}
+                {/* recommendedMed column */}
                 <div className="col-6" onClick={() => editClient(p)}>{renderedMeds}</div>
 
                 <div className="flex-grow-1" onClick={() => editClient(p)}>{p.privateNote || "—"}</div>

@@ -170,7 +170,7 @@ if ($data['script'] === 'loadConditionData') {
 // 1) Create a new master medication
 if (($data['script'] ?? '') === 'CreateMedication') {
     $name = trim($data['medication_name'] ?? '');
-    $cat  = trim($data['medication_cat'] ?? '');
+    $cat = trim($data['medication_cat'] ?? '');
     $dose = trim($data['medication_dose'] ?? '');
 
     if ($name === '') {
@@ -194,10 +194,10 @@ if (($data['script'] ?? '') === 'CreateMedication') {
         $newId = $conn->insert_id;
         // Return the newly created row shape your UI expects
         $med = [
-            'ID'               => (string)$newId,
-            'medication_name'  => $name,
-            'medication_cat'   => $cat,
-            'medication_dose'  => $dose,
+            'ID' => (string) $newId,
+            'medication_name' => $name,
+            'medication_cat' => $cat,
+            'medication_dose' => $dose,
         ];
         echo json_encode(['success' => true, 'med' => $med, 'affected_rows' => $stmt->affected_rows]);
     } else {
@@ -210,44 +210,144 @@ if (($data['script'] ?? '') === 'CreateMedication') {
 
 // 2) Save patient medication linkages (CSV of IDs)
 if (($data['script'] ?? '') === 'SaveMedication') {
-    $patientId = $data['patientId'] ?? null;
-    $medIdsCSV = $data['medIdsCSV'] ?? ''; // authoritative CSV we’ll store
-    $patientDB = $data['patientDB'] ?? 'Patient'; // respect your dynamic tables if any
+    header('Content-Type: application/json');
 
-    if (!$patientId) {
+    $patientId = (int) ($data['patientId'] ?? 0);
+    $patientDB = 'Patient'; // keep as you had it
+
+    // CSV you may send as authoritative (DIN CSV)
+    $medIdsCSV_in = (string) ($data['medIdsCSV'] ?? '');
+
+    // single DIN to remove (optional)
+    $medIdRaw = $data['medId'] ?? null;
+    $medId = ($medIdRaw !== null) ? preg_replace('/\D+/', '', (string) $medIdRaw) : '';
+    $medId = substr($medId, 0, 8);
+
+    if ($patientId <= 0) {
         http_response_code(400);
         echo json_encode(['success' => false, 'error' => 'Missing patientId']);
         exit;
     }
 
-    // Update medsData column with full CSV
-    $sql = "UPDATE `$patientDB` SET medsData = ? WHERE id = ?";
-    $stmt = $conn->prepare($sql);
-    if (!$stmt) {
+    // 1) Read old medsData + medications
+    $stmtSel = $conn->prepare("SELECT medsData, medications FROM `$patientDB` WHERE id = ? LIMIT 1");
+    if (!$stmtSel) {
         http_response_code(500);
-        echo json_encode(['success' => false, 'error' => 'Prepare failed', 'details' => $conn->error]);
+        echo json_encode(['success' => false, 'error' => 'Prepare failed (select)', 'details' => $conn->error]);
         exit;
     }
-    $stmt->bind_param('si', $medIdsCSV, $patientId);
 
-    if ($stmt->execute()) {
-        echo json_encode([
-            'success' => true,
-            'affected_rows' => $stmt->affected_rows,
-            'medIdsCSV' => $medIdsCSV
-        ]);
-    } else {
+    $stmtSel->bind_param("i", $patientId);
+    if (!$stmtSel->execute()) {
         http_response_code(500);
-        echo json_encode(['success' => false, 'error' => 'Update failed', 'details' => $stmt->error]);
+        echo json_encode(['success' => false, 'error' => 'Execute failed (select)', 'details' => $stmtSel->error]);
+        $stmtSel->close();
+        exit;
     }
-    $stmt->close();
+
+    $res = $stmtSel->get_result();
+    $row = $res ? $res->fetch_assoc() : null;
+    $stmtSel->close();
+
+    if (!$row) {
+        http_response_code(404);
+        echo json_encode(['success' => false, 'error' => 'Patient not found']);
+        exit;
+    }
+
+    $old_medsData = (string) ($row['medsData'] ?? '');
+    $old_medications = (string) ($row['medications'] ?? '[]');
+
+    // helper: parse CSV -> array (digits-only)
+    $parseCsv = function ($csv) {
+        $arr = array_filter(array_map('trim', explode(',', (string) $csv)), function ($v) {
+            return $v !== '';
+        });
+        $out = [];
+        foreach ($arr as $v) {
+            $d = preg_replace('/\D+/', '', (string) $v);
+            $d = substr($d, 0, 8);
+            if ($d !== '')
+                $out[] = $d;
+        }
+        return array_values(array_unique($out));
+    };
+
+    // 2) Determine new meds array:
+    // If medIdsCSV is provided, treat it as authoritative.
+    // Else start from old medsData and remove medId (if provided).
+    $medsArray = $medIdsCSV_in !== '' ? $parseCsv($medIdsCSV_in) : $parseCsv($old_medsData);
+
+    if ($medId !== '') {
+        $medsArray = array_values(array_filter($medsArray, function ($d) use ($medId) {
+            return $d !== $medId;
+        }));
+    }
+
+    $new_medsData = implode(',', $medsArray);
+
+    // 3) Update medications JSON list:
+    // If you pass medIdsCSV (authoritative), we rebuild medications by filtering old list
+    // down to those DINS. If you pass medId, we remove it.
+    $medList = json_decode($old_medications, true);
+    if (!is_array($medList))
+        $medList = [];
+
+    $medSet = array_flip($medsArray); // for quick keep-check
+
+    $newMedList = [];
+    foreach ($medList as $m) {
+        if (!is_array($m))
+            continue;
+
+        $din = preg_replace('/\D+/', '', (string) ($m['din'] ?? ''));
+        $din = substr($din, 0, 8);
+        if ($din === '')
+            continue;
+
+        // keep only meds that still exist in medsData CSV
+        if (!isset($medSet[$din]))
+            continue;
+
+        $newMedList[] = [
+            'din' => $din,
+            'lastFill' => (string) ($m['lastFill'] ?? ''),
+        ];
+    }
+
+    $new_medications = json_encode($newMedList, JSON_UNESCAPED_UNICODE);
+    if ($new_medications === false)
+        $new_medications = '[]';
+
+    // 4) Write back to DB
+    $stmtUp = $conn->prepare("UPDATE `$patientDB` SET medsData = ?, medications = ? WHERE id = ? LIMIT 1");
+    if (!$stmtUp) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Prepare failed (update)', 'details' => $conn->error]);
+        exit;
+    }
+
+    $stmtUp->bind_param("ssi", $new_medsData, $new_medications, $patientId);
+
+    if (!$stmtUp->execute()) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Update failed', 'details' => $stmtUp->error]);
+        $stmtUp->close();
+        exit;
+    }
+
+    $stmtUp->close();
+
+    echo json_encode([
+        'success' => true
+    ]);
     exit;
 }
 
 
 if ($data['script'] === 'saveLabs') {
-    $patientId  = $data['patientID']   ?? null;
-    $patientTbl = $data['patientDB']   ?? $patientTable;   // fallback to default table
+    $patientId = $data['patientID'] ?? null;
+    $patientTbl = $data['patientDB'] ?? $patientTable;   // fallback to default table
 
     if (!$patientId) {
         http_response_code(400);
@@ -336,28 +436,50 @@ if ($data['script'] === 'saveLabs') {
     // 44 strings + 1 int id
     $stmt->bind_param(
         str_repeat('s', 44) . 'i',
-        $cholesterol, $cholesterolDate,
-        $triglyceride, $triglycerideDate,
-        $hdl, $hdlDate,
-        $ldl, $ldlDate,
-        $nonHdl, $nonHdlDate,
-        $cholesterolHdlRatio, $cholesterolHdlRatioDate,
-        $creatineKinase, $creatineKinaseDate,   // ← fixed variable
-        $alanineAminotransferase, $alanineAminotransferaseDate,
-        $lipoproteinA, $lipoproteinADate,
-        $apolipoproteinB, $apolipoproteinBDate,
-        $natriureticPeptideB, $natriureticPeptideBDate,
-        $urea, $ureaDate,
-        $creatinine, $creatinineDate,
-        $gfr, $gfrDate,
-        $albumin, $albuminDate,
-        $sodium, $sodiumDate,
-        $potassium, $potassiumDate,
-        $vitaminB12, $vitaminB12Date,
-        $ferritin, $ferritinDate,
-        $hemoglobinA1C, $hemoglobinA1CDate,
-        $urineAlbumin, $urineAlbuminDate,
-        $albuminCreatinineRatio, $albuminCreatinineRatioDate,
+        $cholesterol,
+        $cholesterolDate,
+        $triglyceride,
+        $triglycerideDate,
+        $hdl,
+        $hdlDate,
+        $ldl,
+        $ldlDate,
+        $nonHdl,
+        $nonHdlDate,
+        $cholesterolHdlRatio,
+        $cholesterolHdlRatioDate,
+        $creatineKinase,
+        $creatineKinaseDate,   // ← fixed variable
+        $alanineAminotransferase,
+        $alanineAminotransferaseDate,
+        $lipoproteinA,
+        $lipoproteinADate,
+        $apolipoproteinB,
+        $apolipoproteinBDate,
+        $natriureticPeptideB,
+        $natriureticPeptideBDate,
+        $urea,
+        $ureaDate,
+        $creatinine,
+        $creatinineDate,
+        $gfr,
+        $gfrDate,
+        $albumin,
+        $albuminDate,
+        $sodium,
+        $sodiumDate,
+        $potassium,
+        $potassiumDate,
+        $vitaminB12,
+        $vitaminB12Date,
+        $ferritin,
+        $ferritinDate,
+        $hemoglobinA1C,
+        $hemoglobinA1CDate,
+        $urineAlbumin,
+        $urineAlbuminDate,
+        $albuminCreatinineRatio,
+        $albuminCreatinineRatioDate,
         $patientId
     );
 
@@ -834,7 +956,7 @@ if ($data['script'] === 'updatePatientRecommendations') {
 }
 
 if (($data['script'] ?? '') === 'saveLocation') {
-    
+
     $id = isset($data['id']) && $data['id'] !== '' ? intval($data['id']) : null;
     $name = $data['name'] ?? '';
     $theType = $data['theType'] ?? 'update'; // 'create' or 'update'
@@ -853,7 +975,7 @@ if (($data['script'] ?? '') === 'saveLocation') {
             echo json_encode(['success' => false, 'error' => 'Prepare failed', 'details' => $conn->error]);
             exit;
         }
-        $stmt->bind_param('si', $name,$id);
+        $stmt->bind_param('si', $name, $id);
         $ok = $stmt->execute();
         $stmt->close();
     } else {
@@ -879,28 +1001,28 @@ if (($data['script'] ?? '') === 'saveLocation') {
 }
 
 if (($data['script'] ?? '') === 'getUserData') {
-        $stmt = $conn->prepare("SELECT * FROM `LOGIN` order by id desc");
-        if (!$stmt) {
-            http_response_code(500);
-            echo json_encode(['success' => false, 'error' => 'Prepare failed', 'details' => $conn->error]);
-            exit;
-        }
-
-        // No parameters to bind for this query
-        $users = [];
-        if ($stmt->execute()) {
-            $result = $stmt->get_result();
-            while ($row = $result->fetch_assoc()) {
-                $users[] = $row;
-            }
-            echo json_encode(['success' => true, 'users' => $users]);
-        } else {
-            http_response_code(500);
-            echo json_encode(['success' => false, 'error' => 'Query failed', 'details' => $stmt->error]);
-        }
-
-        $stmt->close();
+    $stmt = $conn->prepare("SELECT * FROM `LOGIN` order by id desc");
+    if (!$stmt) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Prepare failed', 'details' => $conn->error]);
         exit;
+    }
+
+    // No parameters to bind for this query
+    $users = [];
+    if ($stmt->execute()) {
+        $result = $stmt->get_result();
+        while ($row = $result->fetch_assoc()) {
+            $users[] = $row;
+        }
+        echo json_encode(['success' => true, 'users' => $users]);
+    } else {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'Query failed', 'details' => $stmt->error]);
+    }
+
+    $stmt->close();
+    exit;
 }
 
 if (($data['script'] ?? '') === 'saveUser') {
@@ -919,9 +1041,9 @@ if (($data['script'] ?? '') === 'saveUser') {
         if ($password !== '') {
             $stmt = $conn->prepare("UPDATE `LOGIN` SET userName = ?, password = ? WHERE id = ?");
             if (!$stmt) {
-            http_response_code(500);
-            echo json_encode(['success' => false, 'error' => 'Prepare failed', 'details' => $conn->error]);
-            exit;
+                http_response_code(500);
+                echo json_encode(['success' => false, 'error' => 'Prepare failed', 'details' => $conn->error]);
+                exit;
             }
             $stmt->bind_param('ssi', $userName, $password, $id);
         }
@@ -935,7 +1057,7 @@ if (($data['script'] ?? '') === 'saveUser') {
         $stmt->close();
         exit;
     }
-     if ($theType === 'create') {
+    if ($theType === 'create') {
         $timesOn = 0;
         $dayOfWeek = 20;
         $patientTable = 'Patient_DEMO';
@@ -944,9 +1066,9 @@ if (($data['script'] ?? '') === 'saveUser') {
         if (trim($userName) !== '' && trim($password) !== '') {
             $stmt = $conn->prepare("INSERT INTO `LOGIN` (userName, password,dayOfWeek,timesOn,patientTable,historyTable) VALUES (?, ?, ?, ?, ?, ?)");
             if (!$stmt) {
-            http_response_code(500);
-            echo json_encode(['success' => false, 'error' => 'Prepare failed', 'details' => $conn->error]);
-            exit;
+                http_response_code(500);
+                echo json_encode(['success' => false, 'error' => 'Prepare failed', 'details' => $conn->error]);
+                exit;
             }
             $stmt->bind_param('ssiiss', $userName, $password, $dayOfWeek, $timesOn, $patientTable, $historyTable);
         }
@@ -966,6 +1088,8 @@ if (($data['script'] ?? '') === 'saveUser') {
     echo json_encode(['success' => false, 'error' => 'Unsupported theType']);
     exit;
 }
+
+
 
 // === In special.php ===
 

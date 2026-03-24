@@ -7,19 +7,21 @@ const API_URL = "https://gdmt.ca/PHP/special.php";
 const norm = (s) => (s || "").trim().replace(/\s+/g, " ").toLowerCase();
 const unique = (arr) => [...new Set((arr || []).filter(Boolean))];
 
+// Medications are now stored on the patient by DIN (not master ID)
+const readMasterDin = (m) => String(m?.DIN ?? m?.din ?? "").trim();
 const readMasterId = (m) => String(m?.ID ?? m?.id ?? "");
 const readMasterName = (m) => String(m?.medication_name ?? m?.medication ?? m?.name ?? "");
 const readMasterDose = (m) => String(m?.medication_dose ?? m?.defaultDose ?? m?.dose ?? "");
 const readMasterCat = (m) => String(m?.medication_cat ?? m?.category ?? "");
 
-const parseIdCSV = (str) =>
+const parseDinCSV = (str) =>
   (str || "")
     .split(",")
     .map((t) => t.trim())
     .filter(Boolean);
 
-const serializeIdCSV = (ids) =>
-  (ids || [])
+const serializeDinCSV = (dins) =>
+  (dins || [])
     .map((x) => String(x).trim())
     .filter(Boolean)
     .join(",");
@@ -30,9 +32,12 @@ const MedBoxComplete = ({ user }) => {
   // --- Master lookups ---
   const master = Array.isArray(medsArray) ? medsArray : [];
 
-  const masterById = useMemo(() => {
+  const masterByDin = useMemo(() => {
     const m = new Map();
-    for (const row of master) m.set(readMasterId(row), row);
+    for (const row of master) {
+      const din = readMasterDin(row);
+      if (din) m.set(din, row);
+    }
     return m;
   }, [master]);
 
@@ -42,29 +47,30 @@ const MedBoxComplete = ({ user }) => {
     return m;
   }, [master]);
 
-  // --- Patient meds (CSV of IDs) ---
-  const [medIds, setMedIds] = useState(() => parseIdCSV(activePatient?.medsData));
+  // --- Patient meds (CSV of DINs) ---
+  const [medDins, setMedDins] = useState(() => parseDinCSV(activePatient?.medsData));
   const lastPidRef = useRef(activePatient?.id ?? null);
 
   useEffect(() => {
     const id = activePatient?.id ?? null;
+    console.log(medsArray, "medsArray from context");
     if (id !== lastPidRef.current) {
       lastPidRef.current = id;
-      setMedIds(parseIdCSV(activePatient?.medsData));
+      setMedDins(parseDinCSV(activePatient?.medsData));
     }
   }, [activePatient?.id]); // keep in sync on patient switch
 
   const rows = useMemo(() => {
-    return (medIds || []).map((id) => {
-      const m = masterById.get(String(id));
+    return (medDins || []).map((din) => {
+      const m = masterByDin.get(String(din));
       return {
-        id: String(id),
+        din: String(din),
         name: readMasterName(m) || "(Unknown)",
         category: readMasterCat(m) || "No Category",
         dose: readMasterDose(m) || "No dose",
       };
     });
-  }, [medIds, masterById]);
+  }, [medDins, masterByDin]);
 
   // --- Add box state ---
   const nameRef = useRef(null);
@@ -79,14 +85,14 @@ const MedBoxComplete = ({ user }) => {
   const pickedExisting = useMemo(() => masterByName.get(norm(nameQ)) || null, [nameQ, masterByName]);
 
   // --- Persist patient meds CSV to server + context ---
-  const commitPatientMeds = (nextIds) => {
+  const commitPatientMeds = (nextDins) => {
     const patientId = activePatient?.id;
     if (!patientId) return;
 
-    const idsCSV = serializeIdCSV(nextIds);
+    const idsCSV = serializeDinCSV(nextDins);
 
     // Update UI + context
-    setMedIds(nextIds);
+    setMedDins(nextDins);
     if (typeof setActivePatient === "function") {
       setActivePatient({ ...(activePatient || {}), medsData: idsCSV });
     }
@@ -99,10 +105,10 @@ const MedBoxComplete = ({ user }) => {
       body: JSON.stringify({
         script: "SaveMedication",
         patientId,
-        medId: nextIds[nextIds.length - 1] || "", // last added (for auditing)
-        medIdsCSV: idsCSV,
-        patientDB: user?.patientTable || "Patient",
-        historyDB: user?.historyTable || "Patient_History",
+        medId: nextDins[nextDins.length - 1] || "", // last added (for auditing)
+        medIdsCSV: idsCSV, // NOTE: field name stays the same for backend
+        patientDB:  "Patient",
+        historyDB:  "Patient_History",
       }),
     }).catch(() => {});
   };
@@ -110,11 +116,11 @@ const MedBoxComplete = ({ user }) => {
   // --- Add existing from master ---
   const addExisting = (m) => {
     const patientId = activePatient?.id || null;
-    const id = readMasterId(m);
-    if (!patientId || !id) return;
+    const din = readMasterDin(m);
+    if (!patientId || !din) return;
 
-    const currentIds = parseIdCSV(activePatient?.medsData);
-    if (currentIds.includes(String(id))) {
+    const currentIds = parseDinCSV(activePatient?.medsData);
+    if (currentIds.includes(String(din))) {
       setNameQ("");
       setDoseQ("");
       setCatQ("");
@@ -122,7 +128,7 @@ const MedBoxComplete = ({ user }) => {
       return;
     }
 
-    const nextIds = unique([...currentIds, String(id)]);
+    const nextIds = unique([...currentIds, String(din)]);
     commitPatientMeds(nextIds);
 
     setNameQ("");
@@ -157,15 +163,17 @@ const MedBoxComplete = ({ user }) => {
         payload = JSON.parse(text);
       } catch {}
 
-      if (!res.ok || !payload?.success || !payload?.med?.ID) {
+      if (!res.ok || !payload?.success || !payload?.med) {
         throw new Error(payload?.error || "Create failed");
       }
 
-      const newRow = payload.med; // {ID, medication_name, medication_cat, medication_dose}
-      const newId = readMasterId(newRow);
-      if (!newId) throw new Error("No ID returned");
+      const newRow = payload.med;
 
-      const next = unique([...(parseIdCSV(activePatient?.medsData)), String(newId)]);
+      // Prefer DIN (patient storage), fallback to ID if backend doesn't return DIN
+      const newKey = readMasterDin(newRow) || readMasterId(newRow);
+      if (!newKey) throw new Error("No DIN returned");
+
+      const next = unique([...(parseDinCSV(activePatient?.medsData)), String(newKey)]);
       commitPatientMeds(next);
 
       setMsg("Medication created and added.");
@@ -187,13 +195,13 @@ const MedBoxComplete = ({ user }) => {
     if (!patientId) return;
 
     const idStr = String(medId);
-    const currentIds = parseIdCSV(activePatient?.medsData);
+    const currentIds = parseDinCSV(activePatient?.medsData);
     const nextIds = currentIds.filter((id) => String(id) !== idStr);
 
     // Update UI + context
-    setMedIds(nextIds);
+    setMedDins(nextIds);
     if (typeof setActivePatient === "function") {
-      setActivePatient({ ...(activePatient || {}), medsData: serializeIdCSV(nextIds) });
+      setActivePatient({ ...(activePatient || {}), medsData: serializeDinCSV(nextIds) });
     }
 
     // Save to DB
@@ -205,9 +213,9 @@ const MedBoxComplete = ({ user }) => {
         script: "SaveMedication",
         patientId,
         medId: idStr,
-        medIdsCSV: serializeIdCSV(nextIds),
-        patientDB: user?.patientTable || "Patient",
-        historyDB: user?.historyTable || "Patient_History",
+        medIdsCSV: serializeDinCSV(nextIds),
+        patientDB: "Patient",
+        historyDB: "Patient_History",
       }),
     }).catch(() => {});
   };
@@ -304,7 +312,7 @@ const MedBoxComplete = ({ user }) => {
       <div className="container-fluid px-1">
         <div className="row g-2">
           {rows.map((r, idx) => (
-            <div key={`med_${r.id}_${idx}`} className="col-48">
+            <div key={`med_${r.din}_${idx}`} className="col-48">
               <div className="border rounded p-1 d-flex align-items-center">
                 <div className="fw-semibold text-truncate col-18 text-start ps-2" title={r.name}>
                   {r.name}
@@ -319,7 +327,7 @@ const MedBoxComplete = ({ user }) => {
                   <button
                     type="button"
                     className="btn btn-outline-danger btn-sm ms-2"
-                    onClick={() => removeMedication(r.id)}
+                    onClick={() => removeMedication(r.din)}
                     aria-label={`Remove ${r.name}`}
                     title={`Remove ${r.name}`}
                   >

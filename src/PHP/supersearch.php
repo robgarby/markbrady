@@ -1,515 +1,532 @@
 <?php
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Headers: Content-Type");
+header("Access-Control-Allow-Methods: POST, OPTIONS");
 header("Content-Type: application/json");
+
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
+
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'OPTIONS') {
+    echo json_encode([
+        'success' => true,
+        'message' => 'OPTIONS OK'
+    ]);
+    exit;
+}
 
 $servername = "localhost";
 $db_username = "gdmt_gdmt";
 $db_password = "fiksoz-xYhwej-kevna9";
 $dbname = "gdmt_gdmt";
 
-
-// Create connection
 $conn = new mysqli($servername, $db_username, $db_password, $dbname);
+if ($conn->connect_error) {
+    http_response_code(500);
+    echo json_encode([
+        'success' => false,
+        'error' => 'Database connection failed',
+        'details' => $conn->connect_error
+    ]);
+    exit;
+}
+
 $conn->query("SET SESSION sql_mode = ''");
 
-
 $input = file_get_contents('php://input');
-
-// Decode JSON
 $data = json_decode($input, true);
 
+if (!is_array($data)) {
+    http_response_code(400);
+    echo json_encode([
+        'success' => false,
+        'error' => 'Invalid JSON payload',
+        'rawInput' => $input
+    ]);
+    exit;
+}
 
+$patientTable = !empty($data['patientDB']) && is_string($data['patientDB'])
+    ? trim($data['patientDB'])
+    : 'Patient';
 
+$historyTable = !empty($data['historyDB']) && is_string($data['historyDB'])
+    ? trim($data['historyDB'])
+    : 'Patient_History';
 
-$patientTable =  $data['patientDB'] ?? 'Patient';
-$historyTable =  $data['historyDB'] ?? 'Patient_History';
+if (($data['script'] ?? '') !== 'superSearch') {
+    echo json_encode([
+        'success' => false,
+        'error' => 'Invalid script'
+    ]);
+    exit;
+}
 
-$providerId = isset($data['providerId']) && $data['providerId'] !== '' ? (int)$data['providerId'] : null;
-
-
-
-if (($data['script'] ?? '') === 'superSearch') {
-    header('Content-Type: application/json; charset=utf-8');
-    $hasSearch = false;
-
-    // ─── Unpack payload ──────────────────────────────────────────────────
-    $appointmentDate = trim((string) ($data['appointmentDate'] ?? ''));
-    if ($appointmentDate === '') {
-        $appointmentDate = '-1';
+function getMedIdsCsvForCatIds(mysqli $conn, array $catIds): string
+{
+    $catIds = array_values(array_unique(array_filter(array_map('intval', $catIds), fn($v) => $v > 0)));
+    if (!$catIds) {
+        return '';
     }
 
-    // Accept either {conditionCodes, conditionLabels} or {conditions:{codes,labels}}
-    $conditionsCodes = [];
-    $conditionsLabels = [];
-    if (isset($data['conditionCodes'])) {
-        $conditionsCodes = is_array($data['conditionCodes']) ? array_values(array_filter($data['conditionCodes'], 'strlen')) : [];
-    } elseif (isset($data['conditions'])) {
-        $conditionsCodes = is_array($data['conditions']['codes'] ?? null) ? array_values(array_filter($data['conditions']['codes'], 'strlen')) : [];
+    $placeholders = implode(',', array_fill(0, count($catIds), '?'));
+    $types = str_repeat('i', count($catIds));
+
+    $sql = "
+        SELECT m.ID
+        FROM medications AS m
+        INNER JOIN medCat AS c
+            ON m.medication_cat = c.medication_cat
+        WHERE c.ID IN ($placeholders)
+    ";
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        return '';
     }
 
-    $labs = isset($data['labs']) && is_array($data['labs']) ? $data['labs'] : [];
+    $stmt->bind_param($types, ...$catIds);
 
-    // Categories sent where we must FILTER OUT patients who are ON these
-    $incCatIds = isset($data['medCategoryIds']) && is_array($data['medCategoryIds'])
-        ? array_values(array_filter(array_map('intval', $data['medCategoryIds']), fn($v) => $v > 0))
-        : [];
+    $medIds = [];
+    if ($stmt->execute()) {
+        $res = $stmt->get_result();
+        while ($row = $res->fetch_assoc()) {
+            $id = (int)($row['ID'] ?? 0);
+            if ($id > 0) {
+                $medIds[] = $id;
+            }
+        }
+    }
+    $stmt->close();
 
-    $NoCatIds = isset($data['nonMedCategoryIds']) && is_array($data['nonMedCategoryIds'])
-        ? array_values(array_filter(array_map('intval', $data['nonMedCategoryIds']), fn($v) => $v > 0))
-        : [];
-    // ─── Labs are REQUIRED: build lab where; if none -> return [] ────────
-    // Whitelist: logical -> column
-    // init
+    $medIds = array_values(array_unique($medIds));
+    return $medIds ? implode(',', $medIds) : '';
+}
 
-    $patientPool = $patientPool ?? [];
-    $hasSearch = $hasSearch ?? false;
+function toFloatOrNull($value)
+{
+    if ($value === null) return null;
+    $value = trim((string)$value);
+    if ($value === '') return null;
+    return is_numeric($value) ? (float)$value : null;
+}
 
-    // define BEFORE use
-    function patientPoolSearch_Labs($conn, $labWheres, $labTypes, $labParams)
-    {
-        global $patientTable; // Use global to access dynamic table name
-        $sql = "SELECT * FROM `$patientTable` WHERE " . implode(' AND ', $labWheres);
-        $stmt = $conn->prepare($sql);
-        if (!$stmt)
-            return [];
+function toIntOrNull($value)
+{
+    if ($value === null) return null;
+    $value = trim((string)$value);
+    if ($value === '') return null;
+    return is_numeric($value) ? (int)$value : null;
+}
 
+$conditionsCodes = isset($data['conditionCodes']) && is_array($data['conditionCodes'])
+    ? array_values(array_unique(array_filter(array_map('trim', $data['conditionCodes']), 'strlen')))
+    : [];
+
+$labs = isset($data['labs']) && is_array($data['labs']) ? $data['labs'] : [];
+
+$incCatIds = isset($data['medCategoryIds']) && is_array($data['medCategoryIds'])
+    ? array_values(array_filter(array_map('intval', $data['medCategoryIds']), fn($v) => $v > 0))
+    : [];
+
+$noCatIds = isset($data['nonMedCategoryIds']) && is_array($data['nonMedCategoryIds'])
+    ? array_values(array_filter(array_map('intval', $data['nonMedCategoryIds']), fn($v) => $v > 0))
+    : [];
+
+$minPoints = toIntOrNull($data['minPoints'] ?? null);
+$maxPoints = toIntOrNull($data['maxPoints'] ?? null);
+$minLabs = toIntOrNull($data['minLabs'] ?? null);
+$maxLabs = toIntOrNull($data['maxLabs'] ?? null);
+
+$providerIdRaw = $data['providerId'] ?? null;
+$providerId = ($providerIdRaw !== null && trim((string)$providerIdRaw) !== '')
+    ? trim((string)$providerIdRaw)
+    : null;
+
+$privateNoteSearchRaw = $data['privateNoteSearch'] ?? '';
+$privateNoteSearch = trim((string)$privateNoteSearchRaw);
+
+$patientPool = [];
+$hasSearch = false;
+
+$labAllowed = [
+    'cholesterol',
+    'triglyceride',
+    'hdl',
+    'ldl',
+    'nonHdl',
+    'cholesterolHdlRatio',
+    'creatineKinase',
+    'alanineAminotransferase',
+    'lipoproteinA',
+    'apolipoproteinB',
+    'natriureticPeptideB',
+    'urea',
+    'creatinine',
+    'gfr',
+    'albumin',
+    'sodium',
+    'potassium',
+    'vitaminB12',
+    'ferritin',
+    'hemoglobinA1C',
+    'urineAlbumin',
+    'albuminCreatinineRatio'
+];
+
+/* Seed from labs first if present */
+$labWheres = [];
+$labTypes = '';
+$labParams = [];
+
+foreach ($labs as $lab) {
+    $field = $lab['field'] ?? '';
+    if (!in_array($field, $labAllowed, true)) {
+        continue;
+    }
+
+    $gt = toFloatOrNull($lab['gt'] ?? null);
+    $lt = toFloatOrNull($lab['lt'] ?? null);
+
+    if ($gt !== null && $lt !== null) {
+        if ($gt >= $lt) {
+            continue;
+        }
+        $labWheres[] = "(`$field` > ? AND `$field` < ?)";
+        $labTypes .= 'dd';
+        $labParams[] = $gt;
+        $labParams[] = $lt;
+    } elseif ($gt !== null) {
+        $labWheres[] = "(`$field` > ?)";
+        $labTypes .= 'd';
+        $labParams[] = $gt;
+    } elseif ($lt !== null) {
+        $labWheres[] = "(`$field` < ?)";
+        $labTypes .= 'd';
+        $labParams[] = $lt;
+    }
+}
+
+if (!empty($labWheres)) {
+    $sql = "SELECT * FROM `$patientTable` WHERE " . implode(' AND ', $labWheres);
+    $stmt = $conn->prepare($sql);
+    if ($stmt) {
         if ($labTypes !== '') {
             $stmt->bind_param($labTypes, ...$labParams);
         }
         if ($stmt->execute()) {
             $res = $stmt->get_result();
             while ($row = $res->fetch_assoc()) {
-                // keep any additional guard you want (e.g., only rows with healthNumber)
                 if (!empty($row['healthNumber'])) {
                     $patientPool[] = $row;
                 }
             }
-            return $patientPool;
+            $hasSearch = true;
         }
         $stmt->close();
     }
-    ;
+}
 
-    $labWheres = [];
-    $labTypes = '';
-    $labParams = [];
-    // Build WHERE from labs (supports one-sided ranges)
-    if (!empty($labs)) {
-        foreach ($labs as $lab) {
-            // expecting: ['field'=>'cholesterol','gt'=>'5','lt'=>'22'] etc.
-            $field = $lab['field'] ?? null;
-            $gt = (array_key_exists('gt', $lab) && $lab['gt'] !== '') ? (float) $lab['gt'] : -1;
-            $lt = (array_key_exists('lt', $lab) && $lab['lt'] !== '') ? (float) $lab['lt'] : 10000;
+/* Conditions */
+if (!empty($conditionsCodes)) {
+    if (!$hasSearch) {
+        $where = [];
+        $types = '';
+        $vals = [];
 
-            if ($gt !== null && $lt !== null) {
-                if ($gt >= $lt)
-                    continue; // invalid range
-                $labWheres[] = "(`$field` > ? AND `$field` < ?)";
-                $labTypes .= 'dd';
-                $labParams[] = $gt;
-                $labParams[] = $lt;
-            }
+        foreach ($conditionsCodes as $c) {
+            $where[] = "FIND_IN_SET(?, `conditionData`) > 0";
+            $types .= 's';
+            $vals[] = $c;
         }
-        if ($labWheres) {
-            $patientPool = patientPoolSearch_Labs($conn, $labWheres, $labTypes, $labParams); // seeds $patientPool and sets $hasSearch = true
-            $hasSearch = true;
-        } else {
-            // no valid lab rules -> return empty (or skip seeding and let next section seed)
-            echo json_encode([]);
-            exit;
+
+        $sql = "SELECT * FROM `$patientTable` WHERE (" . implode(' OR ', $where) . ")";
+        $stmt = $conn->prepare($sql);
+        if ($stmt) {
+            $stmt->bind_param($types, ...$vals);
+            if ($stmt->execute()) {
+                $res = $stmt->get_result();
+                $patientPool = [];
+                while ($row = $res->fetch_assoc()) {
+                    if (!empty($row['healthNumber'])) {
+                        $patientPool[] = $row;
+                    }
+                }
+                $hasSearch = true;
+            }
+            $stmt->close();
         }
-    }
-
-
-        // ─── Conditions (ANY of codes in Patient.conditionData CSV) ──────────
-    // $conditionsCodes is expected to be an array of strings/IDs to match in Patient.conditionData
-    if (!empty($conditionsCodes)) {
-        // normalize: trim, dedupe, drop empties
-        $codes = array_values(
-            array_unique(
-                array_filter(
-                    array_map('trim', $conditionsCodes),
-                    'strlen'
-                )
-            )
-        );
-
-        if ($codes) {
-            if ($hasSearch === false) {
-                // --- Seed from DB: patient has ANY of the selected condition codes ---
-                $where = [];
-                $types = '';
-                $vals  = [];
-
-                foreach ($codes as $c) {
-                    $where[] = "FIND_IN_SET(?, `conditionData`) > 0";
-                    $types  .= 's';
-                    $vals[]  = $c;
-                }
-
-                // OR between condition codes → ANY condition is enough
-                $sql = "SELECT * FROM `$patientTable` WHERE (" . implode(' OR ', $where) . ")";
-                $stmt = $conn->prepare($sql);
-                if ($stmt) {
-                    if ($types !== '') {
-                        $stmt->bind_param($types, ...$vals);
-                    }
-                    if ($stmt->execute()) {
-                        $res = $stmt->get_result();
-                        $patientPool = [];
-                        while ($row = $res->fetch_assoc()) {
-                            // keep any guards you want here
-                            if (!empty($row['healthNumber'])) {
-                                $patientPool[] = $row;
-                            }
-                        }
-                        $hasSearch = true;
-                    }
-                    $stmt->close();
-                }
-            } else {
-                // --- Filter in-memory: keep patient if they have ANY selected condition code ---
-                $patientPool = array_values(array_filter($patientPool, function ($p) use ($codes) {
-                    $csv = (string) ($p['conditionData'] ?? '');
-                    if ($csv === '') {
-                        return false;
-                    }
-
-                    $set = array_filter(array_map('trim', explode(',', $csv)), 'strlen');
-                    if (!$set) {
-                        return false;
-                    }
-
-                    // Build lookup for O(1) membership tests
-                    $lookup = array_fill_keys($set, true);
-
-                    // ANY match: if patient has at least one of the requested codes, keep them
-                    foreach ($codes as $c) {
-                        if (isset($lookup[$c])) {
-                            return true;
-                        }
-                    }
-                    return false;
-                }));
-            }
-        }
-    }
-
-    // Expand category IDs -> meds CSV -> meds array<int>
-    $includeMedIdsCsv = getMedIdsCsvForCatIds($conn, $incCatIds); // e.g. "12,45,77"
-    $includeMedIds = array_values(array_unique(
-        array_filter(array_map('intval', explode(',', (string) $includeMedIdsCsv)), fn($v) => $v > 0)
-    ));
-
-
-
-    if (!empty($incCatIds) && $includeMedIds) {
-        // Change this to 'AND' if you want ALL meds required (strict)
-        $betweenClauses = 'OR'; // 'OR' = ANY match, 'AND' = ALL match
-        if ($hasSearch === false) {
-            // ---- Seed from DB: Patient where medsData contains ANY/ALL of these med IDs ----
-            $where = [];
-            $types = '';
-            $vals = [];
-            foreach ($includeMedIds as $mid) {
-                $where[] = "FIND_IN_SET(?, `medsData`) > 0";
-                $types .= 's';
-                $vals[] = (string) $mid;
-            }
-
-            $sql = "SELECT * FROM `$patientTable` WHERE " . implode(" {$betweenClauses} ", $where);
-            $stmt = $conn->prepare($sql);
-            if ($stmt) {
-                if ($types !== '') {
-                    $stmt->bind_param($types, ...$vals);
-                }
-                if ($stmt->execute()) {
-                    $res = $stmt->get_result();
-                    $patientPool = [];
-                    while ($row = $res->fetch_assoc()) {
-                        if (!empty($row['healthNumber'])) {
-                            $patientPool[] = $row;
-                        }
-                    }
-                    $hasSearch = true;
-                }
-                $stmt->close();
-            }
-        } else {
-            // ---- Filter in-memory patientPool ----
-            if ($betweenClauses === 'OR') {
-                // ANY: keep patient if they have at least one of the med IDs
-                $patientPool = array_values(array_filter($patientPool, function ($p) use ($includeMedIds) {
-                    $csv = (string) ($p['medsData'] ?? '');
-                    if ($csv === '')
-                        return false;
-                    $set = array_filter(array_map('intval', explode(',', $csv)), fn($v) => $v > 0);
-                    if (!$set)
-                        return false;
-                    // Check intersection non-empty
-                    $lookup = array_fill_keys($set, true);
-                    foreach ($includeMedIds as $mid) {
-                        if (isset($lookup[$mid]))
-                            return true;
-                    }
-                    return false;
-                }));
-            } else {
-                // ALL: keep patient only if they have every med ID
-                $patientPool = array_values(array_filter($patientPool, function ($p) use ($includeMedIds) {
-                    $csv = (string) ($p['medsData'] ?? '');
-                    if ($csv === '')
-                        return false;
-                    $set = array_filter(array_map('intval', explode(',', $csv)), fn($v) => $v > 0);
-                    if (!$set)
-                        return false;
-                    $lookup = array_fill_keys($set, true);
-                    foreach ($includeMedIds as $mid) {
-                        if (!isset($lookup[$mid]))
-                            return false;
-                    }
+    } else {
+        $patientPool = array_values(array_filter($patientPool, function ($p) use ($conditionsCodes) {
+            $csv = (string)($p['conditionData'] ?? '');
+            if ($csv === '') return false;
+            $set = array_filter(array_map('trim', explode(',', $csv)), 'strlen');
+            if (!$set) return false;
+            $lookup = array_fill_keys($set, true);
+            foreach ($conditionsCodes as $c) {
+                if (isset($lookup[$c])) {
                     return true;
-                }));
+                }
             }
-        }
+            return false;
+        }));
     }
+}
 
-    // Expand non-med category IDs -> med IDs CSV -> array<int>
-    $excludeMedIdsCsv = getMedIdsCsvForCatIds($conn, $NoCatIds ?? []);
-    $excludeMedIds = array_values(array_unique(
-        array_filter(array_map('intval', explode(',', (string) $excludeMedIdsCsv)), fn($v) => $v > 0)
-    ));
+/* On-med categories */
+$includeMedIdsCsv = getMedIdsCsvForCatIds($conn, $incCatIds);
+$includeMedIds = array_values(array_unique(
+    array_filter(array_map('intval', explode(',', (string)$includeMedIdsCsv)), fn($v) => $v > 0)
+));
 
-    if (!empty($NoCatIds) && $excludeMedIds) {
-        // EXCLUDE MODE:
-        // 'ANY'  => keep patients who have NONE of these meds (i.e., exclude if they have at least one)
-        // 'ALL'  => keep patients who do not have ALL of these meds (i.e., exclude only if they have every one)
-        $excludeMode = 'ANY'; // change to 'ALL' if you prefer that strictness
+if (!empty($incCatIds) && $includeMedIds) {
+    if (!$hasSearch) {
+        $where = [];
+        $types = '';
+        $vals = [];
 
-        if ($hasSearch === false) {
-            // ---- Seed from DB: select patients that DO NOT match the meds ----
-            $parts = [];
-            $types = '';
-            $vals = [];
+        foreach ($includeMedIds as $mid) {
+            $where[] = "FIND_IN_SET(?, `medsData`) > 0";
+            $types .= 's';
+            $vals[] = (string)$mid;
+        }
+
+        $sql = "SELECT * FROM `$patientTable` WHERE " . implode(' OR ', $where);
+        $stmt = $conn->prepare($sql);
+        if ($stmt) {
+            $stmt->bind_param($types, ...$vals);
+            if ($stmt->execute()) {
+                $res = $stmt->get_result();
+                $patientPool = [];
+                while ($row = $res->fetch_assoc()) {
+                    if (!empty($row['healthNumber'])) {
+                        $patientPool[] = $row;
+                    }
+                }
+                $hasSearch = true;
+            }
+            $stmt->close();
+        }
+    } else {
+        $patientPool = array_values(array_filter($patientPool, function ($p) use ($includeMedIds) {
+            $csv = (string)($p['medsData'] ?? '');
+            if ($csv === '') return false;
+            $set = array_filter(array_map('intval', explode(',', $csv)), fn($v) => $v > 0);
+            if (!$set) return false;
+            $lookup = array_fill_keys($set, true);
+            foreach ($includeMedIds as $mid) {
+                if (isset($lookup[$mid])) {
+                    return true;
+                }
+            }
+            return false;
+        }));
+    }
+}
+
+/* Not-on-med categories */
+$excludeMedIdsCsv = getMedIdsCsvForCatIds($conn, $noCatIds);
+$excludeMedIds = array_values(array_unique(
+    array_filter(array_map('intval', explode(',', (string)$excludeMedIdsCsv)), fn($v) => $v > 0)
+));
+
+if (!empty($noCatIds) && $excludeMedIds) {
+    if (!$hasSearch) {
+        $parts = [];
+        $types = '';
+        $vals = [];
+        foreach ($excludeMedIds as $mid) {
+            $parts[] = "FIND_IN_SET(?, `medsData`) > 0";
+            $types .= 's';
+            $vals[] = (string)$mid;
+        }
+
+        $sql = "SELECT * FROM `$patientTable` WHERE NOT (" . implode(' OR ', $parts) . ")";
+        $stmt = $conn->prepare($sql);
+        if ($stmt) {
+            $stmt->bind_param($types, ...$vals);
+            if ($stmt->execute()) {
+                $res = $stmt->get_result();
+                $patientPool = [];
+                while ($row = $res->fetch_assoc()) {
+                    if (!empty($row['healthNumber'])) {
+                        $patientPool[] = $row;
+                    }
+                }
+                $hasSearch = true;
+            }
+            $stmt->close();
+        }
+    } else {
+        $patientPool = array_values(array_filter($patientPool, function ($p) use ($excludeMedIds) {
+            $csv = (string)($p['medsData'] ?? '');
+            $set = array_filter(array_map('intval', explode(',', $csv)), fn($v) => $v > 0);
+            if (!$set) return true;
+            $lookup = array_fill_keys($set, true);
             foreach ($excludeMedIds as $mid) {
-                $parts[] = "FIND_IN_SET(?, `medsData`) > 0";
-                $types .= 's';
-                $vals[] = (string) $mid;
-            }
-
-            // Build the NOT (...) condition
-            $glue = ($excludeMode === 'ALL') ? ' AND ' : ' OR ';
-            $negCondition = 'NOT (' . implode($glue, $parts) . ')';
-
-            $sql = "SELECT * FROM `$patientTable` WHERE $negCondition";
-            $stmt = $conn->prepare($sql);
-            if ($stmt) {
-                if ($types !== '') {
-                    $stmt->bind_param($types, ...$vals);
+                if (isset($lookup[$mid])) {
+                    return false;
                 }
-                if ($stmt->execute()) {
-                    $res = $stmt->get_result();
-                    $patientPool = [];
-                    while ($row = $res->fetch_assoc()) {
-                        if (!empty($row['healthNumber'])) {
-                            $patientPool[] = $row;
-                        }
-                    }
-                    $hasSearch = true;
-                }
-                $stmt->close();
             }
-        } else {
-            // ---- Filter in-memory: keep only patients who DO NOT match the meds ----
-            if ($excludeMode === 'ANY') {
-                // Keep if intersection is empty
-                $patientPool = array_values(array_filter($patientPool, function ($p) use ($excludeMedIds) {
-                    $csv = (string) ($p['medsData'] ?? '');
-                    $set = array_filter(array_map('intval', explode(',', $csv)), fn($v) => $v > 0);
-                    if (!$set)
-                        return true; // no meds -> definitely doesn't have excluded meds
-                    $lookup = array_fill_keys($set, true);
-                    foreach ($excludeMedIds as $mid) {
-                        if (isset($lookup[$mid]))
-                            return false; // has a forbidden med -> drop
-                    }
-                    return true; // none present -> keep
-                }));
-            } else { // 'ALL'
-                // Keep unless patient has *every* excluded med
-                $patientPool = array_values(array_filter($patientPool, function ($p) use ($excludeMedIds) {
-                    $csv = (string) ($p['medsData'] ?? '');
-                    $set = array_filter(array_map('intval', explode(',', $csv)), fn($v) => $v > 0);
-                    if (!$set)
-                        return true; // empty meds -> certainly not "all"
-                    $lookup = array_fill_keys($set, true);
-                    foreach ($excludeMedIds as $mid) {
-                        if (!isset($lookup[$mid]))
-                            return true; // missing one -> keep
-                    }
-                    return false; // had all excluded meds -> drop
-                }));
-            }
-        }
+            return true;
+        }));
     }
+}
 
-
-    if ($appointmentDate !== '-1') {
-        if ($hasSearch && !empty($patientPool)) {
-            // Filter in-memory pool
-            $patientPool = array_values(array_filter($patientPool, function ($patient) use ($appointmentDate) {
-                return isset($patient['nextAppointment']) && $patient['nextAppointment'] === $appointmentDate;
-            }));
-        } else {
-            // Query database for patients with matching nextAppointment
-            $sql = "SELECT * FROM `$patientTable` WHERE `nextAppointment` = ?";
-            $stmt = $conn->prepare($sql);
-            if ($stmt) {
-                $stmt->bind_param('s', $appointmentDate);
-                if ($stmt->execute()) {
-                    $res = $stmt->get_result();
-                    $patientPool = [];
-                    while ($row = $res->fetch_assoc()) {
-                        if (!empty($row['healthNumber'])) {
-                            $patientPool[] = $row;
-                        }
-                    }
-                }
-                $stmt->close();
-            } else {
+/* Private note search */
+if ($privateNoteSearch !== '') {
+    if (!$hasSearch) {
+        $like = '%' . $privateNoteSearch . '%';
+        $sql = "SELECT * FROM `$patientTable` WHERE `privateNote` LIKE ?";
+        $stmt = $conn->prepare($sql);
+        if ($stmt) {
+            $stmt->bind_param('s', $like);
+            if ($stmt->execute()) {
+                $res = $stmt->get_result();
                 $patientPool = [];
-            }
-        }
-    }
-
-        // ─── Provider filter (exact match on Patient.providerId) ───────────────
-    if ($providerId !== null) {
-        if ($hasSearch && !empty($patientPool)) {
-            // In-memory filter
-            $patientPool = array_values(array_filter($patientPool, function ($patient) use ($providerId) {
-                return isset($patient['providerId']) && (int)$patient['providerId'] === (int)$providerId;
-            }));
-        } else {
-            // Query database for patients with matching providerId
-            $sql = "SELECT * FROM `$patientTable` WHERE `providerId` = ?";
-            $stmt = $conn->prepare($sql);
-            if ($stmt) {
-                $stmt->bind_param('i', $providerId);
-                if ($stmt->execute()) {
-                    $res = $stmt->get_result();
-                    $patientPool = [];
-                    while ($row = $res->fetch_assoc()) {
-                        if (!empty($row['healthNumber'])) {
-                            $patientPool[] = $row;
-                        }
+                while ($row = $res->fetch_assoc()) {
+                    if (!empty($row['healthNumber'])) {
+                        $patientPool[] = $row;
                     }
                 }
-                $stmt->close();
-            } else {
-                $patientPool = [];
+                $hasSearch = true;
             }
-            $hasSearch = true;
+            $stmt->close();
         }
+    } else {
+        $needle = mb_strtolower($privateNoteSearch);
+        $patientPool = array_values(array_filter($patientPool, function ($p) use ($needle) {
+            $note = mb_strtolower((string)($p['privateNote'] ?? ''));
+            return $note !== '' && mb_strpos($note, $needle) !== false;
+        }));
     }
+}
 
-    
-
-
-   
-    $findRec = [];
-    $sql = "SELECT * FROM `medDataSearch` WHERE `isActive` = 'Y'";
-    $result = $conn->query($sql);
-    if ($result) {
-        while ($row = $result->fetch_assoc()) {
-            $findRec[] = $row;
+/* If nothing seeded yet, start with all patients */
+if (!$hasSearch) {
+    $sql = "SELECT * FROM `$patientTable`";
+    $res = $conn->query($sql);
+    if ($res) {
+        while ($row = $res->fetch_assoc()) {
+            if (!empty($row['healthNumber'])) {
+                $patientPool[] = $row;
+            }
         }
+        $hasSearch = true;
     }
+}
 
-    $medCount = 0;
+/* Points filters */
+if ($minPoints !== null) {
+    $patientPool = array_values(array_filter($patientPool, function ($patient) use ($minPoints) {
+        return (int)($patient['totalPoints'] ?? 0) >= $minPoints;
+    }));
+}
+
+if ($maxPoints !== null) {
+    $patientPool = array_values(array_filter($patientPool, function ($patient) use ($maxPoints) {
+        return (int)($patient['totalPoints'] ?? 0) <= $maxPoints;
+    }));
+}
+
+/* Labs count filters */
+if ($minLabs !== null) {
+    $patientPool = array_values(array_filter($patientPool, function ($patient) use ($minLabs) {
+        return (int)($patient['labCount'] ?? 0) >= $minLabs;
+    }));
+}
+
+if ($maxLabs !== null) {
+    $patientPool = array_values(array_filter($patientPool, function ($patient) use ($maxLabs) {
+        return (int)($patient['labCount'] ?? 0) <= $maxLabs;
+    }));
+}
+
+/* Location/provider filter: Patient.pharmacyID only when provided */
+if ($providerId !== null) {
+    $patientPool = array_values(array_filter($patientPool, function ($patient) use ($providerId) {
+        return isset($patient['pharmacyID']) && (string)$patient['pharmacyID'] === (string)$providerId;
+    }));
+}
+
+/* Existing recommendedMed logic kept */
+$findRec = [];
+$sql = "SELECT * FROM `medDataSearch` WHERE `isActive` = 'Y'";
+$result = $conn->query($sql);
+if ($result) {
+    while ($row = $result->fetch_assoc()) {
+        $findRec[] = $row;
+    }
+}
 
 foreach ($patientPool as $i => &$patient) {
-    // Parse once per patient
     $patientMeds = array_filter(
         array_map('intval', explode(',', $patient['medsData'] ?? '')),
         fn($v) => $v > 0
     );
 
-    // Normalize existing recommendedMed -> array
     $recommendedMedArr = array_filter(
         array_map('trim', explode(',', $patient['recommendedMed'] ?? '')),
         'strlen'
     );
-    $recommendedSet = array_flip($recommendedMedArr); // for O(1) dup checks
+    $recommendedSet = array_flip($recommendedMedArr);
 
     foreach ($findRec as $rec) {
         $displayName = trim($rec['displayName'] ?? '');
         if ($displayName === '') {
-            continue; // nothing to add
+            continue;
         }
 
-        // medsToFind: patient must have >=1 from EACH group (AND across groups, OR within group)
         if (!empty($rec['medsToFind'])) {
-            // Expecting medsToFind as a string like: "[30,40,41],[28,39,52]"
-            // Parse into array of arrays
             $groups = [];
             preg_match_all('/\[(.*?)\]/', $rec['medsToFind'], $matches);
             foreach ($matches[1] as $groupStr) {
-            $group = array_filter(array_map('intval', explode(',', $groupStr)), fn($v) => $v > 0);
-            if ($group) {
-                $groups[] = $group;
+                $group = array_filter(array_map('intval', explode(',', $groupStr)), fn($v) => $v > 0);
+                if ($group) {
+                    $groups[] = $group;
+                }
             }
-            }
-            // For each group, patient must have at least one med from that group
+
             $hasAllGroups = true;
             foreach ($groups as $group) {
-            if (!array_intersect($group, $patientMeds)) {
-                $hasAllGroups = false;
-                break;
-            }
+                if (!array_intersect($group, $patientMeds)) {
+                    $hasAllGroups = false;
+                    break;
+                }
             }
             if (!$hasAllGroups) {
-            continue 2; // next patient
+                continue 2;
             }
         }
 
-        // notMedsFind: patient must have none of these
         if (!empty($rec['notMedsFind'])) {
-            $notMedsFind = array_filter(array_map('intval', explode(',', $rec['notMedsFind'])), fn($v)=>$v>0);
+            $notMedsFind = array_filter(array_map('intval', explode(',', $rec['notMedsFind'])), fn($v) => $v > 0);
             if (array_intersect($notMedsFind, $patientMeds)) {
-                continue 2; // next patient
+                continue 2;
             }
         }
+
         if (!empty($rec['conditionFind'])) {
             $conditionsToFind = array_filter(array_map('trim', explode(',', $rec['conditionFind'])), 'strlen');
             $patientConditions = array_filter(array_map('trim', explode(',', $patient['conditionData'] ?? '')), 'strlen');
             $conditionLookup = array_flip($patientConditions);
-            // Require ALL conditionsToFind to be present in patientConditions
+
             foreach ($conditionsToFind as $cond) {
-            if (!isset($conditionLookup[$cond])) {
-                continue 2; // next patient
-            }
+                if (!isset($conditionLookup[$cond])) {
+                    continue 2;
+                }
             }
         }
 
-        // Check lab values for patient
-        if (
-            (isset($patient['potassium']) && floatval($patient['potassium']) >= 5) 
-            // ||
-            // (isset($patient['albuminCreatinineRatio']) && floatval($patient['albuminCreatinineRatio']) <= 25)
-        ) {
-            continue 2; // next patient
+        if ((isset($patient['potassium']) && floatval($patient['potassium']) >= 5)) {
+            continue 2;
         }
 
-        $medCount++;
-
-        // Add displayName if not already present
         if (!isset($recommendedSet[$displayName])) {
             $recommendedSet[$displayName] = true;
         }
     }
 
-    // Commit normalized CSV (de-duped, trimmed)
     if ($recommendedSet) {
         $patient['recommendedMed'] = implode(',', array_keys($recommendedSet));
         $stmt = $conn->prepare("UPDATE `$patientTable` SET `recommendedMed` = ? WHERE `id` = ?");
@@ -522,53 +539,5 @@ foreach ($patientPool as $i => &$patient) {
 }
 unset($patient);
 
-// Final return
 echo json_encode(array_values($patientPool), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 exit;
-}
-
-/**
- * Return a CSV of medication IDs for the given category IDs.
- * Works when medications.medication_cat stores the category *label* (string).
- */
-function getMedIdsCsvForCatIds(mysqli $conn, array $catIds): string
-{
-    // Normalize: ints, dedupe, drop empties
-    $catIds = array_values(array_unique(array_filter(array_map('intval', $catIds), fn($v) => $v > 0)));
-    if (!$catIds)
-        return '';
-
-    // Build placeholders and types
-    $placeholders = implode(',', array_fill(0, count($catIds), '?'));
-    $types = str_repeat('i', count($catIds));
-
-    // One query via JOIN: cat IDs -> cat labels -> meds with that label
-    $sql = "
-        SELECT m.ID
-        FROM medications AS m
-        INNER JOIN medCat AS c
-            ON m.medication_cat = c.medication_cat
-        WHERE c.ID IN ($placeholders)
-    ";
-    $stmt = $conn->prepare($sql);
-    if (!$stmt)
-        return '';
-    $stmt->bind_param($types, ...$catIds);
-
-    $medIds = [];
-    if ($stmt->execute()) {
-        $res = $stmt->get_result();
-        while ($row = $res->fetch_assoc()) {
-            $id = (int) ($row['ID'] ?? 0);
-            if ($id > 0)
-                $medIds[] = $id;
-        }
-    }
-    $stmt->close();
-
-    // Dedupe + CSV
-    $medIds = array_values(array_unique($medIds));
-    $commaLine = $medIds ? implode(',', $medIds) : '';
-    return $commaLine;
-
-}

@@ -1,7 +1,7 @@
-import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import { GlobalContext } from './Context/global.context.jsx';
 import SignIn from './components/SignIn/signIn.component';
-import Dashboard from './components/Dashboard/dashboard.component';
+import Dashboard from './VSComponents/Dashboard/dashboard.component.jsx';
 import Database from './components/Database/Database/database.component';
 import AdminPanel from './components/Admin/adminPanel.component.jsx';
 import UploadThree from './components/UploadLab/uploadThree.component.jsx';
@@ -13,22 +13,19 @@ function App() {
   return (
     <GlobalContext>
       <AllButtonsProvider>
-        <Router>
-          <Routes>
-            <Route path="/signin" element={<SignIn />} />
-            <Route path="/database" element={<Database />} />
-            <Route path="/dashboard-main" element={<Dashboard />} />
-            <Route path="/dashboard" element={<Layout />} />
-            <Route path="/upload" element={<UploadThree />} />
-            <Route path="/print" element={<PrintLabView />} />
-            <Route path="/admin" element={<AdminPanel />} />
-            <Route path="*" element={<Navigate to="/signin" />} />
-          </Routes>
-        </Router>
+        <Routes>
+          <Route path="/signin" element={<SignIn />} />
+          <Route path="/database" element={<Database />} />
+          <Route path="/dashboard-main" element={<Dashboard />} />
+          <Route path="/dashboard" element={<Layout />} />
+          <Route path="/upload" element={<UploadThree />} />
+          <Route path="/print" element={<PrintLabView />} />
+          <Route path="/admin" element={<AdminPanel />} />
+          <Route path="*" element={<Navigate to="/signin" />} />
+        </Routes>
       </AllButtonsProvider>
     </GlobalContext>
   );
 }
 
 export default App;
-

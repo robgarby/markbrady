@@ -3,6 +3,7 @@ header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Headers: Content-Type");
 header("Content-Type: application/json");
 
+
 $servername = "localhost";
 $db_username = "gdmt_gdmt";
 $db_password = "fiksoz-xYhwej-kevna9";
@@ -21,6 +22,7 @@ $data = json_decode($input, true);
 
 $patientTable = $data['patientDB'] ?? 'Patient';
 $historyTable = $data['historyDB'] ?? 'Patient_History';
+
 
 
 // print_r($data); // Debugging: Output the received data
@@ -50,6 +52,79 @@ if ($data['script'] === 'updatePatientNote') {
      if ($stmt->execute()) {
           http_response_code(200);
           echo json_encode(['success' => true, 'affected_rows' => $stmt->affected_rows]);
+          $stmt->close();
+          $conn->close();
+          exit;
+     } else {
+          http_response_code(500);
+          echo json_encode(['success' => false, 'error' => 'Query failed', 'details' => $stmt->error]);
+          $stmt->close();
+          $conn->close();
+          exit;
+     }
+}
+
+if (($data['script'] ?? '') === 'updatePatientBasicInfo') {
+     $patientID = isset($data['patientID']) ? (int)$data['patientID'] : 0;
+     $clientName = trim((string)($data['clientName'] ?? ''));
+     $healthNumberRaw = preg_replace('/\D+/', '', (string)($data['healthNumberRaw'] ?? $data['healthNumber'] ?? ''));
+     $patientTable = $data['patientDB'] ?? 'Patient';
+
+     if ($patientID <= 0) {
+          http_response_code(400);
+          echo json_encode(['success' => false, 'error' => 'Missing patientID']);
+          exit;
+     }
+
+     if ($clientName === '') {
+          http_response_code(400);
+          echo json_encode(['success' => false, 'error' => 'Missing clientName']);
+          exit;
+     }
+
+     if (strlen($healthNumberRaw) !== 10) {
+          http_response_code(400);
+          echo json_encode(['success' => false, 'error' => 'Health card number must be 10 digits']);
+          exit;
+     }
+
+     $healthNumber = substr($healthNumberRaw, 0, 4) . ' ' . substr($healthNumberRaw, 4, 3) . ' ' . substr($healthNumberRaw, 7, 3);
+
+     $stmtCheck = $conn->prepare("SELECT id FROM `$patientTable` WHERE healthNumber = ? AND id <> ? LIMIT 1");
+     if (!$stmtCheck) {
+          http_response_code(500);
+          echo json_encode(['success' => false, 'error' => 'Prepare failed (duplicate check)', 'details' => $conn->error]);
+          exit;
+     }
+
+     $stmtCheck->bind_param('si', $healthNumber, $patientID);
+     $stmtCheck->execute();
+     $dupRes = $stmtCheck->get_result();
+     $duplicate = $dupRes ? $dupRes->fetch_assoc() : null;
+     $stmtCheck->close();
+
+     if ($duplicate) {
+          http_response_code(409);
+          echo json_encode(['success' => false, 'error' => 'That health card number already exists for another patient']);
+          exit;
+     }
+
+     $stmt = $conn->prepare("UPDATE `$patientTable` SET clientName = ?, healthNumber = ? WHERE id = ?");
+     if (!$stmt) {
+          http_response_code(500);
+          echo json_encode(['success' => false, 'error' => 'Prepare failed', 'details' => $conn->error]);
+          exit;
+     }
+
+     $stmt->bind_param('ssi', $clientName, $healthNumber, $patientID);
+
+     if ($stmt->execute()) {
+          echo json_encode([
+               'success' => true,
+               'clientName' => $clientName,
+               'healthNumber' => $healthNumber,
+               'affected_rows' => $stmt->affected_rows
+          ]);
           $stmt->close();
           $conn->close();
           exit;
@@ -181,7 +256,7 @@ if ($data['script'] === 'getStatus') {
 if ($data['script'] === 'patientSearch') {
      $searchTerm = $data['searchTerm'];
      $searchTerm = '%' . $searchTerm . '%';
-
+     $patientTable = 'Patient';
      // Prepare and execute query to search for healthNumber or clientName
      $stmt = $conn->prepare("SELECT * FROM `$patientTable` WHERE healthNumber LIKE ? OR clientName LIKE ?");
      $stmt->bind_param("ss", $searchTerm, $searchTerm);
@@ -754,7 +829,7 @@ if ($data['script'] === 'getPatientByHealthNumber') {
 if ($data['script'] === 'getMeds') {
      // Adjust column names if your table uses different casing/labels.
      $sql = "
-        SELECT * FROM medications ORDER BY medication ASC
+        SELECT * FROM medications_202 ORDER BY medication ASC
     ";
 
      $result = $conn->query($sql);
@@ -902,7 +977,7 @@ if ($data['script'] === 'updateRecommendations') {
           http_response_code(400);
           exit;
      }
-
+     $patientTable = 'Patient_DEMO'; // adjust if your table name is different
      $stmt = $conn->prepare("UPDATE `$patientTable` SET recommendations = ? WHERE id = ?");
      if (!$stmt) {
           http_response_code(500);
@@ -975,7 +1050,7 @@ if ($data['script'] === 'findPatientsForMedication') {
           case 'Metformin':
           case 'SGLT2 Inhibitor':
           case 'GLP-1 Receptor Agonist':
-          case 'Praluent':
+          case 'Leqvio':
                // Thresholds
                $nonHdlThreshold = 2.4; // starting filter: patients with nonHdl >= 2.4
                $nativeCutoff = 5.0; // check nativeLDLC vs 5.0
@@ -1149,7 +1224,7 @@ if ($data['script'] === 'findPatientsForMedication') {
                          $updateStmt->execute();
                     }
                     if ($nativeLDLC >= $nativeCutoff) {
-                         $medicationToAdd = 'Repatha';
+                         $medicationToAdd = 'Leqvio';
                          // Read current recommendedMed (CSV string)
                          $currentMeds = $row['recommendedMed'] ?? '';
                          $medsArray = array_filter(array_map('trim', explode(',', $currentMeds)));
