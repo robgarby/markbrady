@@ -144,7 +144,7 @@ if ($data['script'] === 'getMedsCategory') {
 if ($data['script'] === 'getMeds') {
     // Adjust column names if your table uses different casing/labels.
     $sql = "
-        SELECT * FROM medications ORDER BY medication ASC
+        SELECT * FROM medications_2026 ORDER BY medication ASC
     ";
 
     $result = $conn->query($sql);

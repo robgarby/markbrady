@@ -93,7 +93,7 @@ const DoctorNote = ({ setActivePatient, activePatient, user }) => {
       id="DOCTOR_NOTE"
       storageKey="DOCTOR_NOTE_POSITION"
       defaultPos={{ x: 300, y: 340 }}
-      title="Doctor Note [FULLY WORKING]"
+      title="Doctor Note [2026 VERIFIED]"
       width={600}
       onAdd={null}
       zIndex={2050}

@@ -31,6 +31,7 @@ const LAB_FIELDS = [
 ];
 
 const CAT_ENDPOINT = "https://gdmt.ca/PHP/special.php";
+const LAB_ENDPOINT = "https://www.gdmt.ca/PHP/labData.php";
 const GET_SCRIPT = "getMedsCategory";
 
 const LS_KEYS = {
@@ -70,6 +71,13 @@ const readText = (k, fallback = "") => {
   }
 };
 
+const getProviderLabel = (p) => {
+  const name = String(p?.pharmacyName ?? p?.providerName ?? p?.name ?? "").trim();
+  const loc = String(p?.pharmacyLocation ?? p?.location ?? "").trim();
+  const phone = String(p?.pharmacyPhone ?? p?.phone ?? "").trim();
+  return [name, loc, phone].filter(Boolean).join(" — ");
+};
+
 // ───────────────────────── component ─────────────────────────
 const CriteriaSearch = ({ onResults }) => {
   const {
@@ -79,14 +87,12 @@ const CriteriaSearch = ({ onResults }) => {
     conditionData,
     updateConditions,
     updateConditionData,
-    medsArray,
     medsCategory,
     updateMedsCategory,
-    patientProvider,
     setPatientArray,
   } = useGlobalContext();
 
-  const [user, setUser] = React.useState(null);
+  const [user, setUser] = useState(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -96,12 +102,8 @@ const CriteriaSearch = ({ onResults }) => {
     };
 
     fetchUser().then((userT) => {
-      if (userT) {
-        setUser(userT);
-      }
-      if (!userT) {
-        navigate("/signin");
-      }
+      if (userT) setUser(userT);
+      if (!userT) navigate("/signin");
     });
   }, [navigate]);
 
@@ -115,7 +117,6 @@ const CriteriaSearch = ({ onResults }) => {
   );
 
   // CONDITIONS
-  const [condFilter, setCondFilter] = useState("");
   const [condSelect, setCondSelect] = useState("");
   const [conditionSearchArray, setConditionSearchArray] = useState(() =>
     readJSON(LS_KEYS.conds, [])
@@ -131,7 +132,6 @@ const CriteriaSearch = ({ onResults }) => {
 
   // MED CATS
   const [medSelect, setMedSelect] = useState("");
-  const [meds, setMeds] = useState([]);
   const [medErr, setMedErr] = useState("");
   const [medLoading, setMedLoading] = useState(false);
   const [catSearchArray, setCatSearchArray] = useState(() =>
@@ -145,6 +145,14 @@ const CriteriaSearch = ({ onResults }) => {
   );
   const [nonMedErr, setNonMedErr] = useState("");
   const [nonMedLoading, setNonMedLoading] = useState(false);
+
+  // PROVIDERS
+  const [providerData, setProviderData] = useState(null);
+  const providerOptions = Array.isArray(providerData)
+    ? providerData
+    : providerData
+      ? [providerData]
+      : [];
 
   // Hydration guard
   const [hydrated, setHydrated] = useState(false);
@@ -212,6 +220,39 @@ const CriteriaSearch = ({ onResults }) => {
     }
   }, [privateNoteSearch, hydrated]);
 
+  // Load providers same as Pharmacy Multiple
+  useEffect(() => {
+    let mounted = true;
+
+    const fetchProviders = async () => {
+      try {
+        const res = await fetch(LAB_ENDPOINT, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ scriptName: "getProvider" }),
+        });
+
+        const json = await res.json();
+        if (!mounted) return;
+
+        if (json?.success) {
+          setProviderData(json.provider ?? json.providers ?? null);
+        } else {
+          setProviderData(null);
+        }
+      } catch (err) {
+        console.error("getProvider failed:", err);
+        if (mounted) setProviderData(null);
+      }
+    };
+
+    fetchProviders();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   // Load meds categories
   useEffect(() => {
     if (!Array.isArray(medsCategory) || medsCategory.length === 0) {
@@ -226,7 +267,7 @@ const CriteriaSearch = ({ onResults }) => {
           let data = null;
           try {
             data = JSON.parse(text);
-          } catch {}
+          } catch { }
           if (typeof updateMedsCategory === "function") updateMedsCategory(data);
         } catch (e) {
           console.error(e);
@@ -257,7 +298,7 @@ const CriteriaSearch = ({ onResults }) => {
         if (Array.isArray(data?.conditions)) setConditions(data.conditions);
         else if (Array.isArray(data)) setConditions(data);
       })
-      .catch(() => {});
+      .catch(() => { });
   }, [conditionData, updateConditions, updateConditionData]);
 
   const allConditions = useMemo(() => {
@@ -266,28 +307,18 @@ const CriteriaSearch = ({ onResults }) => {
     return [];
   }, [conditionData]);
 
-  const filteredConditions = useMemo(() => {
-    const q = condFilter.trim().toLowerCase();
-    const src = allConditions.map((c) => ({
-      code: String(c?.conditionCode ?? c?.code ?? "").toUpperCase(),
-      label: String(c?.conditionName ?? c?.name ?? ""),
-      id: String(c?.ID ?? c?.id ?? c?.conditionID ?? ""),
-    }));
-    if (!q) return src;
-    return src.filter(
-      (c) => c.label.toLowerCase().includes(q) || c.code.toLowerCase().includes(q)
-    );
-  }, [allConditions, condFilter]);
-
   const normalizedConditions = useMemo(
     () =>
-      filteredConditions.map((c) => {
-        const code = (c.code || "").trim().toUpperCase();
-        const label = (c.label || "").trim();
-        const value = code || label;
-        return { value, code, label, id: c.id };
-      }),
-    [filteredConditions]
+      allConditions
+        .map((c) => {
+          const code = String(c?.conditionCode ?? c?.code ?? "").trim().toUpperCase();
+          const label = String(c?.conditionName ?? c?.name ?? "").trim();
+          const id = String(c?.ID ?? c?.id ?? c?.conditionID ?? "");
+          const value = code || label;
+          return { value, code, label, id };
+        })
+        .filter((c) => c.value),
+    [allConditions]
   );
 
   const displayConds = useMemo(
@@ -299,6 +330,15 @@ const CriteriaSearch = ({ onResults }) => {
       })),
     [conditionSearchArray]
   );
+
+  const filteredMedsCategory = useMemo(() => {
+    if (!Array.isArray(medsCategory)) return [];
+
+    return medsCategory.filter((m) => {
+      const label = String(m?.catName ?? "").trim().toLowerCase();
+      return label !== "" && label !== "not used" && label !== "- not used -";
+    });
+  }, [medsCategory]);
 
   // Condition handlers
   const addCondition = (val) => {
@@ -329,13 +369,17 @@ const CriteriaSearch = ({ onResults }) => {
     setCondSelect("");
   };
 
+  const removeCondition = (idx) => {
+    setConditionSearchArray((prev) => prev.filter((_, i) => i !== idx));
+  };
+
   const clearConditions = () => {
-    setCondFilter("");
     setCondSelect("");
     setConditionSearchArray([]);
     setCondErr("");
   };
 
+  // Labs
   const addLab = (field) => {
     const key = String(field || "");
     if (!key || labs.some((r) => r.field === key)) return;
@@ -358,8 +402,8 @@ const CriteriaSearch = ({ onResults }) => {
 
   // Med Category (ON)
   const addMed = (val) => {
-    const selectedMed = Array.isArray(medsCategory)
-      ? medsCategory.find((m) => String(m.ID ?? m.id ?? "") === String(val))
+    const selectedMed = Array.isArray(filteredMedsCategory)
+      ? filteredMedsCategory.find((m) => String(m.ID ?? m.id ?? "") === String(val))
       : null;
 
     if (!selectedMed) return;
@@ -370,23 +414,26 @@ const CriteriaSearch = ({ onResults }) => {
     if (!exists) {
       setCatSearchArray((prev) => [
         ...prev,
-        { ID: id, medication_cat: selectedMed.medication_cat },
+        { ID: id, catName: selectedMed.catName },
       ]);
     }
     setMedSelect("");
   };
 
+  const removeMed = (idx) => {
+    setCatSearchArray((prev) => prev.filter((_, i) => i !== idx));
+  };
+
   const clearMeds = () => {
     setCatSearchArray([]);
     setMedSelect("");
-    setMeds([]);
     setMedErr("");
   };
 
   // Not-on Med Category (OFF)
   const addNonMed = (val) => {
-    const selected = Array.isArray(medsCategory)
-      ? medsCategory.find((m) => String(m.ID ?? m.id ?? "") === String(val))
+    const selected = Array.isArray(filteredMedsCategory)
+      ? filteredMedsCategory.find((m) => String(m.ID ?? m.id ?? "") === String(val))
       : null;
 
     if (!selected) return;
@@ -396,9 +443,13 @@ const CriteriaSearch = ({ onResults }) => {
 
     setNonMedCatSearchArray((prev) => [
       ...prev,
-      { ID: id, medication_cat: selected.medication_cat },
+      { ID: id, catName: selected.catName },
     ]);
     setNonMedSelect("");
+  };
+
+  const removeNonMed = (idx) => {
+    setNonMedCatSearchArray((prev) => prev.filter((_, i) => i !== idx));
   };
 
   const clearNonMeds = () => {
@@ -423,35 +474,44 @@ const CriteriaSearch = ({ onResults }) => {
     const medCategoryIds = catSearchArray.map((m) => m.ID);
     const nonMedCategoryIds = nonMedCatSearchArray.map((m) => m.ID);
 
+    const payload = {
+      script: "superSearch",
+      labs: labsPayload,
+      conditionCodes,
+      minPoints: String(minPoints || "").trim(),
+      maxPoints: String(maxPoints || "").trim(),
+      minLabs: String(minLabs || "").trim(),
+      maxLabs: String(maxLabs || "").trim(),
+      privateNoteSearch: String(privateNoteSearch || "").trim(),
+      medCategoryIds,
+      providerId,
+      nonMedCategoryIds,
+      patientDB: user?.patientTable || "Patient",
+      historyDB: user?.historyTable || "Patient_History",
+    };
+
+    console.log("SUPER SEARCH PAYLOAD:", payload);
+    console.log("SUPER SEARCH PAYLOAD JSON:", JSON.stringify(payload, null, 2));
+
     setSuperLoading(true);
     try {
       const res = await fetch("https://gdmt.ca/PHP/supersearch.php", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          script: "superSearch",
-          labs: labsPayload,
-          conditionCodes,
-          minPoints: String(minPoints || "").trim(),
-          maxPoints: String(maxPoints || "").trim(),
-          minLabs: String(minLabs || "").trim(),
-          maxLabs: String(maxLabs || "").trim(),
-          privateNoteSearch: String(privateNoteSearch || "").trim(),
-          medCategoryIds,
-          providerId,
-          nonMedCategoryIds,
-          patientDB: user?.patientTable || "Patient",
-          historyDB: user?.historyTable || "Patient_History",
-        }),
+        body: JSON.stringify(payload),
       });
 
       const text = await res.text();
+      console.log("SUPER SEARCH RAW RESPONSE:", text);
+
       let data;
       try {
         data = JSON.parse(text);
       } catch {
         data = [];
       }
+
+      console.log("SUPER SEARCH PARSED RESPONSE:", data);
 
       onResults?.(data);
       setPatientArray?.(Array.isArray(data) ? data : []);
@@ -489,7 +549,6 @@ const CriteriaSearch = ({ onResults }) => {
     setProviderID(null);
   };
 
-  // ─────────────── UI ───────────────
   return (
     <div className="p-2">
       <div className="col-48">
@@ -595,19 +654,18 @@ const CriteriaSearch = ({ onResults }) => {
                       setProviderID(val);
                     }}
                   >
-                    <option value="">Select Provider</option>
-                    {Array.isArray(patientProvider) &&
-                      patientProvider.map((p) => {
-                        const id = p?.id != null ? String(p.id) : "";
-                        const label = String(
-                          p?.providerName ?? p?.name ?? p?.displayName ?? id
-                        );
-                        return (
-                          <option key={id || label} value={id}>
-                            {label}
-                          </option>
-                        );
-                      })}
+                    <option value="">
+                      {providerOptions.length === 0 ? "Loading providers..." : "Select Provider"}
+                    </option>
+                    {providerOptions.map((p, idx) => {
+                      const id = String(p?.ID ?? p?.id ?? `provider_${idx}`);
+                      const label = getProviderLabel(p) || id;
+                      return (
+                        <option key={id} value={id}>
+                          {label}
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
               </div>
@@ -669,10 +727,18 @@ const CriteriaSearch = ({ onResults }) => {
                   {conditionSearchArray.map((c, i) => (
                     <div key={i} className="col">
                       <div
-                        className="text-start ps-1 text-purple border-bottom border-navy border-1 fs-6"
-                        style={{ height: "50px", lineHeight: "50px" }}
+                        className="text-start ps-1 text-purple border-bottom border-navy border-1 fs-6 d-flex align-items-center justify-content-between"
+                        style={{ height: "50px" }}
                       >
-                        <span className="text-truncate fs-7">{c.condition_name}</span>
+                        <span className="text-truncate fs-7" title={c.condition_name}>
+                          {c.condition_name}
+                        </span>
+                        <button
+                          className="btn btn-sm btn-outline-danger me-1"
+                          onClick={() => removeCondition(i)}
+                        >
+                          X
+                        </button>
                       </div>
                     </div>
                   ))}
@@ -788,19 +854,22 @@ const CriteriaSearch = ({ onResults }) => {
               <select
                 className="form-select form-select-sm mb-2"
                 value={medSelect}
-                onChange={(e) => addMed(e.target.value)}
+                onChange={(e) => {
+                  setMedSelect(e.target.value);
+                  if (e.target.value) addMed(e.target.value);
+                }}
               >
                 <option value="">— Choose medication</option>
-                {Array.isArray(medsCategory) && medsCategory.length > 0
-                  ? medsCategory.map((m) => {
-                      const id = String(m?.ID ?? m?.id ?? "");
-                      const label = String(m?.medication_cat);
-                      return (
-                        <option key={id} value={id}>
-                          {label}
-                        </option>
-                      );
-                    })
+                {Array.isArray(filteredMedsCategory) && filteredMedsCategory.length > 0
+                  ? filteredMedsCategory.map((m) => {
+                    const id = String(m?.ID ?? m?.id ?? "");
+                    const label = String(m?.catName ?? "");
+                    return (
+                      <option key={id} value={id}>
+                        {label}
+                      </option>
+                    );
+                  })
                   : null}
               </select>
 
@@ -813,12 +882,18 @@ const CriteriaSearch = ({ onResults }) => {
                   {catSearchArray.map((c, i) => (
                     <div key={c.ID ?? i} className="col">
                       <div
-                        className="text-start ps-1 text-purple border-bottom border-navy border-1 fs-6"
-                        style={{ height: "50px", lineHeight: "50px" }}
+                        className="text-start ps-1 text-purple border-bottom border-navy border-1 fs-6 d-flex align-items-center justify-content-between"
+                        style={{ height: "50px" }}
                       >
-                        <span className="text-truncate fs-7" title={c.medication_cat}>
-                          {c.medication_cat}
+                        <span className="text-truncate fs-7" title={c.catName}>
+                          {c.catName}
                         </span>
+                        <button
+                          className="btn btn-sm btn-outline-danger me-1"
+                          onClick={() => removeMed(i)}
+                        >
+                          X
+                        </button>
                       </div>
                     </div>
                   ))}
@@ -845,37 +920,46 @@ const CriteriaSearch = ({ onResults }) => {
               <select
                 className="form-select form-select-sm mb-2"
                 value={nonMedSelect}
-                onChange={(e) => addNonMed(e.target.value)}
+                onChange={(e) => {
+                  setNonMedSelect(e.target.value);
+                  if (e.target.value) addNonMed(e.target.value);
+                }}
               >
-                <option value="">— Choose a medication —</option>
-                {Array.isArray(medsCategory) && medsCategory.length > 0
-                  ? medsCategory.map((m) => {
-                      const id = String(m?.ID ?? m?.id ?? "");
-                      const label = String(m?.medication_cat);
-                      return (
-                        <option key={id} value={id}>
-                          {label}
-                        </option>
-                      );
-                    })
+                <option value="">— Choose medication</option>
+                {Array.isArray(filteredMedsCategory) && filteredMedsCategory.length > 0
+                  ? filteredMedsCategory.map((m) => {
+                    const id = String(m?.ID ?? m?.id ?? "");
+                    const label = String(m?.catName ?? "");
+                    return (
+                      <option key={id} value={id}>
+                        {label}
+                      </option>
+                    );
+                  })
                   : null}
               </select>
 
               {nonMedCatSearchArray.length === 0 ? (
                 <div className="text-muted small">
-                  <em>No categories selected.</em>
+                  <em>No medications added.</em>
                 </div>
               ) : (
                 <div className="row row-cols-1 g-2">
                   {nonMedCatSearchArray.map((c, i) => (
                     <div key={c.ID ?? i} className="col">
                       <div
-                        className="text-start ps-1 text-danger border-bottom border-navy border-1 fs-6"
-                        style={{ height: "50px", lineHeight: "50px" }}
+                        className="text-start ps-1 text-danger border-bottom border-danger border-1 fs-6 d-flex align-items-center justify-content-between"
+                        style={{ height: "50px" }}
                       >
-                        <span className="text-truncate fs-7" title={c.medication_cat}>
-                          {c.medication_cat}
+                        <span className="text-truncate fs-7" title={c.catName}>
+                          {c.catName}
                         </span>
+                        <button
+                          className="btn btn-sm btn-outline-danger me-1"
+                          onClick={() => removeNonMed(i)}
+                        >
+                          X
+                        </button>
                       </div>
                     </div>
                   ))}

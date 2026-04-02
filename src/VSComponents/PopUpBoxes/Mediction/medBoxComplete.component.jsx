@@ -1,25 +1,31 @@
 // src/components/Patient/medBoxComplete.component.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useGlobalContext } from "../../../Context/global.context"; // adjust path if needed
+import { useGlobalContext } from "../../../Context/global.context";
 
 const API_URL = "https://gdmt.ca/PHP/special.php";
 
 const norm = (s) => (s || "").trim().replace(/\s+/g, " ").toLowerCase();
 const unique = (arr) => [...new Set((arr || []).filter(Boolean))];
 
-const readMasterId = (m) => String(m?.ID ?? m?.id ?? "");
-const readMasterName = (m) => String(m?.medication_name ?? m?.medication ?? m?.name ?? "");
-const readMasterDose = (m) => String(m?.medication_dose ?? m?.defaultDose ?? m?.dose ?? "");
-const readMasterCat = (m) => String(m?.medication_cat ?? m?.category ?? "");
+const readMasterId = (m) => String(m?.ID ?? m?.id ?? "").trim();
+const readMasterDIN = (m) => String(m?.DIN ?? m?.din ?? "").trim();
+const readMasterName = (m) =>
+  String(m?.medication_name ?? m?.medication ?? m?.name ?? "").trim();
+const readMasterDose = (m) =>
+  String(m?.medication_dose ?? m?.defaultDose ?? m?.dose ?? "").trim();
+const readMasterCat = (m) =>
+  String(m?.medication_cat ?? m?.category ?? "").trim();
+const readMasterBrand = (m) =>
+  String(m?.medication_brand ?? m?.brand ?? "").trim();
 
-const parseIdCSV = (str) =>
-  (str || "")
+const parseCSV = (str) =>
+  String(str || "")
     .split(",")
     .map((t) => t.trim())
     .filter(Boolean);
 
-const serializeIdCSV = (ids) =>
-  (ids || [])
+const serializeCSV = (vals) =>
+  (vals || [])
     .map((x) => String(x).trim())
     .filter(Boolean)
     .join(",");
@@ -27,46 +33,68 @@ const serializeIdCSV = (ids) =>
 const MedBoxComplete = ({ user }) => {
   const { activePatient, setActivePatient, medsArray } = useGlobalContext() || {};
 
-  // --- Master lookups ---
   const master = Array.isArray(medsArray) ? medsArray : [];
 
   const masterById = useMemo(() => {
     const m = new Map();
-    for (const row of master) m.set(readMasterId(row), row);
+    for (const row of master) {
+      const id = readMasterId(row);
+      if (id) m.set(id, row);
+    }
+    return m;
+  }, [master]);
+
+  const masterByDIN = useMemo(() => {
+    const m = new Map();
+    for (const row of master) {
+      const din = readMasterDIN(row);
+      if (din) m.set(din, row);
+    }
     return m;
   }, [master]);
 
   const masterByName = useMemo(() => {
     const m = new Map();
-    for (const row of master) m.set(norm(readMasterName(row)), row);
+    for (const row of master) {
+      const name = norm(readMasterName(row));
+      if (name) m.set(name, row);
+    }
     return m;
   }, [master]);
 
-  // --- Patient meds (CSV of IDs) ---
-  const [medIds, setMedIds] = useState(() => parseIdCSV(activePatient?.medsData));
+  // Patient medsData is DIN CSV
+  const [medDins, setMedDins] = useState(() => parseCSV(activePatient?.medsData));
   const lastPidRef = useRef(activePatient?.id ?? null);
 
   useEffect(() => {
     const id = activePatient?.id ?? null;
     if (id !== lastPidRef.current) {
       lastPidRef.current = id;
-      setMedIds(parseIdCSV(activePatient?.medsData));
+      setMedDins(parseCSV(activePatient?.medsData));
     }
-  }, [activePatient?.id]); // keep in sync on patient switch
+  }, [activePatient?.id, activePatient?.medsData]);
 
   const rows = useMemo(() => {
-    return (medIds || []).map((id) => {
-      const m = masterById.get(String(id));
+    return (medDins || []).map((din) => {
+      const dinStr = String(din).trim();
+
+      // Main lookup should be by DIN
+      let m = masterByDIN.get(dinStr);
+
+      // Fallback in case old records stored ID instead of DIN
+      if (!m) m = masterById.get(dinStr);
+
       return {
-        id: String(id),
+        din: dinStr,
+        id: readMasterId(m) || "",
         name: readMasterName(m) || "(Unknown)",
-        category: readMasterCat(m) || "No Category",
-        dose: readMasterDose(m) || "No dose",
+        category: readMasterCat(m) || "unknown",
+        dose: readMasterDose(m) || "",
+        brand: readMasterBrand(m) || "unknown",
       };
     });
-  }, [medIds, masterById]);
+  }, [medDins, masterByDIN, masterById]);
 
-  // --- Add box state ---
   const nameRef = useRef(null);
   const [nameQ, setNameQ] = useState("");
   const [doseQ, setDoseQ] = useState("");
@@ -74,24 +102,31 @@ const MedBoxComplete = ({ user }) => {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
 
-  const medNameOptions = useMemo(() => unique(master.map(readMasterName).filter(Boolean)), [master]);
+  const medNameOptions = useMemo(
+    () => unique(master.map(readMasterName).filter(Boolean)),
+    [master]
+  );
 
-  const pickedExisting = useMemo(() => masterByName.get(norm(nameQ)) || null, [nameQ, masterByName]);
+  const pickedExisting = useMemo(
+    () => masterByName.get(norm(nameQ)) || null,
+    [nameQ, masterByName]
+  );
 
-  // --- Persist patient meds CSV to server + context ---
-  const commitPatientMeds = (nextIds) => {
+  const commitPatientMeds = (nextDins, auditMed = null) => {
     const patientId = activePatient?.id;
     if (!patientId) return;
 
-    const idsCSV = serializeIdCSV(nextIds);
+    const dinsCSV = serializeCSV(nextDins);
 
-    // Update UI + context
-    setMedIds(nextIds);
+    setMedDins(nextDins);
+
     if (typeof setActivePatient === "function") {
-      setActivePatient({ ...(activePatient || {}), medsData: idsCSV });
+      setActivePatient({
+        ...(activePatient || {}),
+        medsData: dinsCSV,
+      });
     }
 
-    // Save to DB (idempotent full CSV)
     fetch(API_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -99,22 +134,23 @@ const MedBoxComplete = ({ user }) => {
       body: JSON.stringify({
         script: "SaveMedication",
         patientId,
-        medId: nextIds[nextIds.length - 1] || "", // last added (for auditing)
-        medIdsCSV: idsCSV,
+        medId: readMasterId(auditMed) || "",
+        din: readMasterDIN(auditMed) || "",
+        medIdsCSV: dinsCSV, // keeping field name in case PHP already expects it
+        medsData: dinsCSV,
         patientDB: user?.patientTable || "Patient",
         historyDB: user?.historyTable || "Patient_History",
       }),
     }).catch(() => {});
   };
 
-  // --- Add existing from master ---
   const addExisting = (m) => {
     const patientId = activePatient?.id || null;
-    const id = readMasterId(m);
-    if (!patientId || !id) return;
+    const din = readMasterDIN(m);
+    if (!patientId || !din) return;
 
-    const currentIds = parseIdCSV(activePatient?.medsData);
-    if (currentIds.includes(String(id))) {
+    const currentDins = parseCSV(activePatient?.medsData);
+    if (currentDins.includes(din)) {
       setNameQ("");
       setDoseQ("");
       setCatQ("");
@@ -122,8 +158,8 @@ const MedBoxComplete = ({ user }) => {
       return;
     }
 
-    const nextIds = unique([...currentIds, String(id)]);
-    commitPatientMeds(nextIds);
+    const nextDins = unique([...currentDins, din]);
+    commitPatientMeds(nextDins, m);
 
     setNameQ("");
     setDoseQ("");
@@ -131,7 +167,6 @@ const MedBoxComplete = ({ user }) => {
     nameRef.current?.focus();
   };
 
-  // --- Create in master, then add to patient ---
   const createAndAdd = async (name, category, dose) => {
     const patientId = activePatient?.id || null;
     if (!patientId || !name.trim()) return;
@@ -157,16 +192,19 @@ const MedBoxComplete = ({ user }) => {
         payload = JSON.parse(text);
       } catch {}
 
-      if (!res.ok || !payload?.success || !payload?.med?.ID) {
+      if (!res.ok || !payload?.success || !payload?.med) {
         throw new Error(payload?.error || "Create failed");
       }
 
-      const newRow = payload.med; // {ID, medication_name, medication_cat, medication_dose}
-      const newId = readMasterId(newRow);
-      if (!newId) throw new Error("No ID returned");
+      const newRow = payload.med;
+      const newDIN = readMasterDIN(newRow);
 
-      const next = unique([...(parseIdCSV(activePatient?.medsData)), String(newId)]);
-      commitPatientMeds(next);
+      if (!newDIN) {
+        throw new Error("Medication created but no DIN was returned.");
+      }
+
+      const next = unique([...parseCSV(activePatient?.medsData), newDIN]);
+      commitPatientMeds(next, newRow);
 
       setMsg("Medication created and added.");
       setNameQ("");
@@ -181,22 +219,25 @@ const MedBoxComplete = ({ user }) => {
     }
   };
 
-  // --- Remove from patient ---
-  const removeMedication = (medId) => {
+  const removeMedication = (dinIn) => {
     const patientId = activePatient?.id || null;
     if (!patientId) return;
 
-    const idStr = String(medId);
-    const currentIds = parseIdCSV(activePatient?.medsData);
-    const nextIds = currentIds.filter((id) => String(id) !== idStr);
+    const dinStr = String(dinIn).trim();
+    const currentDins = parseCSV(activePatient?.medsData);
+    const nextDins = currentDins.filter((din) => String(din).trim() !== dinStr);
 
-    // Update UI + context
-    setMedIds(nextIds);
+    setMedDins(nextDins);
+
     if (typeof setActivePatient === "function") {
-      setActivePatient({ ...(activePatient || {}), medsData: serializeIdCSV(nextIds) });
+      setActivePatient({
+        ...(activePatient || {}),
+        medsData: serializeCSV(nextDins),
+      });
     }
 
-    // Save to DB
+    const matched = masterByDIN.get(dinStr) || null;
+
     fetch(API_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -204,8 +245,10 @@ const MedBoxComplete = ({ user }) => {
       body: JSON.stringify({
         script: "SaveMedication",
         patientId,
-        medId: idStr,
-        medIdsCSV: serializeIdCSV(nextIds),
+        medId: readMasterId(matched) || "",
+        din: dinStr,
+        medIdsCSV: serializeCSV(nextDins),
+        medsData: serializeCSV(nextDins),
         patientDB: user?.patientTable || "Patient",
         historyDB: user?.historyTable || "Patient_History",
       }),
@@ -213,13 +256,14 @@ const MedBoxComplete = ({ user }) => {
   };
 
   return (
-    <div className="d-flex flex-column fs-7" style={{ position: "relative", maxHeight: 500, overflowY: "auto" }}>
-      {/* Header bar */}
+    <div
+      className="d-flex flex-column fs-7"
+      style={{ position: "relative", maxHeight: 500, overflowY: "auto" }}
+    >
       <div className="d-flex align-items-center mb-2">
         <div className="fw-bold">Medications</div>
       </div>
 
-      {/* Add Med Box */}
       <div className="border rounded p-2 mb-2 position-relative">
         <div className="row g-2 align-items-end">
           <div className="col-18">
@@ -244,11 +288,19 @@ const MedBoxComplete = ({ user }) => {
             <>
               <div className="col-12">
                 <label className="form-label mb-1">Category</label>
-                <input className="form-control fs-7" value={readMasterCat(pickedExisting) || "No Category"} readOnly />
+                <input
+                  className="form-control fs-7"
+                  value={readMasterCat(pickedExisting) || "unknown"}
+                  readOnly
+                />
               </div>
               <div className="col-6">
                 <label className="form-label mb-1">Dose</label>
-                <input className="form-control fs-7" value={readMasterDose(pickedExisting) || "No dose"} readOnly />
+                <input
+                  className="form-control fs-7"
+                  value={readMasterDose(pickedExisting) || ""}
+                  readOnly
+                />
               </div>
               <div className="col-9 d-flex align-items-end">
                 <button
@@ -300,26 +352,44 @@ const MedBoxComplete = ({ user }) => {
         {msg && <div className="small text-muted mt-2">{msg}</div>}
       </div>
 
-      {/* Patient med list */}
       <div className="container-fluid px-1">
         <div className="row g-2">
           {rows.map((r, idx) => (
-            <div key={`med_${r.id}_${idx}`} className="col-48">
+            <div key={`med_${r.din}_${idx}`} className="col-48">
               <div className="border rounded p-1 d-flex align-items-center">
-                <div className="fw-semibold text-truncate col-18 text-start ps-2" title={r.name}>
+                <div
+                  className="fw-semibold text-truncate col-18 text-start ps-2"
+                  title={r.name}
+                >
                   {r.name}
                 </div>
-                <div className="text-muted small text-truncate col-18 text-start ps-2" title={r.category}>
+
+                <div
+                  className="text-muted small text-truncate col-14 text-start ps-2"
+                  title={r.category}
+                >
                   {r.category}
                 </div>
-                <div className="small text-truncate col-6 ps-2" title={r.dose}>
-                  {r.dose}
+
+                <div
+                  className="small text-truncate col-8 ps-2"
+                  title={r.dose}
+                >
+                  {r.dose || "-"}
                 </div>
-                <div className="col-6 text-end pe-2">
+
+                <div
+                  className="small text-truncate col-4 ps-2"
+                  title={r.din}
+                >
+                  {r.din}
+                </div>
+
+                <div className="col-4 text-end pe-2">
                   <button
                     type="button"
                     className="btn btn-outline-danger btn-sm ms-2"
-                    onClick={() => removeMedication(r.id)}
+                    onClick={() => removeMedication(r.din)}
                     aria-label={`Remove ${r.name}`}
                     title={`Remove ${r.name}`}
                   >

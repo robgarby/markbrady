@@ -63,46 +63,6 @@ if (($data['script'] ?? '') !== 'superSearch') {
     exit;
 }
 
-function getMedIdsCsvForCatIds(mysqli $conn, array $catIds): string
-{
-    $catIds = array_values(array_unique(array_filter(array_map('intval', $catIds), fn($v) => $v > 0)));
-    if (!$catIds) {
-        return '';
-    }
-
-    $placeholders = implode(',', array_fill(0, count($catIds), '?'));
-    $types = str_repeat('i', count($catIds));
-
-    $sql = "
-        SELECT m.ID
-        FROM medications AS m
-        INNER JOIN medCat AS c
-            ON m.medication_cat = c.medication_cat
-        WHERE c.ID IN ($placeholders)
-    ";
-    $stmt = $conn->prepare($sql);
-    if (!$stmt) {
-        return '';
-    }
-
-    $stmt->bind_param($types, ...$catIds);
-
-    $medIds = [];
-    if ($stmt->execute()) {
-        $res = $stmt->get_result();
-        while ($row = $res->fetch_assoc()) {
-            $id = (int)($row['ID'] ?? 0);
-            if ($id > 0) {
-                $medIds[] = $id;
-            }
-        }
-    }
-    $stmt->close();
-
-    $medIds = array_values(array_unique($medIds));
-    return $medIds ? implode(',', $medIds) : '';
-}
-
 function toFloatOrNull($value)
 {
     if ($value === null) return null;
@@ -119,6 +79,18 @@ function toIntOrNull($value)
     return is_numeric($value) ? (int)$value : null;
 }
 
+function parseCsvValues($csv): array
+{
+    $csv = (string)$csv;
+    if (trim($csv) === '') {
+        return [];
+    }
+
+    $parts = array_map('trim', explode(',', $csv));
+    $parts = array_filter($parts, fn($v) => $v !== '');
+    return array_values(array_unique($parts));
+}
+
 $conditionsCodes = isset($data['conditionCodes']) && is_array($data['conditionCodes'])
     ? array_values(array_unique(array_filter(array_map('trim', $data['conditionCodes']), 'strlen')))
     : [];
@@ -126,11 +98,15 @@ $conditionsCodes = isset($data['conditionCodes']) && is_array($data['conditionCo
 $labs = isset($data['labs']) && is_array($data['labs']) ? $data['labs'] : [];
 
 $incCatIds = isset($data['medCategoryIds']) && is_array($data['medCategoryIds'])
-    ? array_values(array_filter(array_map('intval', $data['medCategoryIds']), fn($v) => $v > 0))
+    ? array_values(array_unique(array_filter(array_map(function ($v) {
+        return trim((string)$v);
+    }, $data['medCategoryIds']), 'strlen')))
     : [];
 
 $noCatIds = isset($data['nonMedCategoryIds']) && is_array($data['nonMedCategoryIds'])
-    ? array_values(array_filter(array_map('intval', $data['nonMedCategoryIds']), fn($v) => $v > 0))
+    ? array_values(array_unique(array_filter(array_map(function ($v) {
+        return trim((string)$v);
+    }, $data['nonMedCategoryIds']), 'strlen')))
     : [];
 
 $minPoints = toIntOrNull($data['minPoints'] ?? null);
@@ -260,7 +236,7 @@ if (!empty($conditionsCodes)) {
         $patientPool = array_values(array_filter($patientPool, function ($p) use ($conditionsCodes) {
             $csv = (string)($p['conditionData'] ?? '');
             if ($csv === '') return false;
-            $set = array_filter(array_map('trim', explode(',', $csv)), 'strlen');
+            $set = parseCsvValues($csv);
             if (!$set) return false;
             $lookup = array_fill_keys($set, true);
             foreach ($conditionsCodes as $c) {
@@ -273,25 +249,20 @@ if (!empty($conditionsCodes)) {
     }
 }
 
-/* On-med categories */
-$includeMedIdsCsv = getMedIdsCsvForCatIds($conn, $incCatIds);
-$includeMedIds = array_values(array_unique(
-    array_filter(array_map('intval', explode(',', (string)$includeMedIdsCsv)), fn($v) => $v > 0)
-));
-
-if (!empty($incCatIds) && $includeMedIds) {
+/* On-med categories: check Patient.medCatSearch directly */
+if (!empty($incCatIds)) {
     if (!$hasSearch) {
         $where = [];
         $types = '';
         $vals = [];
 
-        foreach ($includeMedIds as $mid) {
-            $where[] = "FIND_IN_SET(?, `medsData`) > 0";
+        foreach ($incCatIds as $catId) {
+            $where[] = "FIND_IN_SET(?, `medCatSearch`) > 0";
             $types .= 's';
-            $vals[] = (string)$mid;
+            $vals[] = $catId;
         }
 
-        $sql = "SELECT * FROM `$patientTable` WHERE " . implode(' OR ', $where);
+        $sql = "SELECT * FROM `$patientTable` WHERE (" . implode(' OR ', $where) . ")";
         $stmt = $conn->prepare($sql);
         if ($stmt) {
             $stmt->bind_param($types, ...$vals);
@@ -308,14 +279,14 @@ if (!empty($incCatIds) && $includeMedIds) {
             $stmt->close();
         }
     } else {
-        $patientPool = array_values(array_filter($patientPool, function ($p) use ($includeMedIds) {
-            $csv = (string)($p['medsData'] ?? '');
+        $patientPool = array_values(array_filter($patientPool, function ($p) use ($incCatIds) {
+            $csv = (string)($p['medCatSearch'] ?? '');
             if ($csv === '') return false;
-            $set = array_filter(array_map('intval', explode(',', $csv)), fn($v) => $v > 0);
+            $set = parseCsvValues($csv);
             if (!$set) return false;
             $lookup = array_fill_keys($set, true);
-            foreach ($includeMedIds as $mid) {
-                if (isset($lookup[$mid])) {
+            foreach ($incCatIds as $catId) {
+                if (isset($lookup[$catId])) {
                     return true;
                 }
             }
@@ -324,21 +295,17 @@ if (!empty($incCatIds) && $includeMedIds) {
     }
 }
 
-/* Not-on-med categories */
-$excludeMedIdsCsv = getMedIdsCsvForCatIds($conn, $noCatIds);
-$excludeMedIds = array_values(array_unique(
-    array_filter(array_map('intval', explode(',', (string)$excludeMedIdsCsv)), fn($v) => $v > 0)
-));
-
-if (!empty($noCatIds) && $excludeMedIds) {
+/* Not-on-med categories: check Patient.medCatSearch directly */
+if (!empty($noCatIds)) {
     if (!$hasSearch) {
         $parts = [];
         $types = '';
         $vals = [];
-        foreach ($excludeMedIds as $mid) {
-            $parts[] = "FIND_IN_SET(?, `medsData`) > 0";
+
+        foreach ($noCatIds as $catId) {
+            $parts[] = "FIND_IN_SET(?, `medCatSearch`) > 0";
             $types .= 's';
-            $vals[] = (string)$mid;
+            $vals[] = $catId;
         }
 
         $sql = "SELECT * FROM `$patientTable` WHERE NOT (" . implode(' OR ', $parts) . ")";
@@ -358,13 +325,13 @@ if (!empty($noCatIds) && $excludeMedIds) {
             $stmt->close();
         }
     } else {
-        $patientPool = array_values(array_filter($patientPool, function ($p) use ($excludeMedIds) {
-            $csv = (string)($p['medsData'] ?? '');
-            $set = array_filter(array_map('intval', explode(',', $csv)), fn($v) => $v > 0);
+        $patientPool = array_values(array_filter($patientPool, function ($p) use ($noCatIds) {
+            $csv = (string)($p['medCatSearch'] ?? '');
+            $set = parseCsvValues($csv);
             if (!$set) return true;
             $lookup = array_fill_keys($set, true);
-            foreach ($excludeMedIds as $mid) {
-                if (isset($lookup[$mid])) {
+            foreach ($noCatIds as $catId) {
+                if (isset($lookup[$catId])) {
                     return false;
                 }
             }
@@ -442,7 +409,7 @@ if ($maxLabs !== null) {
     }));
 }
 
-/* Location/provider filter: Patient.pharmacyID only when provided */
+/* Location/provider filter */
 if ($providerId !== null) {
     $patientPool = array_values(array_filter($patientPool, function ($patient) use ($providerId) {
         return isset($patient['pharmacyID']) && (string)$patient['pharmacyID'] === (string)$providerId;

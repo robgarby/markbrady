@@ -240,7 +240,7 @@ const LabResults = ({ activePatient, user }) => {
       id="LAB"
       storageKey="LAB_RESULTS_POSITION"
       defaultPos={{ x: 300, y: 340 }}
-      title="Lab Results [FULLY WORKING]"
+      title="Lab Results [2026 VERIFIED]"
       width={600}
       zIndex={2050}
       addNote="-" // no DragBox button; actions are inside the body

@@ -304,6 +304,12 @@ export default function PatientInfo({ user, thePatient, loading = false }) {
                 <div className="col-auto text-start">
                   Date of Birth: {patient.dateOfBirth}
                 </div>
+                <div className="col-auto text-start fw-bold text-danger">
+                  Points: {patient.totalPoints != null ? patient.totalPoints : "—"}
+                </div>
+                <div className="col-auto text-start fw-bold text-danger">
+                  Labs: {patient.labCount != null ? patient.labCount : "—"}
+                </div>
                 <div className="col-auto text-start">
                   <button
                     className="btn btn-sm btn-outline-navy"

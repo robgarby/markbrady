@@ -32,7 +32,7 @@ const FullCondition = ({ user, activePatient, onPatientChange }) => {
       id="CONDITIONS_BOX"
       storageKey="CONDITIONS_BOX_POSITION"
       defaultPos={{ x: 300, y: 280 }}
-      title="Conditions [FULLY WORKING with Edit]"
+      title="Conditions [NOT YET WORKING WITH 2026]"
       width={860}
       onAdd={null}
       zIndex={2050}

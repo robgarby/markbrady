@@ -22,6 +22,7 @@ import EditCats from "./SideButtonBoxes/Category/editCats.component.jsx";
 // import PharmacyUpload from "./SideButtonBoxes/Pharmacy/xpharmacy.component.jsx";
 import PharmacyMultiple from "./SideButtonBoxes/Pharmacy/pharmacyMultiple.component.jsx";
 import UploadLab from "./SideButtonBoxes/LabUpload/uploadLab.component.jsx";
+import ConditionAdmin from "./SideButtonBoxes//Conditions/conditionTraslation.componet.jsx";
 
 export default function Layout() {
   const {
@@ -114,6 +115,7 @@ export default function Layout() {
   const isPharmacy = visibleBox === "pharmacy";
   const isMultiPharmacy = visibleBox === "multiPharmacy";
   const labUpload = visibleBox === "labUpload";
+  const conditionAdmin = visibleBox === "conditionAdmin";
 
   const isOverlayOpen =
     isMedAdmin ||
@@ -222,6 +224,29 @@ export default function Layout() {
               </div>
             )}
 
+            {conditionAdmin && (
+              <div className="position-absolute top-0 start-0 w-100 h-100 bg-white" style={{ zIndex: 3000 }}>
+                <div className="d-flex align-items-center px-3 border-bottom" style={{ height: "56px" }}>
+                  <div className="fw-bold">Condition Admin</div>
+
+                  <div className="ms-auto">
+                    <button
+                      className="btn btn-outline-danger btn-sm"
+                      onClick={() => setVisibleBox("")}
+                      disabled={loading}
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ height: "calc(100% - 56px)", overflow: "auto" }} className="p-0">
+                  <div className="p-2" style={{ height: "100%" }}>
+                    <ConditionAdmin />
+                  </div>
+                </div>
+              </div>
+            )}
             {labUpload && (
               <div className="position-absolute top-0 start-0 w-100 h-100 bg-white" style={{ zIndex: 3000 }}>
                 <div className="d-flex align-items-center px-3 border-bottom" style={{ height: "56px" }}>

@@ -13,7 +13,7 @@ const Recommendations = () => {
             id="REC"
             storageKey="RECOMMENDATIONS_POSITION"
             defaultPos={{ x: 300, y: 340 }}
-            title= "Recommendations [FULLY WORKING]"
+            title= "Recommendations [2026 VERIFIED]"
             width={600}
             onAdd={null}
             zIndex={2050}

@@ -93,7 +93,7 @@ const PrivateNote = ({ activePatient, user }) => {
             id="PRIVATE_NOTE"
             storageKey="PRIVATE_NOTE_POSITION"
             defaultPos={{ x: 300, y: 340 }}
-            title="Private Note [FULLY WORKING]"
+            title="Private Note [2026 VERIFIED]"
             width={600}
             onAdd={null}
             zIndex={2050}

@@ -27,7 +27,7 @@ const HistoryBox = ({ activePatient, user }) => {
             id="HISTORY"
             storageKey="HISTORY_POSITION"
             defaultPos={{ x: 300, y: 340 }}
-            title= "Patient History [FULLY WORKING]"
+            title= "Patient History [2026 VERIFIED]"
             width={800}
             onAdd={null}
             zIndex={2050}

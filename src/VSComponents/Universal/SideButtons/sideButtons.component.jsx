@@ -13,6 +13,7 @@ import medIdon from "../../../assets/icons/meds.svg";
 import catIcon from "../../../assets/icons/catEdit.svg";
 import conditionsIcon from "../../../assets/icons/complete.svg";
 import allergyIcont from "../../../assets/icons/allergy.svg"; 
+import categoryIcon from "../../../assets/icons/sort-horizontal.svg";
 
 // -----------------------------------------
 // Internal component (NOT imported)
@@ -149,6 +150,14 @@ export default function SideButtons() {
            onClick={() => {
             // ✅ opens the full-screen med admin overlay in Layout
             setVisibleBox("catAdmin");
+          }}
+        />
+        <SideButton
+          title="Edit Conditions"
+          divColor="#ffffffff"
+          icon={categoryIcon}
+           onClick={() => {
+            setVisibleBox("conditionAdmin");
           }}
         />
         {/* <SideButton
