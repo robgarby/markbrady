@@ -45,6 +45,11 @@ export default function PatientInfo({ user, thePatient, loading = false }) {
     setDisplayMain(true);
   };
 
+  const openDoctorPrint = () => {
+    setActivePatient(patient || thePatient || null);
+    navigate("/print");
+  };
+
   React.useEffect(() => {
     const rawMeds = thePatient?.recommendedMed ?? '';
     let meds = [];
@@ -425,12 +430,20 @@ export default function PatientInfo({ user, thePatient, loading = false }) {
                     <div className="d-flex gap-1 align-content-center">
                       <div className="col-16">
                         <button
-                          className={`btn-sm btn  w-100 fs-7 ${
-                            mainButton === 'hospital' ? 'btn-warning' : 'btn-outline-primary'
-                          }`}
+                          className={`btn-sm btn w-100 fs-7 ${mainButton === 'hospital' ? 'btn-warning' : 'btn-outline-primary'
+                            }`}
                           onClick={() => changeMainDisplay('hospital')}
                         >
                           Hospital
+                        </button>
+                      </div>
+
+                      <div className="col-16">
+                        <button
+                          className="btn-sm btn btn-outline-success w-100 fs-7"
+                          onClick={openDoctorPrint}
+                        >
+                          Doctor Form
                         </button>
                       </div>
                     </div>

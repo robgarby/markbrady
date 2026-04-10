@@ -1,10 +1,7 @@
-// src/VSComponents/SideButtonBoxes/Medications/editMedications.component.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useGlobalContext } from "../../../Context/global.context.jsx"; // ✅ category context
+import { useGlobalContext } from "../../../Context/global.context.jsx";
 
 const MEDS_ENDPOINT = "https://gdmt.ca/PHP/medication.php";
-
-// Endpoint for saving + propagating
 const UPDATE_ENDPOINT = "https://gdmt.ca/PHP/database.php";
 const UPDATE_SCRIPT = "updateMedicationAndPropagate";
 
@@ -22,7 +19,6 @@ const formatPoints = (v) => {
 };
 
 const MedsAdminPanel = (props) => {
-  // ✅ allow either prop-driven categories OR context-driven categories
   const ctx = useGlobalContext?.() || {};
 
   const categoriesFromProps = props?.categories;
@@ -42,18 +38,16 @@ const MedsAdminPanel = (props) => {
     return pickFirstArray(categoriesFromProps, categoriesFromCtx) || [];
   }, [categoriesFromProps, categoriesFromCtx]);
 
-  // local state only (no context) — meds loaded from backend
   const [medsArray, setMedsArray] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [rebuildingPoints, setRebuildingPoints] = useState(false);
   const [msg, setMsg] = useState("");
   const [filter, setFilter] = useState("");
-  const [medFilter, setMedFilter] = useState("ALL"); // ALL | USED | NOTUSED
+  const [medFilter, setMedFilter] = useState("ALL"); // ALL | USED | NOTASSIGNED
 
-  // React 18 StrictMode runs effects twice in dev — this prevents double-fetch + flicker
   const didInitRef = useRef(false);
 
-  // ---------- Modal state ----------
   const [showModal, setShowModal] = useState(false);
   const [editForm, setEditForm] = useState({
     ID: "",
@@ -67,7 +61,6 @@ const MedsAdminPanel = (props) => {
   const [origEdit, setOrigEdit] = useState(null);
 
   const deriveCatFromExisting = (snap) => {
-    // if catID missing but medication_cat exists, try to find matching category
     if (snap.catID) return snap;
 
     const label = String(snap.medication_cat ?? "").trim().toLowerCase();
@@ -84,7 +77,6 @@ const MedsAdminPanel = (props) => {
     return {
       ...snap,
       catID: getCatId(match),
-      // keep whatever is already displayed in meds table unless blank
       medication_cat: snap.medication_cat || getCatLabel(match),
       medPoints: Number(snap.medPoints ?? getCatPoints(match) ?? 0),
     };
@@ -114,7 +106,6 @@ const MedsAdminPanel = (props) => {
     setOrigEdit(null);
   };
 
-  // ---------- Load meds on mount ----------
   useEffect(() => {
     if (didInitRef.current) return;
     didInitRef.current = true;
@@ -171,17 +162,60 @@ const MedsAdminPanel = (props) => {
     };
   }, []);
 
-  // ---------- Toggle Used (local optimistic + backend) ----------
+  const rebuildPatientPoints = async () => {
+    if (rebuildingPoints) return;
+
+    setRebuildingPoints(true);
+    setMsg("Re-calculating patient medication points...");
+
+    try {
+      const res = await fetch(MEDS_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          script: "rebuildPatientMedicationPoints",
+          patientDB: "Patient",
+        }),
+      });
+
+      const text = await res.text();
+
+      let payload = null;
+      try {
+        payload = JSON.parse(text);
+      } catch {
+        throw new Error("Backend did not return valid JSON.");
+      }
+
+      if (!res.ok || payload?.success === false) {
+        throw new Error(payload?.error || "Rebuild failed.");
+      }
+
+      setMsg(
+        `Re-calculation complete. Updated ${payload?.updated ?? 0} patients.` +
+        ((payload?.errors?.length ?? 0) > 0
+          ? ` ${payload.errors.length} errors found.`
+          : "")
+      );
+
+      console.log("rebuildPatientMedicationPoints result:", payload);
+    } catch (e) {
+      console.error("rebuildPatientMedicationPoints failed:", e);
+      setMsg("Failed to re-calculate patient points: " + (e?.message || "Unknown error"));
+    } finally {
+      setRebuildingPoints(false);
+    }
+  };
+
   const processUsed = async (din, currentValue) => {
     const cleanDin = String(din ?? "").trim();
     if (!cleanDin) return;
 
     const current = String(currentValue ?? "No").toLowerCase();
-    const nextValue = current === "yes" ? "No" : "Yes"; // what you're switching TO
+    const nextValue = current === "yes" ? "No" : "Yes";
 
     const prev = medsArray;
 
-    // optimistic local update (set to nextValue)
     setMedsArray((curr) =>
       (Array.isArray(curr) ? curr : []).map((row) => {
         const rowDin = String(row.DIN ?? row.medication_din ?? "").trim();
@@ -197,8 +231,8 @@ const MedsAdminPanel = (props) => {
         body: JSON.stringify({
           script: "toggleMedicationUsed",
           DIN: cleanDin,
-          currentValue: currentValue, // what it WAS
-          nextValue: nextValue, // what it should become
+          currentValue: currentValue,
+          nextValue: nextValue,
         }),
       });
 
@@ -206,7 +240,7 @@ const MedsAdminPanel = (props) => {
       let payload = null;
       try {
         payload = JSON.parse(text);
-      } catch { }
+      } catch {}
 
       if (!res.ok || (payload && payload.success === false)) {
         throw new Error((payload && payload.error) || "Update failed");
@@ -214,11 +248,10 @@ const MedsAdminPanel = (props) => {
     } catch (e) {
       console.error("Toggle medicationUsed error:", e);
       setMsg("Update failed: " + (e?.message || "Unknown error"));
-      setMedsArray(prev); // rollback
+      setMedsArray(prev);
     }
   };
 
-  // ---------- Category dropdown (sets catID + medPoints) ----------
   const handleCategoryChange = (catIdValue) => {
     const catID = String(catIdValue ?? "");
     const found = (Array.isArray(catsArray) ? catsArray : []).find(
@@ -226,7 +259,6 @@ const MedsAdminPanel = (props) => {
     );
 
     if (!found) {
-      // user picked blank
       setEditForm((s) => ({
         ...s,
         catID: "",
@@ -239,12 +271,11 @@ const MedsAdminPanel = (props) => {
     setEditForm((s) => ({
       ...s,
       catID,
-      medication_cat: getCatLabel(found), // what you store on the medication row
-      medPoints: getCatPoints(found), // ✅ auto from category points
+      medication_cat: getCatLabel(found),
+      medPoints: getCatPoints(found),
     }));
   };
 
-  // ---------- SAVE (local optimistic + SEND-AND-FORGET backend) ----------
   const saveEdit = () => {
     if (!editForm.ID) return;
 
@@ -266,19 +297,18 @@ const MedsAdminPanel = (props) => {
     setSaving(true);
     setMsg("");
 
-    // optimistic local update (NO waiting)
     setMedsArray((curr) =>
       (Array.isArray(curr) ? curr : []).map((row) =>
         String(row.ID) === String(editForm.ID)
           ? {
-            ...row,
-            medication: editForm.medication,
-            medication_brand: editForm.medication_brand,
-            medication_cat: editForm.medication_cat,
-            medication_dose: editForm.medication_dose,
-            catID: editForm.catID,
-            medPoints: editForm.medPoints,
-          }
+              ...row,
+              medication: editForm.medication,
+              medication_brand: editForm.medication_brand,
+              medication_cat: editForm.medication_cat,
+              medication_dose: editForm.medication_dose,
+              catID: editForm.catID,
+              medPoints: editForm.medPoints,
+            }
           : row
       )
     );
@@ -296,14 +326,11 @@ const MedsAdminPanel = (props) => {
       propagate: true,
     };
 
-
-    // close immediately (send & forget)
     setShowModal(false);
     setOrigEdit(null);
     setSaving(false);
     setMsg("Saved locally. Update sent to server (check console for payload).");
 
-    // fire request in background (log response, but do not block UI)
     try {
       fetch(UPDATE_ENDPOINT, {
         method: "POST",
@@ -316,7 +343,7 @@ const MedsAdminPanel = (props) => {
           let payload = null;
           try {
             payload = JSON.parse(text);
-          } catch { }
+          } catch {}
 
           console.log("parsed payload:", payload);
 
@@ -330,6 +357,11 @@ const MedsAdminPanel = (props) => {
     } catch (e) {
       console.error("Save error (sync):", e);
     }
+  };
+
+  const isNotAssigned = (m) => {
+    const medicationCat = String(m.medication_cat ?? "").trim().toLowerCase();
+    return medicationCat === "unknown";
   };
 
   const baseShown = useMemo(() => {
@@ -348,21 +380,33 @@ const MedsAdminPanel = (props) => {
 
   const counts = useMemo(() => {
     let used = 0;
+    let notAssigned = 0;
+
     for (const m of baseShown) {
       const isUsed = String(m.medicationUsed ?? m.medication_used ?? "").toLowerCase() === "yes";
       if (isUsed) used++;
+
+      if (isNotAssigned(m)) notAssigned++;
     }
+
     const all = baseShown.length;
-    return { all, used, notUsed: all - used };
+    return { all, used, notAssigned };
   }, [baseShown]);
 
   const shown = useMemo(() => {
     if (medFilter === "ALL") return baseShown;
 
-    return baseShown.filter((m) => {
-      const used = String(m.medicationUsed ?? m.medication_used ?? "").toLowerCase() === "yes";
-      return medFilter === "USED" ? used : !used;
-    });
+    if (medFilter === "USED") {
+      return baseShown.filter((m) => {
+        return String(m.medicationUsed ?? m.medication_used ?? "").toLowerCase() === "yes";
+      });
+    }
+
+    if (medFilter === "NOTASSIGNED") {
+      return baseShown.filter((m) => isNotAssigned(m));
+    }
+
+    return baseShown;
   }, [baseShown, medFilter]);
 
   return (
@@ -372,8 +416,17 @@ const MedsAdminPanel = (props) => {
           <div className="alert alert-secondary py-2 mb-2 d-flex align-items-center justify-content-between">
             <div className="fw-bold">Medication Admin</div>
 
-            <div className="d-flex gap-2 align-items-center col-24 jsutify-content-end">
-              <div className="btn-group flex-grow-1" role="group" aria-label="Used filter">
+            <div className="d-flex gap-2 align-items-center col-30 justify-content-end">
+              <button
+                className="btn btn-sm btn-success px-5"
+                type="button"
+                onClick={rebuildPatientPoints}
+                disabled={loading || rebuildingPoints}
+              >
+                {rebuildingPoints ? "RE-CALCULATING..." : "RE-CALCULATE POINTS"}
+              </button>
+
+              <div className="btn-group flex-grow-1" role="group" aria-label="Medication filter">
                 <button
                   className={`btn btn-sm col-15 ${medFilter === "ALL" ? "btn-primary" : "btn-outline-primary"}`}
                   onClick={() => setMedFilter("ALL")}
@@ -389,11 +442,11 @@ const MedsAdminPanel = (props) => {
                   Used ({counts.used})
                 </button>
                 <button
-                  className={`btn btn-sm col-18 ${medFilter === "NOTUSED" ? "btn-primary" : "btn-outline-primary"}`}
-                  onClick={() => setMedFilter("NOTUSED")}
+                  className={`btn btn-sm col-18 ${medFilter === "NOTASSIGNED" ? "btn-primary" : "btn-outline-primary"}`}
+                  onClick={() => setMedFilter("NOTASSIGNED")}
                   type="button"
                 >
-                  Not Used ({counts.notUsed})
+                  Not Assigned ({counts.notAssigned})
                 </button>
               </div>
 
@@ -419,15 +472,12 @@ const MedsAdminPanel = (props) => {
 
                 const renderColumn = (items) => (
                   <div className="border rounded p-2">
-                    {/* Header */}
                     <div className="d-flex fw-bold small border-bottom pb-1 mb-2 align-items-center">
                       <div className="col-19">Medication</div>
                       <div className="col-5">DIN</div>
                       <div className="col-9">Category</div>
                       <div className="col-4">Dose</div>
                       <div className="col-3 text-center">Pts</div>
-
-                      {/* ✅ right side has 2 separate columns */}
                       <div className="flex-grow-1 d-flex gap-1">
                         <div className="w-50 text-end pe-2">Used</div>
                         <div className="w-50 text-end pe-2">Edit</div>
@@ -475,13 +525,10 @@ const MedsAdminPanel = (props) => {
                                 {formatPoints(pts)}
                               </div>
 
-                              {/* ✅ Two separate columns (Used | Edit) */}
                               <div className="flex-grow-1 d-flex gap-1 align-items-center">
-                                {/* USED column */}
                                 <div className="w-50 d-flex justify-content-end">
                                   <span
-                                    className={`px-3 text-center ${usedYes ? "bg-success" : "bg-secondary"
-                                      }`}
+                                    className={`px-3 text-center ${usedYes ? "bg-success" : "bg-secondary"}`}
                                     style={{
                                       height: "26px",
                                       lineHeight: "26px",
@@ -505,7 +552,6 @@ const MedsAdminPanel = (props) => {
                                   </span>
                                 </div>
 
-                                {/* EDIT column */}
                                 <div className="w-50 d-flex justify-content-end">
                                   <button
                                     className="btn btn-sm btn-outline-warning"
@@ -531,7 +577,6 @@ const MedsAdminPanel = (props) => {
                       })
                     )}
                   </div>
-
                 );
 
                 return (
@@ -546,7 +591,6 @@ const MedsAdminPanel = (props) => {
         </div>
       </div>
 
-      {/* ---------- Modal ---------- */}
       <div
         className={`modal fade ${showModal ? "show d-block" : ""}`}
         tabIndex="-1"
@@ -670,7 +714,6 @@ const MedsAdminPanel = (props) => {
         </div>
       </div>
 
-      {/* backdrop */}
       {showModal ? <div className="modal-backdrop fade show" onClick={closeModal} /> : null}
     </div>
   );

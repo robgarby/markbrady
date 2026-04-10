@@ -1089,6 +1089,143 @@ if (($data['script'] ?? '') === 'saveUser') {
     exit;
 }
 
+if (($data['script'] ?? '') === 'recalculateSinglePatientPoints') {
+    $patientTable = !empty($data['patientDB']) && is_string($data['patientDB'])
+        ? trim($data['patientDB'])
+        : 'Patient';
+
+    $allowedPatientTables = ['Patient', 'Patient_2026'];
+    if (!in_array($patientTable, $allowedPatientTables, true)) {
+        echo json_encode([
+            'success' => false,
+            'error' => 'Invalid patient table'
+        ]);
+        exit;
+    }
+
+    $patientId = intval($data['patientId'] ?? 0);
+    if ($patientId <= 0) {
+        echo json_encode([
+            'success' => false,
+            'error' => 'Invalid patient ID'
+        ]);
+        exit;
+    }
+
+    $stmtPatient = $conn->prepare("SELECT id, healthNumber, medsData FROM `$patientTable` WHERE id = ? LIMIT 1");
+    if (!$stmtPatient) {
+        echo json_encode([
+            'success' => false,
+            'error' => 'Prepare failed for patient lookup',
+            'details' => $conn->error
+        ]);
+        exit;
+    }
+
+    $stmtPatient->bind_param("i", $patientId);
+    $stmtPatient->execute();
+    $resPatient = $stmtPatient->get_result();
+    $patient = $resPatient ? $resPatient->fetch_assoc() : null;
+    $stmtPatient->close();
+
+    if (!$patient) {
+        echo json_encode([
+            'success' => false,
+            'error' => 'Patient not found'
+        ]);
+        exit;
+    }
+
+    $medsData = trim((string) ($patient['medsData'] ?? ''));
+    $healthNumber = trim((string) ($patient['healthNumber'] ?? ''));
+
+    $stmtDin = $conn->prepare("
+        SELECT COALESCE(c.catPoints, m.medPoints, 0) AS pts
+        FROM medications_2026 m
+        LEFT JOIN medCats2026 c
+            ON c.ID = CAST(m.catID AS UNSIGNED)
+        WHERE m.DIN = ?
+        LIMIT 1
+    ");
+
+    if (!$stmtDin) {
+        echo json_encode([
+            'success' => false,
+            'error' => 'Prepare failed for DIN lookup',
+            'details' => $conn->error
+        ]);
+        exit;
+    }
+
+    $totalPoints = 0;
+    $dinArray = [];
+
+    if ($medsData !== '') {
+        $dinArrayRaw = explode(',', $medsData);
+
+        foreach ($dinArrayRaw as $din) {
+            $cleanDin = preg_replace('/\D+/', '', (string) $din);
+            if ($cleanDin !== '') {
+                $dinArray[] = $cleanDin;
+            }
+        }
+
+        $dinArray = array_values(array_unique($dinArray));
+
+        foreach ($dinArray as $din) {
+            $stmtDin->bind_param("s", $din);
+
+            if (!$stmtDin->execute()) {
+                continue;
+            }
+
+            $resDin = $stmtDin->get_result();
+            if ($resDin && ($rowDin = $resDin->fetch_assoc())) {
+                $totalPoints += (int) ($rowDin['pts'] ?? 0);
+            }
+
+            if ($resDin) {
+                $resDin->free();
+            }
+        }
+    }
+
+    $stmtDin->close();
+
+    $stmtUpdate = $conn->prepare("UPDATE `$patientTable` SET totalPoints = ? WHERE id = ?");
+    if (!$stmtUpdate) {
+        echo json_encode([
+            'success' => false,
+            'error' => 'Prepare failed for patient update',
+            'details' => $conn->error
+        ]);
+        exit;
+    }
+
+    $stmtUpdate->bind_param("ii", $totalPoints, $patientId);
+
+    if (!$stmtUpdate->execute()) {
+        echo json_encode([
+            'success' => false,
+            'error' => 'Failed to update patient points',
+            'details' => $stmtUpdate->error
+        ]);
+        $stmtUpdate->close();
+        exit;
+    }
+
+    $stmtUpdate->close();
+
+    echo json_encode([
+        'success' => true,
+        'patientId' => $patientId,
+        'healthNumber' => $healthNumber,
+        'dinCount' => count($dinArray),
+        'totalPoints' => $totalPoints
+    ]);
+    exit;
+}
+
 
 
 // === In special.php ===

@@ -1,4 +1,3 @@
-// src/components/.../results.component.jsx
 import React, { useMemo, useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useGlobalContext } from "../../../Context/global.context";
@@ -20,12 +19,11 @@ const ResultsPage = () => {
         setUser(userT);
       }
       if (!userT) {
-        // If no user is found, redirect to sign-in page
         navigate('/signin');
         return;
       }
     });
-  }, []);
+  }, [navigate]);
 
   const {
     patientSearch,
@@ -39,12 +37,13 @@ const ResultsPage = () => {
   const {
     mode = "",
     query = "",
-    noteQuery = "",
-    providerQuery = "",
-    appointmentDate = "",
     results = [],
-    didSearch = false,
   } = patientSearch || {};
+
+  const [sortConfig, setSortConfig] = useState({
+    key: "totalPoints",
+    direction: "desc",
+  });
 
   const title = useMemo(() => {
     switch (mode) {
@@ -61,24 +60,21 @@ const ResultsPage = () => {
     }
   }, [mode]);
 
-  // Masked demo label: "Patient ####" using first 4 digits of healthNumber
   const demoPatientLabel = (healthNumber) => {
     const digits = String(healthNumber || "").replace(/\D/g, "");
     const first4 = digits.slice(0, 4) || "XXX";
     return `Patient ${first4}`;
   };
 
-  // 🔒 Mask the HCN if private: replace the 4 middle digits with XXXX (keep first 3 and last 3)
   const maskHealthNumber = (hcn, doMask) => {
     const digits = String(hcn || "").replace(/\D/g, "");
     if (!doMask) return hcn || "—";
     if (digits.length < 10) return hcn || "—";
     const first3 = digits.slice(0, 3);
-    const last3 = digits.slice(7, 10); // indices 3..6 replaced by XXXX
+    const last3 = digits.slice(7, 10);
     return `${first3} XXX ${last3}`;
   };
 
-  // Compute a readable real name from record
   const realPatientName = (p) => {
     const raw =
       (p && p.clientName) ||
@@ -132,7 +128,8 @@ const ResultsPage = () => {
         body: JSON.stringify({
           script: "getPatientById",
           patientID: Number(activeClient.id),
-          patientDB: user?.patientTable || "Patient", historyDB: user?.historyTable || "Patient_History"
+          patientDB: user?.patientTable || "Patient",
+          historyDB: user?.historyTable || "Patient_History"
         }),
       });
 
@@ -156,11 +153,10 @@ const ResultsPage = () => {
   const isPrivate = Boolean(privateMode);
 
   const copyToClipboard = async (value) => {
-    const text = String(value || "").replace(/\s+/g, ""); // strip spaces
+    const text = String(value || "").replace(/\s+/g, "");
     try {
       await navigator.clipboard.writeText(text);
     } catch (_) {
-      // Fallback for older browsers
       const ta = document.createElement("textarea");
       ta.value = text;
       document.body.appendChild(ta);
@@ -170,12 +166,10 @@ const ResultsPage = () => {
     }
   };
 
-  // --- minimal UI feedback state for "Copied" ---
   const [copiedKey, setCopiedKey] = useState(null);
   const copyTimerRef = useRef(null);
 
   const handleCopyClick = (rowKey, value) => {
-    // Flip UI immediately, then copy, then auto-revert
     setCopiedKey(rowKey);
     if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current);
     copyToClipboard(value).finally(() => {
@@ -195,7 +189,6 @@ const ResultsPage = () => {
       .map((s) => s.trim())
       .filter(Boolean);
 
-  // --- meds master name lookup (bold recommended meds that exist in master meds list) ---
   const normMed = (s) => String(s || "").trim().toLowerCase();
 
   const medNameSet = useMemo(() => {
@@ -209,12 +202,99 @@ const ResultsPage = () => {
     return set;
   }, [medsArray]);
 
+  const requestSort = (key) => {
+    setSortConfig((current) => {
+      if (current.key === key) {
+        return {
+          key,
+          direction: current.direction === "asc" ? "desc" : "asc",
+        };
+      }
+      return {
+        key,
+        direction: key === "totalPoints" ? "desc" : "asc",
+      };
+    });
+  };
+
+  const getSortIndicator = (key) => {
+    if (sortConfig.key !== key) return "";
+    return sortConfig.direction === "asc" ? " ▲" : " ▼";
+  };
+
+  const sortedResults = useMemo(() => {
+    const list = Array.isArray(results) ? [...results] : [];
+
+    const getRecommendedMedText = (p) =>
+      splitCsv(p?.recommendedMed).join(", ").toLowerCase();
+
+    list.sort((a, b) => {
+      let aVal;
+      let bVal;
+
+      switch (sortConfig.key) {
+        case "name":
+          aVal = realPatientName(a).toLowerCase();
+          bVal = realPatientName(b).toLowerCase();
+          break;
+        case "healthNumber":
+          aVal = String(a?.healthNumber ?? "").replace(/\D/g, "");
+          bVal = String(b?.healthNumber ?? "").replace(/\D/g, "");
+          break;
+        case "age":
+          aVal = Number(calculateAge(a?.dateOfBirth)) || -1;
+          bVal = Number(calculateAge(b?.dateOfBirth)) || -1;
+          break;
+        case "totalPoints":
+          aVal = Number(a?.totalPoints ?? -1);
+          bVal = Number(b?.totalPoints ?? -1);
+          break;
+        case "labCount":
+          aVal = Number(a?.labCount ?? -1);
+          bVal = Number(b?.labCount ?? -1);
+          break;
+        case "recommendedMed":
+          aVal = getRecommendedMedText(a);
+          bVal = getRecommendedMedText(b);
+          break;
+        case "privateNote":
+          aVal = String(a?.privateNote ?? "").toLowerCase();
+          bVal = String(b?.privateNote ?? "").toLowerCase();
+          break;
+        default:
+          aVal = Number(a?.totalPoints ?? -1);
+          bVal = Number(b?.totalPoints ?? -1);
+          break;
+      }
+
+      if (typeof aVal === "number" && typeof bVal === "number") {
+        return sortConfig.direction === "asc" ? aVal - bVal : bVal - aVal;
+      }
+
+      if (aVal < bVal) return sortConfig.direction === "asc" ? -1 : 1;
+      if (aVal > bVal) return sortConfig.direction === "asc" ? 1 : -1;
+      return 0;
+    });
+
+    return list;
+  }, [results, sortConfig, medsArray]);
+
+  const SortHeader = ({ label, sortKey, className = "" }) => (
+    <div
+      className={`${className} fw-bold`}
+      onClick={() => requestSort(sortKey)}
+      style={{ cursor: "pointer", userSelect: "none" }}
+      title={`Sort by ${label}`}
+    >
+      {label}{getSortIndicator(sortKey)}
+    </div>
+  );
+
   return (
     <div className="container-fluid d-flex flex-column" style={{ height: "100vh" }}>
-      {/* Top bar */}
       <div className="d-flex align-items-center justify-content-between py-2">
         <h5 className="m-0">
-          {title} <span className="text-muted px-2 fs-7">[{(results || []).length}] Records</span>
+          {title} <span className="text-muted px-2 fs-7">[{(sortedResults || []).length}] Records</span>
         </h5>
         <div className="d-flex gap-2">
           <button className="btn btn-sm btn-outline-primary" onClick={backToPatient}>
@@ -226,104 +306,109 @@ const ResultsPage = () => {
         </div>
       </div>
 
-      {/* Scrollable results list only */}
       <div className="border rounded bg-white p-2 overflow-auto" style={{ flexGrow: 1, minHeight: 0 }}>
-        {!results || results.length === 0 ? (
+        {!sortedResults || sortedResults.length === 0 ? (
           <div className="text-muted">No results.</div>
         ) : (
-          results.map((p) => {
-            // 🔒 Make rowKey a stable STRING to avoid type mismatches
-            const rowKey = String(
-              (p && (p.id ?? p.healthNumber)) ??
-              `${(p && p.clientName) || "Unknown"}-${(p && p.dateOfBirth) || "Unknown"}`
-            );
+          <>
+            <div className="border-bottom py-2 d-flex align-items-center fs-7 bg-light sticky-top">
+              <SortHeader label="Name" sortKey="name" className="col-12" />
+              <SortHeader label="HCN" sortKey="healthNumber" className="col-5" />
+              <SortHeader label="Age" sortKey="age" className="col-2" />
+              <SortHeader label="Pts" sortKey="totalPoints" className="col-2" />
+              <SortHeader label="Labs" sortKey="labCount" className="col-2" />
+              <SortHeader label="Recommended" sortKey="recommendedMed" className="col-6" />
+              <SortHeader label="Private Note" sortKey="privateNote" className="flex-grow-1" />
+            </div>
 
-            const hcn = (p && p.healthNumber) || "";
-            const maskedHcn = maskHealthNumber(hcn, isPrivate);
-            const canCopy = !!hcn && hcn !== "-";
-            const isCopied = copiedKey === rowKey;
-
-            // --- build the recommendedMed display: bold if it exists in medsArray master list
-            const medItems = splitCsv(p?.recommendedMed);
-            const renderedMeds =
-              medItems.length === 0 ? (
-                "—"
-              ) : (
-                medItems.map((m, i) => {
-                  const matched = medNameSet.has(normMed(m));
-                  return (
-                    <span
-                      key={`${rowKey}-med-${i}`}
-                      className={matched ? "fw-bold text-success" : undefined}
-                    >
-                      {m}
-                      {i < medItems.length - 1 ? ", " : ""}
-                    </span>
-                  );
-                })
+            {sortedResults.map((p) => {
+              const rowKey = String(
+                (p && (p.id ?? p.healthNumber)) ??
+                `${(p && p.clientName) || "Unknown"}-${(p && p.dateOfBirth) || "Unknown"}`
               );
 
-            return (
-              <div
-                key={rowKey}
-                className="border-bottom py-2 d-flex align-items-center fs-7 results-row"
-                onMouseEnter={() => setHoveredKey(rowKey)}
-                onMouseLeave={() => setHoveredKey(null)}
-                style={{
-                  backgroundColor: hoveredKey === rowKey ? "#dfe9f0ff" : undefined,
-                  transition: "background-color 120ms ease",
-                  cursor: "pointer",
-                }}
-              >
-                <div className="col-12 fw-bold" onClick={() => editClient(p)}>
-                  {/* 👇 Name obeys privateMode */}
-                  {isPrivate ? demoPatientLabel(p.healthNumber) : realPatientName(p)}
-                </div>
+              const hcn = (p && p.healthNumber) || "";
+              const maskedHcn = maskHealthNumber(hcn, isPrivate);
+              const canCopy = !!hcn && hcn !== "-";
+              const isCopied = copiedKey === rowKey;
 
-                <div className="col-5 d-flex align-items-center">
-                  <button
-                    type="button"
-                    className={`btn btn-sm col-40 ${isCopied ? "btn-success text-white" : "btn-outline-warning"}`}
-                    disabled={!canCopy}
-                    onClick={() => canCopy && handleCopyClick(rowKey, hcn)}
-                    aria-label="Copy health number"
-                    title={canCopy ? "Copy health number" : "No health number to copy"}
-                  >
-                    {isCopied
-                      ? "Copied"
-                      : mode === "identity"
-                        ? highlight(maskedHcn || "—", query)
-                        : (maskedHcn || "—")}
-                  </button>
-                </div>
+              const medItems = splitCsv(p?.recommendedMed);
+              const renderedMeds =
+                medItems.length === 0 ? (
+                  "—"
+                ) : (
+                  medItems.map((m, i) => {
+                    const matched = medNameSet.has(normMed(m));
+                    return (
+                      <span
+                        key={`${rowKey}-med-${i}`}
+                        className={matched ? "fw-bold text-success" : undefined}
+                      >
+                        {m}
+                        {i < medItems.length - 1 ? ", " : ""}
+                      </span>
+                    );
+                  })
+                );
 
-                <div className="col-2" onClick={() => editClient(p)}>{calculateAge(p.dateOfBirth)}</div>
-                <div className="col-2" onClick={() => editClient(p)}>
-                  {p.totalPoints != null ? (
-                    <span className="text-dark">
-                      {p.totalPoints} pts
-                    </span>
-                  ) : (
-                    "—"
-                  )}
-                </div>
-                <div className="col-2" onClick={() => editClient(p)}>
-                  {p.totalPoints != null ? (
-                    <span className="text-dark">
-                      {p.labCount} Labs
-                    </span>
-                  ) : (
-                    "—"
-                  )}
-                </div>
+              return (
+                <div
+                  key={rowKey}
+                  className="border-bottom py-2 d-flex align-items-center fs-7 results-row"
+                  onMouseEnter={() => setHoveredKey(rowKey)}
+                  onMouseLeave={() => setHoveredKey(null)}
+                  style={{
+                    backgroundColor: hoveredKey === rowKey ? "#dfe9f0ff" : undefined,
+                    transition: "background-color 120ms ease",
+                    cursor: "pointer",
+                  }}
+                >
+                  <div className="col-12 fw-bold" onClick={() => editClient(p)}>
+                    {isPrivate ? demoPatientLabel(p.healthNumber) : realPatientName(p)}
+                  </div>
 
-                {/* recommendedMed column */}
-                <div className="col-6" onClick={() => editClient(p)}>{renderedMeds}</div>
+                  <div className="col-5 d-flex align-items-center">
+                    <button
+                      type="button"
+                      className={`btn btn-sm col-40 ${isCopied ? "btn-success text-white" : "btn-outline-warning"}`}
+                      disabled={!canCopy}
+                      onClick={() => canCopy && handleCopyClick(rowKey, hcn)}
+                      aria-label="Copy health number"
+                      title={canCopy ? "Copy health number" : "No health number to copy"}
+                    >
+                      {isCopied
+                        ? "Copied"
+                        : mode === "identity"
+                          ? highlight(maskedHcn || "—", query)
+                          : (maskedHcn || "—")}
+                    </button>
+                  </div>
 
-                <div className="flex-grow-1" onClick={() => editClient(p)}>{p.privateNote || "—"}</div>
-              </div>
-            );
-          })
+                  <div className="col-2" onClick={() => editClient(p)}>{calculateAge(p.dateOfBirth)}</div>
+
+                  <div className="col-2" onClick={() => editClient(p)}>
+                    {p.totalPoints != null ? (
+                      <span className="text-dark">{p.totalPoints} pts</span>
+                    ) : (
+                      "—"
+                    )}
+                  </div>
+
+                  <div className="col-2" onClick={() => editClient(p)}>
+                    {p.labCount != null ? (
+                      <span className="text-dark">{p.labCount} Labs</span>
+                    ) : (
+                      "—"
+                    )}
+                  </div>
+
+                  <div className="col-6" onClick={() => editClient(p)}>{renderedMeds}</div>
+
+                  <div className="flex-grow-1" onClick={() => editClient(p)}>{p.privateNote || "—"}</div>
+                </div>
+              );
+            })}
+          </>
         )}
       </div>
     </div>

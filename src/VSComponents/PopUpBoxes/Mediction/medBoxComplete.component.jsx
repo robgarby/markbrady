@@ -17,6 +17,8 @@ const readMasterCat = (m) =>
   String(m?.medication_cat ?? m?.category ?? "").trim();
 const readMasterBrand = (m) =>
   String(m?.medication_brand ?? m?.brand ?? "").trim();
+const readMasterPoints = (m) =>
+  Number(m?.medPoints ?? m?.points ?? m?.catPoints ?? 0);
 
 const parseCSV = (str) =>
   String(str || "")
@@ -62,7 +64,6 @@ const MedBoxComplete = ({ user }) => {
     return m;
   }, [master]);
 
-  // Patient medsData is DIN CSV
   const [medDins, setMedDins] = useState(() => parseCSV(activePatient?.medsData));
   const lastPidRef = useRef(activePatient?.id ?? null);
 
@@ -78,10 +79,7 @@ const MedBoxComplete = ({ user }) => {
     return (medDins || []).map((din) => {
       const dinStr = String(din).trim();
 
-      // Main lookup should be by DIN
       let m = masterByDIN.get(dinStr);
-
-      // Fallback in case old records stored ID instead of DIN
       if (!m) m = masterById.get(dinStr);
 
       return {
@@ -91,15 +89,21 @@ const MedBoxComplete = ({ user }) => {
         category: readMasterCat(m) || "unknown",
         dose: readMasterDose(m) || "",
         brand: readMasterBrand(m) || "unknown",
+        pts: readMasterPoints(m) || 0,
       };
     });
   }, [medDins, masterByDIN, masterById]);
+
+  const totalPts = useMemo(() => {
+    return (rows || []).reduce((sum, r) => sum + Number(r.pts ?? 0), 0);
+  }, [rows]);
 
   const nameRef = useRef(null);
   const [nameQ, setNameQ] = useState("");
   const [doseQ, setDoseQ] = useState("");
   const [catQ, setCatQ] = useState("");
   const [saving, setSaving] = useState(false);
+  const [recalculating, setRecalculating] = useState(false);
   const [msg, setMsg] = useState("");
 
   const medNameOptions = useMemo(
@@ -136,7 +140,7 @@ const MedBoxComplete = ({ user }) => {
         patientId,
         medId: readMasterId(auditMed) || "",
         din: readMasterDIN(auditMed) || "",
-        medIdsCSV: dinsCSV, // keeping field name in case PHP already expects it
+        medIdsCSV: dinsCSV,
         medsData: dinsCSV,
         patientDB: user?.patientTable || "Patient",
         historyDB: user?.historyTable || "Patient_History",
@@ -255,6 +259,55 @@ const MedBoxComplete = ({ user }) => {
     }).catch(() => {});
   };
 
+  const recalculateCurrentPatientPoints = async () => {
+    const patientId = Number(activePatient?.id ?? 0);
+    if (!patientId || recalculating) return;
+
+    setRecalculating(true);
+    setMsg("Re-calculating points...");
+
+    try {
+      const res = await fetch(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          script: "recalculateSinglePatientPoints",
+          patientId,
+          patientDB: user?.patientTable || "Patient",
+        }),
+      });
+
+      const text = await res.text();
+
+      let payload = null;
+      try {
+        payload = JSON.parse(text);
+      } catch {
+        throw new Error("Backend did not return valid JSON.");
+      }
+
+      if (!res.ok || payload?.success === false) {
+        throw new Error(payload?.error || "Re-calculate failed.");
+      }
+
+      const rebuiltPoints = Number(payload?.totalPoints ?? 0);
+
+      if (typeof setActivePatient === "function") {
+        setActivePatient({
+          ...(activePatient || {}),
+          totalPoints: rebuiltPoints,
+        });
+      }
+
+      setMsg(`Points re-calculated: ${rebuiltPoints} Pts`);
+    } catch (e) {
+      console.error("recalculateSinglePatientPoints failed:", e);
+      setMsg(e?.message || "Failed to re-calculate points.");
+    } finally {
+      setRecalculating(false);
+    }
+  };
+
   return (
     <div
       className="d-flex flex-column fs-7"
@@ -358,31 +411,38 @@ const MedBoxComplete = ({ user }) => {
             <div key={`med_${r.din}_${idx}`} className="col-48">
               <div className="border rounded p-1 d-flex align-items-center">
                 <div
-                  className="fw-semibold text-truncate col-18 text-start ps-2"
+                  className="fw-semibold text-truncate col-16 text-start ps-2"
                   title={r.name}
                 >
                   {r.name}
                 </div>
 
                 <div
-                  className="text-muted small text-truncate col-14 text-start ps-2"
+                  className="text-muted small text-truncate col-12 text-start ps-2"
                   title={r.category}
                 >
                   {r.category}
                 </div>
 
                 <div
-                  className="small text-truncate col-8 ps-2"
+                  className="small text-truncate col-6 ps-2"
                   title={r.dose}
                 >
                   {r.dose || "-"}
                 </div>
 
                 <div
-                  className="small text-truncate col-4 ps-2"
+                  className="small text-truncate col-6 ps-2"
                   title={r.din}
                 >
                   {r.din}
+                </div>
+
+                <div
+                  className="small text-truncate col-4 ps-2 text-center"
+                  title={String(r.pts)}
+                >
+                  {r.pts}
                 </div>
 
                 <div className="col-4 text-end pe-2">
@@ -403,6 +463,22 @@ const MedBoxComplete = ({ user }) => {
           {rows.length === 0 && (
             <div className="col-48 text-muted small">
               <em>No medications yet. Add one above.</em>
+            </div>
+          )}
+
+          {rows.length > 0 && (
+            <div className="col-48">
+              <div className="border-top pt-2 mt-1 d-flex justify-content-end align-items-center gap-2 pe-2">
+                <div className="fw-bold">{totalPts} Pts</div>
+                <button
+                  type="button"
+                  className="btn btn-outline-primary btn-sm"
+                  onClick={recalculateCurrentPatientPoints}
+                  disabled={recalculating || !activePatient?.id}
+                >
+                  {recalculating ? "Re Calculating..." : "Re Calculate"}
+                </button>
+              </div>
             </div>
           )}
         </div>

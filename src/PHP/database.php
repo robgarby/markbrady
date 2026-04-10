@@ -65,9 +65,9 @@ if ($data['script'] === 'updatePatientNote') {
 }
 
 if (($data['script'] ?? '') === 'updatePatientBasicInfo') {
-     $patientID = isset($data['patientID']) ? (int)$data['patientID'] : 0;
-     $clientName = trim((string)($data['clientName'] ?? ''));
-     $healthNumberRaw = preg_replace('/\D+/', '', (string)($data['healthNumberRaw'] ?? $data['healthNumber'] ?? ''));
+     $patientID = isset($data['patientID']) ? (int) $data['patientID'] : 0;
+     $clientName = trim((string) ($data['clientName'] ?? ''));
+     $healthNumberRaw = preg_replace('/\D+/', '', (string) ($data['healthNumberRaw'] ?? $data['healthNumber'] ?? ''));
      $patientTable = $data['patientDB'] ?? 'Patient';
 
      if ($patientID <= 0) {
@@ -1003,64 +1003,49 @@ if ($data['script'] === 'updateRecommendations') {
 if ($data['script'] === 'findPatientsForMedication') {
 
      $medId = $data['medicationId'] ?? null;
-     $patientTableName = $data['patientDB'] ?? 'Patient'; // adjust if needed
+     $patientTableName = $data['patientDB'] ?? 'Patient';
+     $providerId = isset($data['providerId']) ? trim((string) $data['providerId']) : '';
 
-     // Basic guard: medicationId must exist for any path
      if ($medId === null || $medId === '') {
           http_response_code(400);
           echo json_encode(['success' => false, 'error' => 'Missing medicationId']);
           exit;
      }
 
-     // --- SPECIAL CASE: FINERENONE (simple CSV match on recommendedMed) ---
-     // if ($medId === 'Finerenonexxx') {
+     $allowedPatientTables = ['Patient', 'Patient_DEMO'];
+     if (!in_array($patientTableName, $allowedPatientTables, true)) {
+          http_response_code(400);
+          echo json_encode(['success' => false, 'error' => 'Invalid patient table']);
+          exit;
+     }
 
-     //      $sql = "SELECT * FROM `$patientTableName`
-     //            WHERE CONCAT(',', recommendedMed, ',') LIKE CONCAT('%,', ?, ',%')";
+     $providerWhere = '';
+     $providerTypes = '';
+     $providerParams = [];
 
-     //      $stmt = $conn->prepare($sql);
-     //      if (!$stmt) {
-     //           http_response_code(500);
-     //           echo json_encode(['success' => false, 'error' => 'Prepare failed', 'details' => $conn->error]);
-     //           exit;
-     //      }
+     if ($providerId !== '') {
+          $providerWhere = " AND pharmacyID = ?";
+          $providerTypes = 's';
+          $providerParams[] = $providerId;
+     }
 
-     //      $medIdStr = (string) $medId;
-     //      $stmt->bind_param('s', $medIdStr);
-
-     //      if (!$stmt->execute()) {
-     //           http_response_code(500);
-     //           echo json_encode(['success' => false, 'error' => 'Execute failed', 'details' => $stmt->error]);
-     //           $stmt->close();
-     //           exit;
-     //      }
-
-     //      $res = $stmt->get_result();
-     //      $rows = $res ? $res->fetch_all(MYSQLI_ASSOC) : [];
-
-     //      echo json_encode($rows);
-
-     //      $stmt->close();
-     //      $conn->close();
-     //      exit;
-     // }
-
-     // --- OTHER MEDICATIONS (Metformin, SGLT2i, GLP-1, ACE/ARB, Vascepa) ---
      switch ($medId) {
+
           case 'Metformin':
           case 'SGLT2 Inhibitor':
           case 'GLP-1 Receptor Agonist':
           case 'Leqvio':
-               // Thresholds
-               $nonHdlThreshold = 2.4; // starting filter: patients with nonHdl >= 2.4
-               $nativeCutoff = 5.0; // check nativeLDLC vs 5.0
 
-               // 1) Find all patients with nonHdl >= threshold
+               $nonHdlThreshold = 2.4;
+               $nativeCutoff = 5.0;
+
                $sql = "SELECT * 
-            FROM `$patientTableName`
-            WHERE nonHdl IS NOT NULL
-              AND nonHdl <> ''
-              AND COALESCE(nonHdl, 0) >= ?";
+                    FROM `$patientTableName`
+                    WHERE nonHdl IS NOT NULL
+                      AND nonHdl <> ''
+                      AND COALESCE(nonHdl, 0) >= ?"
+                    . $providerWhere;
+
                $stmt = $conn->prepare($sql);
                if (!$stmt) {
                     http_response_code(500);
@@ -1072,7 +1057,12 @@ if ($data['script'] === 'findPatientsForMedication') {
                     exit;
                }
 
-               $stmt->bind_param('d', $nonHdlThreshold);
+               if ($providerId !== '') {
+                    $stmt->bind_param('d' . $providerTypes, $nonHdlThreshold, ...$providerParams);
+               } else {
+                    $stmt->bind_param('d', $nonHdlThreshold);
+               }
+
                if (!$stmt->execute()) {
                     http_response_code(500);
                     echo json_encode([
@@ -1087,11 +1077,9 @@ if ($data['script'] === 'findPatientsForMedication') {
                $patientsResult = $stmt->get_result();
                $stmt->close();
 
-               // 2) Get all statin meds with ID, dose, and name
-               $medCategory = 'Statin';
                $sql = "SELECT ID, medication, medication_dose
-            FROM medications
-            WHERE medication_cat = ?";
+                    FROM medications
+                    WHERE medication_cat = ?";
                $stmt = $conn->prepare($sql);
                if (!$stmt) {
                     http_response_code(500);
@@ -1103,7 +1091,9 @@ if ($data['script'] === 'findPatientsForMedication') {
                     exit;
                }
 
+               $medCategory = 'Statin';
                $stmt->bind_param('s', $medCategory);
+
                if (!$stmt->execute()) {
                     http_response_code(500);
                     echo json_encode([
@@ -1117,7 +1107,6 @@ if ($data['script'] === 'findPatientsForMedication') {
 
                $res = $stmt->get_result();
 
-               // statinsById[ID] = ['name' => ..., 'dose' => floatDose]
                $statinsById = [];
                while ($med = $res->fetch_assoc()) {
                     $doseNumeric = preg_replace('/[^0-9.]/', '', $med['medication_dose']);
@@ -1131,178 +1120,184 @@ if ($data['script'] === 'findPatientsForMedication') {
                }
                $stmt->close();
 
-               // 3) Prepare an UPDATE for nativeLDLC
-               //    NOTE: adjust primary key column if not `id`
-               $updateSql = "UPDATE `$patientTableName`
-                  SET nativeLDLC = ?
-                  WHERE id = ?";
-               $updateStmt = $conn->prepare($updateSql);
-               if (!$updateStmt) {
-                    http_response_code(500);
-                    echo json_encode([
-                         'success' => false,
-                         'error' => 'Prepare failed (update nativeLDLC)',
-                         'details' => $conn->error
-                    ]);
-                    exit;
-               }
+               $eligiblePatients = [];
 
-               $rows = [];
-               $statinCount = 0;
+               while ($patient = $patientsResult->fetch_assoc()) {
+                    $patientMedIdsRaw = trim((string) ($patient['medicationId'] ?? ''));
+                    $patientMedIds = array_filter(array_map('trim', explode(',', $patientMedIdsRaw)));
 
-               while ($row = $patientsResult->fetch_assoc()) {
-                    // IMPORTANT: medsData is lower-case in your table
-                    $medsData = $row['medsData'] ?? '';
-                    $medsArray = array_filter(array_map('trim', explode(',', $medsData)));
+                    $patientStatins = [];
+                    foreach ($patientMedIds as $midRaw) {
+                         $mid = (int) $midRaw;
+                         if (isset($statinsById[$mid])) {
+                              $patientStatins[] = $statinsById[$mid];
+                         }
+                    }
 
-                    $remainingFraction = 1.0; // non-HDL on therapy = baseline * remainingFraction
-                    $hasStatin = false;
-                    $hasEzetimibe = false;
+                    if (empty($patientStatins)) {
+                         $eligiblePatients[] = $patient;
+                         continue;
+                    }
 
-                    // --- STATIN EFFECT ---
-                    foreach ($medsArray as $medIdStr) {
-                         $medId = (int) $medIdStr;
+                    $nativeLDLC = (float) ($patient['nativeLDLC'] ?? 0);
+                    $requiredDose = ($nativeLDLC >= $nativeCutoff) ? 40.0 : 20.0;
 
-                         if (isset($statinsById[$medId])) {
-                              $hasStatin = true;
-                              $statin = $statinsById[$medId];
-                              $dose = $statin['dose'];
-
-                              // Simple dose-based rule (you can refine by drug later):
-                              //  - >= 80 mg → ~50% reduction → remaining 0.5
-                              //  - >= 40 mg → ~40% reduction → remaining 0.6
-                              //  - < 40 mg  → ~30% reduction → remaining 0.7
-                              if ($dose >= 80) {
-                                   $statinRemaining = 0.5;
-                              } elseif ($dose >= 40) {
-                                   $statinRemaining = 0.6;
-                              } else {
-                                   $statinRemaining = 0.7;
-                              }
-
-                              $remainingFraction *= $statinRemaining;
-
-                              // For now, only consider the first statin found
+                    $hasStrongEnoughStatin = false;
+                    foreach ($patientStatins as $statin) {
+                         if ((float) $statin['dose'] >= $requiredDose) {
+                              $hasStrongEnoughStatin = true;
                               break;
                          }
                     }
 
-                    if ($hasStatin) {
-                         $statinCount++;
+                    if (!$hasStrongEnoughStatin) {
+                         $eligiblePatients[] = $patient;
                     }
-
-                    // --- EZETIMIBE EFFECT (example: med ID 144) ---
-                    // 20% LDL-C reduction → remaining 0.8
-                    if (in_array('144', $medsArray, true)) {
-                         $hasEzetimibe = true;
-                         $remainingFraction *= 0.8;
-                    }
-
-                    // --- CALCULATE nativeLDLC = estimated "untreated" non-HDL ---
-                    $nativeLDLC = null;
-                    if (
-                         $remainingFraction > 0
-                         && isset($row['nonHdl'])
-                         && $row['nonHdl'] !== null
-                         && $row['nonHdl'] !== ''
-                    ) {
-                         $currentNonHdl = (float) $row['nonHdl'];
-                         $nativeLDLC = $currentNonHdl / $remainingFraction;
-                    }
-
-                    // Store values on the row for JSON
-                    $row['nativeLDLC'] = $nativeLDLC;
-                    $row['hasStatin'] = $hasStatin;
-                    $row['hasEzetimibe'] = $hasEzetimibe;
-                    $row['ldlRemainingFraction'] = $remainingFraction;
-                    $row['nativeLDLC_over_5'] = ($nativeLDLC !== null && $nativeLDLC >= $nativeCutoff);
-
-                    // Update Patient.nativeLDLC in DB when we have an id + value
-                    if ($nativeLDLC !== null && isset($row['id'])) {
-                         $id = (int) $row['id'];
-                         $updateStmt->bind_param('di', $nativeLDLC, $id);
-                         $updateStmt->execute();
-                    }
-                    if ($nativeLDLC >= $nativeCutoff) {
-                         $medicationToAdd = 'Leqvio';
-                         // Read current recommendedMed (CSV string)
-                         $currentMeds = $row['recommendedMed'] ?? '';
-                         $medsArray = array_filter(array_map('trim', explode(',', $currentMeds)));
-
-                         // Check if 'Vascepa' already exists
-                         if (!in_array($medicationToAdd, $medsArray)) {
-                              // Add 'Repath' to the array
-                              $medsArray[] = $medicationToAdd;
-                              $newMeds = implode(',', $medsArray);
-
-                              // Update the database
-                              $stmt = $conn->prepare("UPDATE `$patientTableName` SET recommendedMed = ? WHERE id = ?");
-                              $stmt->bind_param('si', $newMeds, $row['id']);
-                              $stmt->execute();
-                              $stmt->close();
-
-                              // Update the row data to reflect the change
-                              $row['recommendedMed'] = $newMeds;
-                         }
-                         $rows[] = $row;
-                    }
-
                }
 
-               $updateStmt->close();
-
-               echo json_encode($rows);
+               echo json_encode(array_values($eligiblePatients));
                $conn->close();
                exit;
 
-
-
           case 'Finerenone':
-               $gfr = 25;
+
+               $gfrMin = 25;
+               $gfrMax = 60;
                $ratio = 3;
                $k = 5;
-               $a1c = 7.0;
-               $sql = "SELECT * FROM `$patientTableName` WHERE COALESCE(gfr, 0) > $gfr AND COALESCE(albuminCreatinineRatio, 0) > $ratio AND COALESCE(potassium, 0) < $k AND COALESCE(hemoglobinA1C, 0) > $a1c";
-               $result = $conn->query($sql);
-               if (!$result) {
+               $a1c = 7;
+
+               if ($providerId !== '') {
+                    $sql = "SELECT * FROM `$patientTableName`
+               WHERE COALESCE(gfr, 0) > ?
+                 AND COALESCE(gfr, 0) < ?
+                 AND COALESCE(albuminCreatinineRatio, 0) > ?
+                 AND COALESCE(potassium, 0) < ?
+                 AND COALESCE(hemoglobinA1C, 0) > ?
+                 AND providerID = ?";
+
+                    $stmt = $conn->prepare($sql);
+                    if (!$stmt) {
+                         http_response_code(500);
+                         echo json_encode([
+                              'success' => false,
+                              'error' => 'Prepare failed',
+                              'details' => $conn->error
+                         ]);
+                         exit;
+                    }
+
+                    $stmt->bind_param('ddddds', $gfrMin, $gfrMax, $ratio, $k, $a1c, $providerId);
+               } else {
+                    $sql = "SELECT * FROM `$patientTableName`
+               WHERE COALESCE(gfr, 0) > ?
+                 AND COALESCE(gfr, 0) < ?
+                 AND COALESCE(albuminCreatinineRatio, 0) > ?
+                 AND COALESCE(potassium, 0) < ?
+                 AND COALESCE(hemoglobinA1C, 0) > ?";
+
+                    $stmt = $conn->prepare($sql);
+                    if (!$stmt) {
+                         http_response_code(500);
+                         echo json_encode([
+                              'success' => false,
+                              'error' => 'Prepare failed',
+                              'details' => $conn->error
+                         ]);
+                         exit;
+                    }
+
+                    $stmt->bind_param('ddddd', $gfrMin, $gfrMax, $ratio, $k, $a1c);
+               }
+
+               if (!$stmt->execute()) {
                     http_response_code(500);
-                    echo json_encode(['success' => false, 'error' => 'Query failed', 'details' => $conn->error]);
+                    echo json_encode([
+                         'success' => false,
+                         'error' => 'Execute failed',
+                         'details' => $stmt->error
+                    ]);
+                    $stmt->close();
                     exit;
                }
 
-               $rows = [];
-               while ($row = $result->fetch_assoc()) {
-                    $medicationToAdd = 'Finerenone';
-                    // Read current recommendedMed (CSV string)
-                    $currentMeds = $row['recommendedMed'] ?? '';
-                    $medsArray = array_filter(array_map('trim', explode(',', $currentMeds)));
-
-                    // Check if 'Vascepa' already exists
-                    if (!in_array($medicationToAdd, $medsArray)) {
-                         // Add 'Vascepa' to the array
-                         $medsArray[] = $medicationToAdd;
-                         $newMeds = implode(',', $medsArray);
-
-                         // Update the database
-                         $stmt = $conn->prepare("UPDATE `$patientTableName` SET recommendedMed = ? WHERE id = ?");
-                         $stmt->bind_param('si', $newMeds, $row['id']);
-                         $stmt->execute();
-                         $stmt->close();
-
-                         // Update the row data to reflect the change
-                         $row['recommendedMed'] = $newMeds;
-                    }
-
-                    $rows[] = $row;
-               }
+               $result = $stmt->get_result();
+               $rows = $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
+               $stmt->close();
 
                echo json_encode($rows);
                $conn->close();
                exit;
-          case 'Vescepa': // or 'Vasepa' – make sure this matches the front-end value
 
-               // 1) First find all the IDs of meds that are a statin
-               $sql = "SELECT ID FROM medications WHERE medication_cat = ?";
+          case 'Finerenone20':
+
+               $ratio = 30;
+               $k = 5;
+               $a1c = 7;
+
+               if ($providerId !== '') {
+                    $sql = "SELECT * FROM `$patientTableName`
+               WHERE COALESCE(albuminCreatinineRatio, 0) > ?
+                 AND COALESCE(potassium, 0) < ?
+                 AND COALESCE(hemoglobinA1C, 0) > ?
+                 AND providerID = ?";
+
+                    $stmt = $conn->prepare($sql);
+                    if (!$stmt) {
+                         http_response_code(500);
+                         echo json_encode([
+                              'success' => false,
+                              'error' => 'Prepare failed',
+                              'details' => $conn->error
+                         ]);
+                         exit;
+                    }
+
+                    $stmt->bind_param('ddds', $ratio, $k, $a1c, $providerId);
+               } else {
+                    $sql = "SELECT * FROM `$patientTableName`
+               WHERE COALESCE(albuminCreatinineRatio, 0) > ?
+                 AND COALESCE(potassium, 0) < ?
+                 AND COALESCE(hemoglobinA1C, 0) > ?";
+
+                    $stmt = $conn->prepare($sql);
+                    if (!$stmt) {
+                         http_response_code(500);
+                         echo json_encode([
+                              'success' => false,
+                              'error' => 'Prepare failed',
+                              'details' => $conn->error
+                         ]);
+                         exit;
+                    }
+
+                    $stmt->bind_param('ddd', $ratio, $k, $a1c);
+               }
+
+               if (!$stmt->execute()) {
+                    http_response_code(500);
+                    echo json_encode([
+                         'success' => false,
+                         'error' => 'Execute failed',
+                         'details' => $stmt->error
+                    ]);
+                    $stmt->close();
+                    exit;
+               }
+
+               $result = $stmt->get_result();
+               $rows = $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
+               $stmt->close();
+
+               echo json_encode($rows);
+               $conn->close();
+               exit;
+
+          case 'Vescepa':
+
+               $sql = "SELECT ID
+                    FROM medications
+                    WHERE medication_cat = ?";
                $stmt = $conn->prepare($sql);
                if (!$stmt) {
                     http_response_code(500);
@@ -1335,116 +1330,65 @@ if ($data['script'] === 'findPatientsForMedication') {
                }
                $stmt->close();
 
-               // 2) Now get all Endocrine/Metabolic condition IDs from patient_conditions
-               $smtp_conditions = "
-               SELECT conditionCode 
-               FROM `patient_conditions`
-               WHERE conditionCatagory = 'Endocrine/Metabolic'
-          ";
-               $smtp_conditions_q = $conn->query($smtp_conditions);
+               $tgValue = 1.5;
 
-               if (!$smtp_conditions_q) {
+               $statinConditions = [];
+               foreach ($statinIds as $sid) {
+                    $sid = (int) $sid;
+                    $statinConditions[] = "FIND_IN_SET($sid, MedsData)";
+               }
+
+               $statinWhere = empty($statinConditions)
+                    ? '0'
+                    : '(' . implode(' OR ', $statinConditions) . ')';
+
+               $sql = "SELECT *
+                    FROM `$patientTableName`
+                    WHERE $statinWhere
+                      AND COALESCE(triglyceride, 0) >= ?"
+                    . $providerWhere;
+
+               $stmt = $conn->prepare($sql);
+               if (!$stmt) {
                     http_response_code(500);
                     echo json_encode([
                          'success' => false,
-                         'error' => 'Query failed (condition lookup)',
+                         'error' => 'Prepare failed',
                          'details' => $conn->error
                     ]);
                     exit;
                }
 
-               $conditionIds = [];
-               while ($row = $smtp_conditions_q->fetch_assoc()) {
-                    $conditionIds[] = $row['conditionCode'];
+               if ($providerId !== '') {
+                    $stmt->bind_param('d' . $providerTypes, $tgValue, ...$providerParams);
+               } else {
+                    $stmt->bind_param('d', $tgValue);
                }
 
-               // If you're just testing, you *can* override; otherwise keep what DB gave you
-               $conditionIds = ["TYPE", "TDXX"];
-
-               // Thresholds (adjust as needed)
-               $tgValue = 1.5;  // example TG threshold
-               $a1c = 6.0;  // example A1C threshold
-
-
-               // 3) Build WHERE part for statin meds (medicationId is CSV of med IDs)
-               $statinConditions = [];
-               foreach ($statinIds as $sid) {
-                    // medicationId is a CSV of integers: "1,3,7"
-                    $sid = (int) $sid;
-                    $statinConditions[] = "FIND_IN_SET($sid, MedsData)";
-               }
-               $statinWhere = empty($statinConditions)
-                    ? '0'      // no statins found -> no patient can match
-                    : '(' . implode(' OR ', $statinConditions) . ')';
-
-
-               // Build regex pattern for condition codes (e.g. "TYPE|TDXX|T2DM")
-               $conditionPattern = implode('|', array_map('preg_quote', $conditionIds));
-
-
-
-               // 4) Now build the final patient query
-               // NOTE: change column names if needed:
-               //   - medicationId   => CSV of med IDs
-               //   - conditionData  => field where condition codes are stored (string)
-               //   - triglyceride   => TG field
-               //   - hemoglobinA1C  => A1C field
-               $sql = "
-                  SELECT *
-                  FROM `$patientTableName`
-                  WHERE 
-                         $statinWhere
-                         AND COALESCE(triglyceride, 0) >= $tgValue
-                         
-            ";
-
-               $result = $conn->query($sql) or die($sql);
-               if (!$result) {
+               if (!$stmt->execute()) {
                     http_response_code(500);
-                    echo json_encode(['success' => false, 'error' => 'Query failed', 'details' => $conn->error]);
+                    echo json_encode([
+                         'success' => false,
+                         'error' => 'Execute failed',
+                         'details' => $stmt->error
+                    ]);
+                    $stmt->close();
                     exit;
                }
 
-               $rows = [];
-               while ($row = $result->fetch_assoc()) {
-                    $medicationToAdd = 'Vascepa';
-                    // Read current recommendedMed (CSV string)
-                    $currentMeds = $row['recommendedMed'] ?? '';
-                    $medsArray = array_filter(array_map('trim', explode(',', $currentMeds)));
-
-                    // Check if 'Vascepa' already exists
-                    if (!in_array($medicationToAdd, $medsArray)) {
-                         // Add 'Vascepa' to the array
-                         $medsArray[] = $medicationToAdd;
-                         $newMeds = implode(',', $medsArray);
-
-                         // Update the database
-                         $stmt = $conn->prepare("UPDATE `$patientTableName` SET recommendedMed = ? WHERE id = ?");
-                         $stmt->bind_param('si', $newMeds, $row['id']);
-                         $stmt->execute();
-                         $stmt->close();
-
-                         // Update the row data to reflect the change
-                         $row['recommendedMed'] = $newMeds;
-                    }
-
-                    $rows[] = $row;
-               }
+               $result = $stmt->get_result();
+               $rows = $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
+               $stmt->close();
 
                echo json_encode($rows);
-
-               $stmt->close();
                $conn->close();
                exit;
-               break;
+
           default:
-               http_response_code(404);
-               echo json_encode(['success' => false, 'error' => 'Medication not found']);
+               echo json_encode([]);
                $conn->close();
                exit;
      }
-
-
 }
 
 
