@@ -253,6 +253,10 @@ const ResultsPage = () => {
           aVal = Number(a?.labCount ?? -1);
           bVal = Number(b?.labCount ?? -1);
           break;
+        case "hospital":
+          aVal = String(a?.HospitalLoaded ?? "").toLowerCase() === "yes" ? 1 : 0;
+          bVal = String(b?.HospitalLoaded ?? "").toLowerCase() === "yes" ? 1 : 0;
+          break;
         case "recommendedMed":
           aVal = getRecommendedMedText(a);
           bVal = getRecommendedMedText(b);
@@ -291,34 +295,27 @@ const ResultsPage = () => {
   );
 
   return (
-    <div className="container-fluid d-flex flex-column" style={{ height: "100vh" }}>
+    <div className="container-fluid d-flex flex-column" style={{ height: "calc(100vh - 60px)", maxHeight: "calc(100vh - 60px)", marginLeft: "10px" }}>
       <div className="d-flex align-items-center justify-content-between py-2">
         <h5 className="m-0">
           {title} <span className="text-muted px-2 fs-7">[{(sortedResults || []).length}] Records</span>
         </h5>
-        <div className="d-flex gap-2">
-          <button className="btn btn-sm btn-outline-primary" onClick={backToPatient}>
-            Patient Search
-          </button>
-          <button className="btn btn-sm btn-outline-secondary" onClick={backToCriteria}>
-            Criteria Search
-          </button>
-        </div>
       </div>
 
-      <div className="border rounded bg-white p-2 overflow-auto" style={{ flexGrow: 1, minHeight: 0 }}>
+      <div className="border rounded bg-white p-2" style={{ flexGrow: 1, minHeight: 0, overflowY: "scroll" }}>
         {!sortedResults || sortedResults.length === 0 ? (
           <div className="text-muted">No results.</div>
         ) : (
           <>
             <div className="border-bottom py-2 d-flex align-items-center fs-7 bg-light sticky-top">
-              <SortHeader label="Name" sortKey="name" className="col-12" />
-              <SortHeader label="HCN" sortKey="healthNumber" className="col-5" />
-              <SortHeader label="Age" sortKey="age" className="col-2" />
+              <SortHeader label="Name" sortKey="name" className="col-10" />
+              <SortHeader label="Hospital" sortKey="hospital" className="col-3 text-center" />
+              <SortHeader label="HCN" sortKey="healthNumber" className="col-4" />
+              <SortHeader label="Age" sortKey="age" className="col-2 text-center" />
               <SortHeader label="Pts" sortKey="totalPoints" className="col-2" />
               <SortHeader label="Labs" sortKey="labCount" className="col-2" />
-              <SortHeader label="Recommended" sortKey="recommendedMed" className="col-6" />
-              <SortHeader label="Private Note" sortKey="privateNote" className="flex-grow-1" />
+              <SortHeader label="Recommended" sortKey="recommendedMed" className="col-4" />
+              <SortHeader label="Private Note" sortKey="privateNote" className="col-20" />
             </div>
 
             {sortedResults.map((p) => {
@@ -363,14 +360,23 @@ const ResultsPage = () => {
                     cursor: "pointer",
                   }}
                 >
-                  <div className="col-12 fw-bold" onClick={() => editClient(p)}>
+                  <div className="col-10 fw-bold" onClick={() => editClient(p)}>
                     {isPrivate ? demoPatientLabel(p.healthNumber) : realPatientName(p)}
                   </div>
 
-                  <div className="col-5 d-flex align-items-center">
+                  <div className="col-3 text-center" onClick={() => editClient(p)}>
+                    {String(p?.HospitalLoaded || "").toLowerCase() === "yes" ? (
+                      <span className="text-success fw-bold">Yes</span>
+                    ) : (
+                      "—"
+                    )}
+                  </div>
+
+                  <div className="col-4 d-flex align-items-center">
                     <button
                       type="button"
-                      className={`btn btn-sm col-40 ${isCopied ? "btn-success text-white" : "btn-outline-warning"}`}
+                      className={`btn btn-sm px-2 ${isCopied ? "btn-success text-white" : "btn-outline-warning"}`}
+                      style={{ width: "90%" }}
                       disabled={!canCopy}
                       onClick={() => canCopy && handleCopyClick(rowKey, hcn)}
                       aria-label="Copy health number"
@@ -384,7 +390,7 @@ const ResultsPage = () => {
                     </button>
                   </div>
 
-                  <div className="col-2" onClick={() => editClient(p)}>{calculateAge(p.dateOfBirth)}</div>
+                  <div className="col-2 text-center" onClick={() => editClient(p)}>{calculateAge(p.dateOfBirth)}</div>
 
                   <div className="col-2" onClick={() => editClient(p)}>
                     {p.totalPoints != null ? (
@@ -402,9 +408,9 @@ const ResultsPage = () => {
                     )}
                   </div>
 
-                  <div className="col-6" onClick={() => editClient(p)}>{renderedMeds}</div>
+                  <div className="col-4" onClick={() => editClient(p)}>{renderedMeds}</div>
 
-                  <div className="flex-grow-1" onClick={() => editClient(p)}>{p.privateNote || "—"}</div>
+                  <div className="col-20" onClick={() => editClient(p)}>{p.privateNote || "—"}</div>
                 </div>
               );
             })}

@@ -46,7 +46,21 @@ if (($data['script'] ?? '') === 'rebuildPatientMedicationPoints') {
         exit;
     }
 
-    $selectPatientsSql = "SELECT id, healthNumber, medsData FROM `$patientTable`";
+    // category IDs that should trigger TYPE in conditionData
+    // you can also pass them in request as bsCats: [1,2,3]
+    $bsCats = [74, 103, 211]; // example category IDs for blood sugar meds
+
+    if (!is_array($bsCats)) {
+        $bsCats = [];
+    }
+
+    $bsCats = array_values(array_unique(array_filter(array_map(function ($v) {
+        return (string) (int) $v;
+    }, $bsCats), function ($v) {
+        return $v !== '0' && $v !== '';
+    })));
+
+    $selectPatientsSql = "SELECT id, healthNumber, medsData, medCatSearch, conditionData FROM `$patientTable`";
     $resultPatients = $conn->query($selectPatientsSql);
 
     if (!$resultPatients) {
@@ -78,7 +92,7 @@ if (($data['script'] ?? '') === 'rebuildPatientMedicationPoints') {
 
     $stmtUpdate = $conn->prepare("
         UPDATE `$patientTable`
-        SET totalPoints = ?
+        SET totalPoints = ?, conditionData = ?
         WHERE id = ?
     ");
 
@@ -101,63 +115,98 @@ if (($data['script'] ?? '') === 'rebuildPatientMedicationPoints') {
         $patientId = (int) ($patient['id'] ?? 0);
         $healthNumber = trim((string) ($patient['healthNumber'] ?? ''));
         $medsData = trim((string) ($patient['medsData'] ?? ''));
+        $medCatSearch = trim((string) ($patient['medCatSearch'] ?? ''));
+        $conditionData = trim((string) ($patient['conditionData'] ?? ''));
 
         if ($patientId <= 0) {
             $skipped++;
             continue;
         }
 
-        if ($medsData === '') {
-            $totalPoints = 0;
-
-            $stmtUpdate->bind_param("ii", $totalPoints, $patientId);
-            if (!$stmtUpdate->execute()) {
-                $errors[] = "Failed to update blank medsData patient ID {$patientId}: " . $stmtUpdate->error;
-                continue;
-            }
-
-            $updated++;
-            $details[] = [
-                'id' => $patientId,
-                'healthNumber' => $healthNumber,
-                'totalPoints' => 0,
-                'dinCount' => 0
-            ];
-            continue;
-        }
-
-        $dinArrayRaw = explode(',', $medsData);
+        // ---------------------------
+        // Calculate total points
+        // ---------------------------
+        $totalPoints = 0;
         $dinArray = [];
 
-        foreach ($dinArrayRaw as $din) {
-            $cleanDin = preg_replace('/\D+/', '', (string) $din);
-            if ($cleanDin !== '') {
-                $dinArray[] = $cleanDin;
+        if ($medsData !== '') {
+            $dinArrayRaw = explode(',', $medsData);
+
+            foreach ($dinArrayRaw as $din) {
+                $cleanDin = preg_replace('/\D+/', '', (string) $din);
+                if ($cleanDin !== '') {
+                    $dinArray[] = $cleanDin;
+                }
+            }
+
+            $dinArray = array_values(array_unique($dinArray));
+
+            foreach ($dinArray as $din) {
+                $stmtDin->bind_param("s", $din);
+
+                if (!$stmtDin->execute()) {
+                    $errors[] = "DIN lookup failed for patient ID {$patientId}, DIN {$din}: " . $stmtDin->error;
+                    continue;
+                }
+
+                $resDin = $stmtDin->get_result();
+                if ($resDin && ($rowDin = $resDin->fetch_assoc())) {
+                    $totalPoints += (int) ($rowDin['pts'] ?? 0);
+                }
+
+                if ($resDin) {
+                    $resDin->free();
+                }
             }
         }
 
-        $dinArray = array_values(array_unique($dinArray));
-        $totalPoints = 0;
+        // ---------------------------
+        // conditionData update logic
+        // ---------------------------
+        $conditionArray = [];
+        if ($conditionData !== '') {
+            $conditionArray = array_map('trim', explode(',', $conditionData));
+            $conditionArray = array_values(array_filter($conditionArray, function ($v) {
+                return $v !== '';
+            }));
+        }
 
-        foreach ($dinArray as $din) {
-            $stmtDin->bind_param("s", $din);
+        $medCatArray = [];
+        if ($medCatSearch !== '') {
+            $medCatArray = array_map('trim', explode(',', $medCatSearch));
+            $medCatArray = array_values(array_unique(array_filter($medCatArray, function ($v) {
+                return $v !== '';
+            })));
+        }
 
-            if (!$stmtDin->execute()) {
-                $errors[] = "DIN lookup failed for patient ID {$patientId}, DIN {$din}: " . $stmtDin->error;
-                continue;
-            }
-
-            $resDin = $stmtDin->get_result();
-            if ($resDin && ($rowDin = $resDin->fetch_assoc())) {
-                $totalPoints += (int) ($rowDin['pts'] ?? 0);
-            }
-
-            if ($resDin) {
-                $resDin->free();
+        $hasBsMatch = false;
+        if (!empty($bsCats) && !empty($medCatArray)) {
+            foreach ($medCatArray as $catId) {
+                if (in_array((string) $catId, $bsCats, true)) {
+                    $hasBsMatch = true;
+                    break;
+                }
             }
         }
 
-        $stmtUpdate->bind_param("ii", $totalPoints, $patientId);
+        $hasTypeAlready = false;
+        foreach ($conditionArray as $cond) {
+            if (strcasecmp($cond, 'TYPE') === 0) {
+                $hasTypeAlready = true;
+                break;
+            }
+        }
+
+        if ($hasBsMatch && !$hasTypeAlready) {
+            $conditionArray[] = 'TYPE';
+        }
+
+        $conditionArray = array_values(array_unique(array_map('trim', $conditionArray)));
+        $newConditionData = implode(',', array_filter($conditionArray, function ($v) {
+            return $v !== '';
+        }));
+
+        $stmtUpdate->bind_param("isi", $totalPoints, $newConditionData, $patientId);
         if (!$stmtUpdate->execute()) {
             $errors[] = "Failed to update patient ID {$patientId}: " . $stmtUpdate->error;
             continue;
@@ -168,7 +217,10 @@ if (($data['script'] ?? '') === 'rebuildPatientMedicationPoints') {
             'id' => $patientId,
             'healthNumber' => $healthNumber,
             'totalPoints' => $totalPoints,
-            'dinCount' => count($dinArray)
+            'dinCount' => count($dinArray),
+            'medCatSearch' => $medCatSearch,
+            'conditionData' => $newConditionData,
+            'typeAdded' => ($hasBsMatch && !$hasTypeAlready) ? 'Yes' : 'No'
         ];
     }
 
@@ -180,6 +232,7 @@ if (($data['script'] ?? '') === 'rebuildPatientMedicationPoints') {
         'success' => true,
         'updated' => $updated,
         'skipped' => $skipped,
+        'bsCats' => $bsCats,
         'errors' => $errors,
         'details' => $details
     ]);

@@ -55,7 +55,12 @@ const parseDOB_DDMMYYYY = (dob) => {
   if (!dd || !mm || !yyyy) return null;
 
   const dt = new Date(yyyy, mm - 1, dd);
-  if (dt.getFullYear() !== yyyy || dt.getMonth() !== mm - 1 || dt.getDate() !== dd) return null;
+  if (
+    dt.getFullYear() !== yyyy ||
+    dt.getMonth() !== mm - 1 ||
+    dt.getDate() !== dd
+  )
+    return null;
   return dt;
 };
 
@@ -195,7 +200,8 @@ const extractConditionsFromBlock = (block) => {
 const extractHCNFromBlock = (block) => {
   const t = block || "";
 
-  const billingMatches = t.match(/Billing Info\s+([^\n]+?)(?:\s+Rel:|\n)/gi) || [];
+  const billingMatches =
+    t.match(/Billing Info\s+([^\n]+?)(?:\s+Rel:|\n)/gi) || [];
   for (const row of billingMatches) {
     const raw = row.replace(/Billing Info/i, "").trim();
     const d = digitsOnly(raw);
@@ -237,14 +243,19 @@ const extractAddressBillingChunk = (block, patientName) => {
     }
   }
 
-  const chunkLines = lines.slice(nameIdx + 1, endIdx === -1 ? nameIdx + 14 : endIdx);
+  const chunkLines = lines.slice(
+    nameIdx + 1,
+    endIdx === -1 ? nameIdx + 14 : endIdx
+  );
   const chunk = chunkLines.join("\n").trim();
 
   return { chunk, chunkLines };
 };
 
 const extractBillingInfoFromChunkLines = (chunkLines) => {
-  const list = (Array.isArray(chunkLines) ? chunkLines : []).filter((l) => /billing info/i.test(l));
+  const list = (Array.isArray(chunkLines) ? chunkLines : []).filter((l) =>
+    /billing info/i.test(l)
+  );
   if (list.length === 0) return "";
   return list.join("\n").trim();
 };
@@ -293,7 +304,9 @@ const extractAddressFromChunkLines = (chunkLines) => {
     if (pm) postalCode = `${pm[1].toUpperCase()} ${pm[2].toUpperCase()}`;
   }
 
-  const fullAddress = [street, city, province, postalCode].filter(Boolean).join(", ");
+  const fullAddress = [street, city, province, postalCode]
+    .filter(Boolean)
+    .join(", ");
   const hasAddress = !!(street || city || province || postalCode);
 
   return { street, city, province, postalCode, fullAddress, hasAddress };
@@ -327,36 +340,33 @@ const extractDoseFromMedicationName = (full) => {
 };
 
 const extractMedicationsFromBlock_MATCH_SINGLE = (block) => {
-  const text = normalizeText(block || "");
-
-  const dateRe = /\b[0-3][0-9]-[A-Za-z]{3}-[12][0-9]{3}\b/g;
-  const dinChunk = "((?:\\d[\\s-]*){8})";
-  const formPattern =
-    "(?:TAB|CAP|ML|DEV|SUSP|INJ|SOLN|SR|CR|ER|GM|DOS|RNG|PEN|PATCH|SPRAY|DROP|SUPP)";
-
-  const rxA = new RegExp(
-    `\\b(\\d+(?:\\.\\d+)?)\\s+(${formPattern})\\s+(.+?)\\s+${dinChunk}\\b`,
-    "gi"
-  );
-
-  const rxB = new RegExp(
-    `\\b${formPattern}\\s+(.+?)\\s+${dinChunk}\\s+Dr\\..*?([0-3][0-9]-[A-Za-z]{3}-[12][0-9]{3})(?:\\s+([0-3][0-9]-[A-Za-z]{3}-[12][0-9]{3}))?`,
-    "gi"
-  );
+  const lines = (block || "")
+    .split("\n")
+    .map((x) => x.trim())
+    .filter(Boolean);
 
   const meds = [];
   const seen = new Set();
 
-  const pushMed = (fullName, din, firstFill, lastFill) => {
-    const medication = (fullName || "").trim();
+  const cleanMedicationName = (raw) =>
+    (raw || "")
+      .replace(
+        /^(?:TAB|CAP|ML|DEV|SUSP|INJ|SOLN|SR|CR|ER|GM|DOS|RNG|PEN|PATCH|SPRAY|DROP|SUPP|STR)\s+/i,
+        ""
+      )
+      .trim();
+
+  const pushMed = (fullName, din, doctorName, firstFill, lastFill) => {
+    const medication = cleanMedicationName(fullName);
     if (!medication) return;
 
-    const cleanDin = (din || "").replace(/\D+/g, "").slice(0, 8);
+    const cleanDin = digitsOnly(din || "").slice(0, 8);
     if (cleanDin.length !== 8) return;
 
+    const doctor = (doctorName || "").replace(/\s+/g, " ").trim();
     const dose = extractDoseFromMedicationName(medication);
-    const key = `${medication}__${dose}__${cleanDin}__${firstFill || ""}__${lastFill || ""}`;
 
+    const key = `${medication}__${dose}__${cleanDin}__${doctor}__${firstFill || ""}__${lastFill || ""}`;
     if (seen.has(key)) return;
     seen.add(key);
 
@@ -364,30 +374,27 @@ const extractMedicationsFromBlock_MATCH_SINGLE = (block) => {
       medication,
       medication_dose: dose || "",
       din: cleanDin,
+      doctorName: doctor || "",
       firstFill: firstFill || "",
       lastFill: lastFill || "",
+      ignored: false,
     });
   };
 
-  let m;
-  while ((m = rxA.exec(text)) !== null) {
-    const name = m[3] || "";
-    const din = m[4] || "";
+  const rowRe =
+    /^\d+\s+\d+\s+[\d,.]+\s+[\d,.]+\s+(.+?)\s+((?:\d[\s-]*){8})\s+(Dr\.\s*.+?)\s+([0-3][0-9]-[A-Za-z]{3}-[12][0-9]{3})(?:\s+([0-3][0-9]-[A-Za-z]{3}-[12][0-9]{3}))?$/i;
 
-    const look = text.slice(m.index, Math.min(text.length, m.index + 220));
-    const dates = look.match(dateRe) || [];
-    const firstFill = dates[0] || "";
-    const lastFill = dates[1] || "";
+  for (const line of lines) {
+    const m = line.match(rowRe);
+    if (!m) continue;
 
-    pushMed(name, din, firstFill, lastFill);
-  }
+    const fullName = (m[1] || "").trim();
+    const din = (m[2] || "").trim();
+    const doctorName = (m[3] || "").trim();
+    const firstFill = (m[4] || "").trim();
+    const lastFill = (m[5] || "").trim() || firstFill;
 
-  while ((m = rxB.exec(text)) !== null) {
-    const name = m[1] || "";
-    const din = m[2] || "";
-    const firstFill = m[3] || "";
-    const lastFill = m[4] || "";
-    pushMed(name, din, firstFill, lastFill);
+    pushMed(fullName, din, doctorName, firstFill, lastFill);
   }
 
   return meds;
@@ -407,15 +414,30 @@ const compressMedsToUniqueDin = (meds) => {
     const yyyy = Number(m[3]);
 
     const months = {
-      jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
-      jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+      jan: 0,
+      feb: 1,
+      mar: 2,
+      apr: 3,
+      may: 4,
+      jun: 5,
+      jul: 6,
+      aug: 7,
+      sep: 8,
+      oct: 9,
+      nov: 10,
+      dec: 11,
     };
 
     const mm = months[mon];
     if (mm === undefined) return null;
 
     const dt = new Date(yyyy, mm, dd);
-    if (dt.getFullYear() !== yyyy || dt.getMonth() !== mm || dt.getDate() !== dd) return null;
+    if (
+      dt.getFullYear() !== yyyy ||
+      dt.getMonth() !== mm ||
+      dt.getDate() !== dd
+    )
+      return null;
     return dt;
   };
 
@@ -435,6 +457,7 @@ const compressMedsToUniqueDin = (meds) => {
       medication: (m?.medication || "").toString().trim(),
       medication_dose: (m?.medication_dose || "").toString().trim(),
       din,
+      doctorName: (m?.doctorName || "").toString().trim(),
       firstFill: (m?.firstFill || "").toString().trim(),
       lastFill: (m?.lastFill || "").toString().trim(),
     };
@@ -509,6 +532,7 @@ export default function PharmacyMultiple() {
 
   const [showEdit, setShowEdit] = useState(false);
   const [editKey, setEditKey] = useState("");
+  const [expandedPatients, setExpandedPatients] = useState(new Set());
   const [editForm, setEditForm] = useState({
     name: "",
     healthNumberRaw: "",
@@ -597,6 +621,37 @@ export default function PharmacyMultiple() {
         return { ...p, ...patch };
       })
     );
+  };
+
+  const toggleMedicationIgnore = (patientKey, medIndex) => {
+    setAllPatients(prev => 
+      prev.map(patient => {
+        if (String(patient._key) === String(patientKey)) {
+          const updatedMedications = [...(patient.medications || [])];
+          updatedMedications[medIndex] = {
+            ...updatedMedications[medIndex],
+            ignored: !updatedMedications[medIndex].ignored
+          };
+          return {
+            ...patient,
+            medications: updatedMedications
+          };
+        }
+        return patient;
+      })
+    );
+  };
+
+  const togglePatientExpanded = (patientKey) => {
+    setExpandedPatients(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(String(patientKey))) {
+        newSet.delete(String(patientKey));
+      } else {
+        newSet.add(String(patientKey));
+      }
+      return newSet;
+    });
   };
 
   const handleFileChange = async (e) => {
@@ -741,6 +796,7 @@ export default function PharmacyMultiple() {
             medication: (m?.medication || m?.din || "").toString().trim(),
             medication_dose: (m?.medication_dose || "").toString().trim(),
             din: digitsOnly(m?.din || "").slice(0, 8),
+            doctorName: (m?.doctorName || "").toString().trim(),
             firstFill: (m?.firstFill || "").toString().trim(),
             lastFill: (m?.lastFill || "").toString().trim(),
           }))
@@ -763,12 +819,35 @@ export default function PharmacyMultiple() {
 
           const pts = Number(json?.totalPoints ?? json?.points ?? 0);
           const unk = Number(json?.unknownCats ?? json?.unknown ?? json?.unfound ?? 0);
+          
+          // Update medications with individual points data
+          const updatedMedications = (Array.isArray(p.medications) ? p.medications : [])
+            .map(med => {
+              const dinMatch = (json.dinPoints || []).find(dp => dp.din === med.din);
+              if (dinMatch) {
+                return {
+                  ...med,
+                  points: dinMatch.pointsUsed || 0,
+                  dinFound: dinMatch.source !== "pointValue_fallback",
+                  dinStatus: dinMatch.status || "",
+                  ignored: med.ignored || false
+                };
+              }
+              return {
+                ...med,
+                points: 0,
+                dinFound: false,
+                dinStatus: "not_found",
+                ignored: med.ignored || false
+              };
+            });
 
           updatePatientByKey(p._key, {
             totalPoints: Number.isFinite(pts) ? pts : 0,
             unknownCount: Number.isFinite(unk) ? unk : 0,
             pointsReady: true,
             pointsLoading: false,
+            medications: updatedMedications,
           });
         } catch (err) {
           console.error("findPoints failed for:", p.healthNumberRaw, err);
@@ -859,8 +938,13 @@ export default function PharmacyMultiple() {
     if (!canProcessPatient(p)) return;
 
     const medsSlim = (Array.isArray(p.medications) ? p.medications : [])
+      .filter((m) => expandedPatients.has(String(p._key)) ? !m.ignored : true) // Only filter ignored meds if expanded
       .map((m) => ({
+        medication: (m?.medication || "").toString().trim(),
+        medication_dose: (m?.medication_dose || "").toString().trim(),
         din: digitsOnly(m?.din || "").slice(0, 8),
+        doctorName: (m?.doctorName || "").toString().trim(),
+        firstFill: (m?.firstFill || "").toString().trim(),
         lastFill: (m?.lastFill || "").toString().trim(),
       }))
       .filter((m) => m.din && m.din.length === 8);
@@ -945,7 +1029,6 @@ export default function PharmacyMultiple() {
 
   return (
     <div className="container-fluid p-2">
-      {/* Header */}
       <div className="row g-2 align-items-center">
         <div className="col-30">
           <div className="fw-semibold">Pharmacy Multiple Upload</div>
@@ -966,7 +1049,6 @@ export default function PharmacyMultiple() {
         </div>
       </div>
 
-      {/* Pharmacy Select */}
       <div className="row g-2 mt-2">
         <div className="col-48">
           <div className="border rounded p-2">
@@ -1015,7 +1097,6 @@ export default function PharmacyMultiple() {
               </div>
             </div>
 
-            {/* Upload input */}
             <div className="row g-2 mt-2 align-items-center">
               <div className="col-24">
                 <div className="small text-muted mb-1">Upload Multiple PDF</div>
@@ -1063,7 +1144,6 @@ export default function PharmacyMultiple() {
         </div>
       </div>
 
-      {/* Results */}
       <div className="row g-2 mt-2">
         <div className="col-48">
           <div className="border rounded p-2">
@@ -1169,6 +1249,14 @@ export default function PharmacyMultiple() {
                               {p.age !== null ? `Age: ${p.age}` : "Age: -"}
                             </div>
 
+                            <button
+                              className="btn btn-outline-info btn-sm"
+                              onClick={() => togglePatientExpanded(p._key)}
+                              disabled={parsing || step2Running || !!savingKey}
+                            >
+                              {expandedPatients.has(String(p._key)) ? 'Show Less' : 'Show More'}
+                            </button>
+
                             {canEdit ? (
                               <button
                                 className="btn btn-outline-primary btn-sm"
@@ -1243,6 +1331,67 @@ export default function PharmacyMultiple() {
                             </div>
                           )}
                         </div>
+
+                        {Array.isArray(p.medications) && p.medications.length > 0 && expandedPatients.has(String(p._key)) && (
+                          <div className="row g-2 mt-2">
+                            <div className="col-48">
+                              <div className="small text-muted mb-1">Medication Detail</div>
+
+                              <div className="row bg-light py-1 fw-bold small">
+                                <div className="col-14">Medication</div>
+                                <div className="col-6">DIN</div>
+                                <div className="col-6">First Fill</div>
+                                <div className="col-6">Last Fill</div>
+                                <div className="col-8">Doctor</div>
+                                <div className="col-5 text-center">Points</div>
+                                <div className="col-3 text-center">Action</div>
+                              </div>
+
+                              <div className="row row-cols-1 g-1">
+                                {p.medications.map((m, idx) => {
+                                  const rowClass = m.ignored 
+                                    ? "row border-bottom py-1 small align-items-center bg-light text-muted"
+                                    : m.dinFound === false 
+                                    ? "row border-bottom py-1 small align-items-center alert-danger" 
+                                    : "row border-bottom py-1 small align-items-center";
+                                  return (
+                                    <div className="col" key={`${p._key}_med_${idx}`}>
+                                      <div className={rowClass}>
+                                        <div className="col-14 fw-semibold">
+                                          {m.ignored && <del>{m.medication || "-"}</del>}
+                                          {!m.ignored && (m.medication || "-")}
+                                        </div>
+                                        <div className="col-6 font-monospace small">{m.din || "-"}</div>
+                                        <div className="col-6">{m.firstFill || "-"}</div>
+                                        <div className="col-6">{m.lastFill || "-"}</div>
+                                        <div className="col-8">{m.doctorName || "-"}</div>
+                                        <div className="col-5 text-center fw-semibold">
+                                          {m.ignored ? (
+                                            <span className="text-muted">Ignored</span>
+                                          ) : m.dinFound === false ? (
+                                            <span className="text-danger">Not Found</span>
+                                          ) : (
+                                            <span className="text-primary">{m.points || "0"}</span>
+                                          )}
+                                        </div>
+                                        <div className="col-3 text-center">
+                                          <button
+                                            className={`btn ${m.ignored ? 'btn-success' : 'btn-outline-secondary'} btn-sm`}
+                                            onClick={() => toggleMedicationIgnore(p._key, idx)}
+                                            disabled={parsing || step2Running || !!savingKey}
+                                            style={{ fontSize: '10px', padding: '2px 6px' }}
+                                          >
+                                            {m.ignored ? 'Include' : 'Ignore'}
+                                          </button>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
@@ -1253,7 +1402,6 @@ export default function PharmacyMultiple() {
         </div>
       </div>
 
-      {/* Edit Modal */}
       {showEdit && (
         <div
           className="modal fade show d-block"

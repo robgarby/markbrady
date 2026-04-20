@@ -1226,6 +1226,151 @@ if (($data['script'] ?? '') === 'recalculateSinglePatientPoints') {
     exit;
 }
 
+if (($data['script'] ?? '') === 'updatePatientConditionsFromHospital') {
+    header('Content-Type: application/json; charset=utf-8');
+
+    $patientId = intval($data['patientId'] ?? 0);
+    $patientTbl = $data['patientDB'] ?? $patientTable;
+    $resolvedConditions = $data['resolvedConditions'] ?? [];
+
+    if ($patientId <= 0) {
+        http_response_code(400);
+        echo json_encode([
+            'success' => false,
+            'error' => 'Missing or invalid patientId'
+        ]);
+        exit;
+    }
+
+    if (!is_array($resolvedConditions)) {
+        http_response_code(400);
+        echo json_encode([
+            'success' => false,
+            'error' => 'resolvedConditions must be an array'
+        ]);
+        exit;
+    }
+
+    // 1) Load existing conditionData
+    $stmtSel = $conn->prepare("SELECT id, clientName, conditionData FROM `$patientTbl` WHERE id = ? LIMIT 1");
+    if (!$stmtSel) {
+        http_response_code(500);
+        echo json_encode([
+            'success' => false,
+            'error' => 'Prepare failed (select)',
+            'details' => $conn->error
+        ]);
+        exit;
+    }
+
+    $stmtSel->bind_param("i", $patientId);
+
+    if (!$stmtSel->execute()) {
+        http_response_code(500);
+        echo json_encode([
+            'success' => false,
+            'error' => 'Execute failed (select)',
+            'details' => $stmtSel->error
+        ]);
+        $stmtSel->close();
+        exit;
+    }
+
+    $resSel = $stmtSel->get_result();
+    $patientRow = $resSel ? $resSel->fetch_assoc() : null;
+    $stmtSel->close();
+
+    if (!$patientRow) {
+        http_response_code(404);
+        echo json_encode([
+            'success' => false,
+            'error' => 'Patient not found'
+        ]);
+        exit;
+    }
+
+    $existingCsv = (string) ($patientRow['conditionData'] ?? '');
+
+    // helper: parse CSV safely
+    $parseCsv = function ($csv) {
+        $parts = array_map('trim', explode(',', (string) $csv));
+        $parts = array_filter($parts, function ($v) {
+            return $v !== '' && $v !== '-';
+        });
+        return array_values(array_unique($parts));
+    };
+
+    // 2) Existing condition codes
+    $existingCodes = $parseCsv($existingCsv);
+
+    // 3) New condition codes from resolvedConditions
+    $incomingCodes = [];
+    foreach ($resolvedConditions as $row) {
+        if (!is_array($row))
+            continue;
+
+        $code = trim((string) ($row['conditionCode'] ?? ''));
+        if ($code === '' || $code === '-')
+            continue;
+
+        $incomingCodes[] = $code;
+    }
+
+    $incomingCodes = array_values(array_unique($incomingCodes));
+
+    // 4) Merge only by adding, never subtracting
+    $mergedCodes = array_values(array_unique(array_merge($existingCodes, $incomingCodes)));
+    $newCsv = implode(',', $mergedCodes);
+
+    // 5) Update patient row
+    $stmtUp = $conn->prepare("
+        UPDATE `$patientTbl`
+        SET
+            conditionData = ?,
+            HospitalLoaded = 'Yes',
+            lastHospitalUpload = CURDATE()
+        WHERE id = ?
+        LIMIT 1
+    ");
+    if (!$stmtUp) {
+        http_response_code(500);
+        echo json_encode([
+            'success' => false,
+            'error' => 'Prepare failed (update)',
+            'details' => $conn->error
+        ]);
+        exit;
+    }
+
+    $stmtUp->bind_param("si", $newCsv, $patientId);
+
+    if (!$stmtUp->execute()) {
+        http_response_code(500);
+        echo json_encode([
+            'success' => false,
+            'error' => 'Update failed',
+            'details' => $stmtUp->error
+        ]);
+        $stmtUp->close();
+        exit;
+    }
+
+    $affected = $stmtUp->affected_rows;
+    $stmtUp->close();
+
+    echo json_encode([
+        'success' => true,
+        'patientId' => $patientId,
+        'patientName' => $patientRow['clientName'] ?? '',
+        'existingCodes' => $existingCodes,
+        'incomingCodes' => $incomingCodes,
+        'mergedCodes' => $mergedCodes,
+        'conditionData' => $newCsv,
+        'affected_rows' => $affected
+    ]);
+    exit;
+}
+
 
 
 // === In special.php ===

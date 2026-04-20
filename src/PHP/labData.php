@@ -919,9 +919,18 @@ if (($data['scriptName'] ?? '') === 'savePatientInfo') {
             continue;
         }
 
+        $medication = trim((string) ($m['medication'] ?? ''));
+        $medicationDose = normalizeDoseValue($m['medication_dose'] ?? '');
+        $doctorName = trim((string) ($m['doctorName'] ?? ''));
+        $firstFill = trim((string) ($m['firstFill'] ?? ''));
         $lastFill = trim((string) ($m['lastFill'] ?? ''));
+
         $medSlim[] = [
+            'medication' => $medication,
+            'medication_dose' => $medicationDose,
             'din' => $din,
+            'doctorName' => $doctorName,
+            'firstFill' => $firstFill,
             'lastFill' => $lastFill
         ];
     }

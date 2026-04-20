@@ -122,6 +122,38 @@ $providerId = ($providerIdRaw !== null && trim((string)$providerIdRaw) !== '')
 $privateNoteSearchRaw = $data['privateNoteSearch'] ?? '';
 $privateNoteSearch = trim((string)$privateNoteSearchRaw);
 
+$hospitalSearchRaw = $data['hospitalSearch'] ?? '';
+$hospitalSearch = trim((string)$hospitalSearchRaw);
+
+// DEBUG: Log the hospital search parameter
+error_log("DEBUG: hospitalSearch received = '" . $hospitalSearch . "'");
+
+// DEBUG: Check what hospital data exists in database
+$debug_sql = "SELECT COUNT(*) as total, 
+              SUM(CASE WHEN LOWER(HospitalLoaded) = 'yes' THEN 1 ELSE 0 END) as yes_count,
+              SUM(CASE WHEN LOWER(HospitalLoaded) = 'no' THEN 1 ELSE 0 END) as no_count,
+              SUM(CASE WHEN HospitalLoaded IS NULL THEN 1 ELSE 0 END) as null_count
+              FROM `$patientTable`";
+$debug_result = $conn->query($debug_sql);
+if ($debug_result) {
+    $debug_row = $debug_result->fetch_assoc();
+    error_log("DEBUG: Hospital data counts - Total: " . $debug_row['total'] . 
+              ", Yes: " . $debug_row['yes_count'] . 
+              ", No: " . $debug_row['no_count'] . 
+              ", NULL: " . $debug_row['null_count']);
+}
+
+// DEBUG: Show sample HospitalLoaded values
+$sample_sql = "SELECT HospitalLoaded FROM `$patientTable` WHERE HospitalLoaded IS NOT NULL LIMIT 5";
+$sample_result = $conn->query($sample_sql);
+if ($sample_result) {
+    $samples = [];
+    while ($sample_row = $sample_result->fetch_assoc()) {
+        $samples[] = "'" . $sample_row['HospitalLoaded'] . "'";
+    }
+    error_log("DEBUG: Sample HospitalLoaded values: " . implode(", ", $samples));
+}
+
 $patientPool = [];
 $hasSearch = false;
 
@@ -366,6 +398,58 @@ if ($privateNoteSearch !== '') {
             $note = mb_strtolower((string)($p['privateNote'] ?? ''));
             return $note !== '' && mb_strpos($note, $needle) !== false;
         }));
+    }
+}
+
+/* Hospital search */
+if ($hospitalSearch !== '') {
+    error_log("DEBUG: Processing hospital search with value: '" . $hospitalSearch . "'");
+    
+    if (!$hasSearch) {
+        if (strtolower($hospitalSearch) === 'yes') {
+            $sql = "SELECT * FROM `$patientTable` WHERE LOWER(`HospitalLoaded`) = 'yes'";
+            error_log("DEBUG: Using SQL for 'yes': " . $sql);
+        } elseif (strtolower($hospitalSearch) === 'no') {
+            $sql = "SELECT * FROM `$patientTable` WHERE (LOWER(`HospitalLoaded`) != 'yes' OR `HospitalLoaded` IS NULL)";
+            error_log("DEBUG: Using SQL for 'no': " . $sql);
+        } else {
+            // Invalid hospitalSearch value, skip this filter
+            $sql = null;
+            error_log("DEBUG: Invalid hospitalSearch value, skipping");
+        }
+        
+        if ($sql !== null) {
+            $res = $conn->query($sql);
+            if ($res) {
+                $patientPool = [];
+                $count = 0;
+                while ($row = $res->fetch_assoc()) {
+                    if (!empty($row['healthNumber'])) {
+                        $patientPool[] = $row;
+                        $count++;
+                    }
+                }
+                error_log("DEBUG: Hospital search returned " . $count . " patients");
+                $hasSearch = true;
+            } else {
+                error_log("DEBUG: Hospital search query failed: " . $conn->error);
+            }
+        }
+    } else {
+        $before_count = count($patientPool);
+        if (strtolower($hospitalSearch) === 'yes') {
+            $patientPool = array_values(array_filter($patientPool, function ($p) {
+                return strtolower((string)($p['HospitalLoaded'] ?? '')) === 'yes';
+            }));
+        } elseif (strtolower($hospitalSearch) === 'no') {
+            $patientPool = array_values(array_filter($patientPool, function ($p) {
+                $hospitalLoaded = strtolower((string)($p['HospitalLoaded'] ?? ''));
+                return $hospitalLoaded !== 'yes';
+            }));
+        }
+        $after_count = count($patientPool);
+        error_log("DEBUG: Hospital filter reduced patients from " . $before_count . " to " . $after_count);
+        // If invalid hospitalSearch value, don't filter
     }
 }
 

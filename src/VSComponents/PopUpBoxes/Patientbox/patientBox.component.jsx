@@ -6,7 +6,6 @@ import { getUserFromToken } from "../../../Context/functions";
 import { useNavigate } from "react-router-dom";
 
 export default function PatientInfo({ user, thePatient, loading = false }) {
-
   const gc = useGlobalContext();
   const {
     setActivePatient,
@@ -23,13 +22,11 @@ export default function PatientInfo({ user, thePatient, loading = false }) {
   const currentPayment = patient?.paymentMethod || patient?.paymentMethof || '?';
   const [recommendedMeds, setRecommendedMeds] = React.useState([]);
 
-  // recommendation modal
   const [showRecModal, setShowRecModal] = React.useState(false);
   const [recTitle, setRecTitle] = React.useState("Recommendation");
   const [recText, setRecText] = React.useState("");
   const [currentKey, setCurrentKey] = React.useState("");
 
-  // edit patient modal
   const [showEditModal, setShowEditModal] = React.useState(false);
   const [editName, setEditName] = React.useState("");
   const [editHealthNumber, setEditHealthNumber] = React.useState("");
@@ -87,6 +84,17 @@ export default function PatientInfo({ user, thePatient, loading = false }) {
 
   const digitsOnlyHealthNumber = (value) => {
     return String(value || "").replace(/\D/g, "").slice(0, 10);
+  };
+
+  const copyHealthNumber = async () => {
+    const rawHCN = digitsOnlyHealthNumber(patient?.healthNumber || "");
+    if (!rawHCN) return;
+
+    try {
+      await navigator.clipboard.writeText(rawHCN);
+    } catch (e) {
+      console.log("Could not copy health number:", e);
+    }
   };
 
   const openEditModal = () => {
@@ -300,9 +308,18 @@ export default function PatientInfo({ user, thePatient, loading = false }) {
 
             <div className="mb-1">
               <div className="row align-items-center g-4 fs-7 mb-4">
-                <div className="col-auto fw-bold text-start">
-                  Health Number: {patient.healthNumber}
+                <div className="col-auto fw-bold text-start d-flex align-items-center gap-2">
+                  <span>Health Number: {patient.healthNumber}</span>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-secondary"
+                    onClick={copyHealthNumber}
+                    title="Copy HCN without spaces"
+                  >
+                    Copy
+                  </button>
                 </div>
+
                 <div className="col-auto text-start">
                   Sex: {patient.sex}
                 </div>
@@ -332,7 +349,7 @@ export default function PatientInfo({ user, thePatient, loading = false }) {
                         <button
                           key={idx}
                           type="button"
-                          className=" ms-1 btn btn-sm btn-outline-warning"
+                          className="ms-1 btn btn-sm btn-outline-warning"
                           value={med}
                           onClick={(e) => handleMapClick(e, med)}
                         >
@@ -427,7 +444,8 @@ export default function PatientInfo({ user, thePatient, loading = false }) {
                     >
                       Uploads
                     </label>
-                    <div className="d-flex gap-1 align-content-center">
+
+                    <div className="d-flex gap-1 align-items-center w-100">
                       <div className="col-16">
                         <button
                           className={`btn-sm btn w-100 fs-7 ${mainButton === 'hospital' ? 'btn-warning' : 'btn-outline-primary'
@@ -448,6 +466,14 @@ export default function PatientInfo({ user, thePatient, loading = false }) {
                       </div>
                     </div>
                   </div>
+                </div>
+                <div className={`ms-auto text-primary px-2 small fw-bold text-nowrap align-content-center pe-2 ${
+                  String(patient?.HospitalLoaded || "").toLowerCase() === "yes" ? "alert-success" : ""
+                }`}>
+                  Hospital Report :{" "}
+                  {String(patient?.HospitalLoaded || "").toLowerCase() === "yes"
+                    ? `Yes${patient?.lastHospitalUpload ? ` - ${patient.lastHospitalUpload}` : ""}`
+                    : "No"}
                 </div>
               </div>
             </div>

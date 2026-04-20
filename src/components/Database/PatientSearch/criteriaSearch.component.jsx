@@ -45,6 +45,7 @@ const LS_KEYS = {
   maxLabs: "criteria.maxLabs",
   providerId: "criteria.providerId",
   privateNoteSearch: "criteria.privateNoteSearch",
+  hospitalSearch: "criteria.hospitalSearch",
 };
 
 const cleanNum = (v) => {
@@ -114,6 +115,9 @@ const CriteriaSearch = ({ onResults }) => {
   const [maxLabs, setMaxLabs] = useState(() => readText(LS_KEYS.maxLabs, ""));
   const [privateNoteSearch, setPrivateNoteSearch] = useState(() =>
     readText(LS_KEYS.privateNoteSearch, "")
+  );
+  const [hospitalSearch, setHospitalSearch] = useState(() =>
+    readText(LS_KEYS.hospitalSearch, "")
   );
 
   // CONDITIONS
@@ -219,6 +223,15 @@ const CriteriaSearch = ({ onResults }) => {
       localStorage.removeItem(LS_KEYS.privateNoteSearch);
     }
   }, [privateNoteSearch, hydrated]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    if (hospitalSearch) {
+      localStorage.setItem(LS_KEYS.hospitalSearch, hospitalSearch);
+    } else {
+      localStorage.removeItem(LS_KEYS.hospitalSearch);
+    }
+  }, [hospitalSearch, hydrated]);
 
   // Load providers same as Pharmacy Multiple
   useEffect(() => {
@@ -483,6 +496,7 @@ const CriteriaSearch = ({ onResults }) => {
       minLabs: String(minLabs || "").trim(),
       maxLabs: String(maxLabs || "").trim(),
       privateNoteSearch: String(privateNoteSearch || "").trim(),
+      hospitalSearch: String(hospitalSearch || "").trim(),
       medCategoryIds,
       providerId,
       nonMedCategoryIds,
@@ -546,6 +560,7 @@ const CriteriaSearch = ({ onResults }) => {
     setMinLabs("");
     setMaxLabs("");
     setPrivateNoteSearch("");
+    setHospitalSearch("");
     setProviderID(null);
   };
 
@@ -572,7 +587,7 @@ const CriteriaSearch = ({ onResults }) => {
 
       <div className="col-48 border rounded p-3 mt-3">
         <div className="row g-2 mb-3">
-          <div className="col-16">
+          <div className="col-12">
             <div className="alert alert-secondary mb-0 p-2 h-100">
               <div className="row g-2 align-items-end">
                 <div className="col-48">
@@ -604,7 +619,7 @@ const CriteriaSearch = ({ onResults }) => {
             </div>
           </div>
 
-          <div className="col-16">
+          <div className="col-12">
             <div className="alert alert-secondary mb-0 p-2 h-100">
               <div className="row g-2 align-items-end">
                 <div className="col-48">
@@ -612,7 +627,7 @@ const CriteriaSearch = ({ onResults }) => {
                 </div>
 
                 <div className="col-24">
-                  <label htmlFor="minLabs" className="mb-1">Min. Labs:</label>
+                  <label htmlFor="minLabs" className="mb-1">Min. Labs</label>
                   <input
                     type="text"
                     id="minLabs"
@@ -636,7 +651,7 @@ const CriteriaSearch = ({ onResults }) => {
             </div>
           </div>
 
-          <div className="col-16">
+          <div className="col-12">
             <div className="alert alert-secondary mb-0 p-2 h-100">
               <div className="row g-2 align-items-end">
                 <div className="col-48">
@@ -666,6 +681,32 @@ const CriteriaSearch = ({ onResults }) => {
                         </option>
                       );
                     })}
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="col-12">
+            <div className="alert alert-secondary mb-0 p-2 h-100">
+              <div className="row g-2 align-items-end">
+                <div className="col-48">
+                  <div className="fw-semibold small">Hospital Report Search</div>
+                </div>
+
+                <div className="col-48">
+                  <label htmlFor="hospitalSearch" className="mb-1">Has Hospital Lab:</label>
+                  <select
+                    id="hospitalSearch"
+                    className={`form-select form-select-sm ${
+                      hospitalSearch ? "alert-success" : ""
+                    }`}
+                    value={hospitalSearch}
+                    onChange={(e) => setHospitalSearch(e.target.value)}
+                  >
+                    <option value="">Any</option>
+                    <option value="yes">Yes</option>
+                    <option value="no">No</option>
                   </select>
                 </div>
               </div>
